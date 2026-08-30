@@ -49,3 +49,10 @@ def test_recall_is_not_a_new_fact(tmp_path: Path) -> None:
     mem.remember_from_utterance("do you remember yesterday")
     assert mem.prefix_memory().facts == []
     mem.close()
+
+
+def test_im_bored_is_not_a_name(tmp_path: Path) -> None:
+    mem = Memory(tmp_path / "gizmo.db")
+    mem.remember_from_utterance("I'm bored")
+    assert mem.get_name() is None
+    mem.close()

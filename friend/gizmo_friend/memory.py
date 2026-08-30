@@ -14,6 +14,32 @@ from gizmo_friend.prefix import (
     PrefixMemory,
 )
 
+NOT_NAMES = {
+    "gizmo",
+    "here",
+    "just",
+    "not",
+    "the",
+    "bored",
+    "sorry",
+    "fine",
+    "okay",
+    "back",
+    "ready",
+    "done",
+    "good",
+    "looking",
+    "coming",
+    "going",
+    "trying",
+    "waiting",
+    "home",
+    "lost",
+    "stuck",
+    "hungry",
+    "tired",
+}
+
 NAME_RE = re.compile(
     r"\b(?:i(?:['’]m| am)|my name is|call me|i['’]?m called)\s+([A-Za-z][A-Za-z\-']{1,20})\b",
     re.IGNORECASE,
@@ -243,7 +269,7 @@ class Memory:
         name_match = NAME_RE.search(text)
         if name_match:
             raw = name_match.group(1)
-            if raw.lower() not in {"gizmo", "here", "just", "not", "the"}:
+            if raw.lower() not in NOT_NAMES:
                 name = raw[0].upper() + raw[1:]
                 self.set_name(name)
                 self.add_episode(f"they said their name is {name}")
