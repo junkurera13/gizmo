@@ -69,7 +69,8 @@ def app_factory(data_dir: Path) -> FastAPI:
         path = media / Path(name).name
         if not path.exists() or not path.is_file():
             raise HTTPException(status_code=404, detail="no page")
-        return FileResponse(path)
+        media_type = "image/svg+xml" if path.suffix.lower() == ".svg" else None
+        return FileResponse(path, media_type=media_type)
 
     @app.websocket("/ws")
     async def ws(socket: WebSocket) -> None:

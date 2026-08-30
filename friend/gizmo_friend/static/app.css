@@ -71,25 +71,18 @@ html, body {
   position: relative;
 }
 
-.glass.off::after {
-  content: "";
-  position: absolute;
-  inset: 0;
-  background: #050403;
-}
-
 .glass img,
 .glass video {
   position: absolute;
   inset: 0;
   width: 100%;
   height: 100%;
-  object-fit: cover;
+  object-fit: contain;
   display: none;
 }
 
-.glass.on img.visible,
-.glass.on video.visible {
+.glass.lit img.visible,
+.glass.lit video.visible {
   display: block;
 }
 

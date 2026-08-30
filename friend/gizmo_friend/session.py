@@ -37,6 +37,7 @@ class Friend:
         outbox: ParentOutbox | None = None,
         video: VideoBackend | None = None,
         openai_key: str | None = None,
+        show_hold_s: float = 2.2,
     ) -> None:
         self.data_dir = Path(data_dir)
         self.data_dir.mkdir(parents=True, exist_ok=True)
@@ -48,10 +49,12 @@ class Friend:
         self.camera = camera or WorldCamera()
         self.outbox = outbox or ParentOutbox(self.data_dir / "outbox.jsonl")
         self.video = video if video is not None else video_backend_from_env()
+        self.show_hold_s = show_hold_s
         self.openai_key = openai_key if openai_key is not None else os.environ.get("OPENAI_API_KEY")
         self.last_still: str | None = None
         self.last_subject = "thing"
         self.viewing_page = False
+        self._page_lit = False
         self.transport_name = "openai" if self.openai_key else "fake"
         self._transport: FakeTransport | OpenAIRealtimeTransport | None = None
         self._pump: asyncio.Task[None] | None = None
@@ -117,12 +120,14 @@ class Friend:
             self.memory.rewrite_summary()
             self.machine.apply("click")
             self.viewing_page = False
+            self._page_lit = False
             await self.emit({"type": "state"})
             return
         if self.machine.can("click"):
             await self._interrupt()
             self.machine.apply("click")
             self.viewing_page = False
+            self._page_lit = False
             await self.emit({"type": "interrupted"})
 
     async def on_hold(self) -> None:
@@ -249,7 +254,8 @@ class Friend:
                 await self.emit({"type": "transcript", "role": "gizmo", "text": event.text})
             if self.machine.state is State.TALKING and self.machine.can("done"):
                 self.machine.apply("done")
-            self.viewing_page = False
+            if not self._page_lit:
+                self.viewing_page = False
             await self.emit({"type": "state"})
             return
         if kind == "error":
@@ -286,20 +292,31 @@ class Friend:
             if self.machine.can("show"):
                 self.machine.apply("show")
             self.viewing_page = True
+            self._page_lit = False
             await self.emit({"type": "state"})
             result = await show(subject, self.media_dir, video=self.video)
             self.last_still = result["still"]
+            still_url = _public_media(result["still"])
+            self.memory.add_episode(f"showed: {subject}")
+            await self.emit({"type": "glass", "still": still_url, "clips": result["clips"]})
+            # Still first. Then screen off. Then he talks.
+            hold = self.show_hold_s
+            if result["clips"]:
+                hold = max(hold, 0.4)
+            if hold:
+                await asyncio.sleep(hold)
             if self.machine.state is State.SHOWING:
                 self.machine.apply("done")
-            self.memory.add_episode(f"showed: {subject}")
-            await self.emit({"type": "glass", "still": _public_media(result["still"]), "clips": result["clips"]})
-            return {**result, "still": _public_media(result["still"])}
+            self.viewing_page = False
+            await self.emit({"type": "state"})
+            return {**result, "still": still_url}
         if name == "make":
             line = str(arguments.get("line") or "")
             subject = str(arguments.get("subject") or self.last_subject)
             if self.machine.can("make"):
                 self.machine.apply("make")
             self.viewing_page = True
+            self._page_lit = True
             await self.emit({"type": "state"})
             page = make(
                 self.memory,

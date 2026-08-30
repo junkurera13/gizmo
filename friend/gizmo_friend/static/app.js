@@ -20,14 +20,21 @@ let sources = [];
 let micStream = null;
 let processor = null;
 let micCtx = null;
+let glassHoldUntil = 0;
+let glassOffTimer = 0;
+let wsQueue = Promise.resolve();
 
 function send(payload) {
   if (ws.readyState === WebSocket.OPEN) ws.send(JSON.stringify(payload));
 }
 
 function setGlass(on) {
-  glassEl.classList.toggle("on", on);
-  glassEl.classList.toggle("off", !on);
+  if (!on && Date.now() < glassHoldUntil) {
+    clearTimeout(glassOffTimer);
+    glassOffTimer = setTimeout(() => setGlass(false), glassHoldUntil - Date.now());
+    return;
+  }
+  glassEl.classList.toggle("lit", on);
   if (!on) {
     stillEl.classList.remove("visible");
     clipEl.classList.remove("visible");
@@ -38,6 +45,7 @@ function setGlass(on) {
 
 function showStill(url) {
   if (!url) return;
+  glassHoldUntil = Date.now() + 2400;
   stillEl.src = url;
   stillEl.classList.add("visible");
   clipEl.classList.remove("visible");
@@ -86,17 +94,28 @@ function playPcm(b64) {
   sources.push(src);
 }
 
-ws.addEventListener("message", async (ev) => {
+ws.addEventListener("message", (ev) => {
   const msg = JSON.parse(ev.data);
+  wsQueue = wsQueue.then(() => onMessage(msg)).catch(() => {});
+});
+
+async function onMessage(msg) {
   if (msg.state) stateEl.textContent = msg.state;
   if (msg.transport) pathEl.textContent = msg.transport;
-  if (msg.screen === false && msg.type === "state") setGlass(false);
+  if (msg.state === "asleep") {
+    glassHoldUntil = 0;
+    setGlass(false);
+  } else if (msg.screen === false && msg.type === "state") {
+    setGlass(false);
+  }
   if (msg.type === "transcript" && msg.role === "gizmo") {
     speakerEl.textContent = msg.text || "";
   }
   if (msg.type === "interrupted") {
     flushAudio();
     speakerEl.textContent = "";
+    glassHoldUntil = 0;
+    setGlass(false);
   }
   if (msg.type === "glass") {
     showStill(msg.still);
@@ -104,7 +123,7 @@ ws.addEventListener("message", async (ev) => {
   }
   if (msg.type === "audio" && msg.pcm) playPcm(msg.pcm);
   if (msg.type === "error") speakerEl.textContent = msg.message || "something broke";
-});
+}
 
 stickBtn.addEventListener("click", () => {
   flushAudio();

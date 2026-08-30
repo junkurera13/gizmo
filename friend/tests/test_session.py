@@ -42,7 +42,7 @@ async def test_wake_interrupt_and_open_talk(tmp_path: Path) -> None:
         original_cancel()
 
     mouth.cancel = cancel  # type: ignore[method-assign]
-    friend = Friend(tmp_path, mouth=mouth, video=NullVideo(), openai_key="")
+    friend = Friend(tmp_path, mouth=mouth, video=NullVideo(), openai_key="", show_hold_s=0)
     queue = friend.subscribe()
     await friend.handle(Click())
     events = await drain(friend, queue)
@@ -65,7 +65,7 @@ async def test_wake_interrupt_and_open_talk(tmp_path: Path) -> None:
 
 @pytest.mark.asyncio
 async def test_pinecone_use_case_and_memory_restart(tmp_path: Path) -> None:
-    friend = Friend(tmp_path, video=NullVideo(), openai_key="")
+    friend = Friend(tmp_path, video=NullVideo(), openai_key="", show_hold_s=0)
     queue = friend.subscribe()
     await friend.handle(Click())
     await drain(friend, queue)
@@ -83,6 +83,8 @@ async def test_pinecone_use_case_and_memory_restart(tmp_path: Path) -> None:
     glass = [e for e in events if e.get("type") == "glass"]
     assert glass
     assert glass[0].get("clips") == []
+    assert glass[0].get("still")
+    assert glass[0].get("screen") is True
     await friend.handle(TextLine("keep it"))
     events = await drain(friend, queue)
     assert AFTER_MAKE in spoken(events)
@@ -91,7 +93,7 @@ async def test_pinecone_use_case_and_memory_restart(tmp_path: Path) -> None:
     assert friend.outbox.list_pages()
     await friend.close()
 
-    again = Friend(tmp_path, video=NullVideo(), openai_key="")
+    again = Friend(tmp_path, video=NullVideo(), openai_key="", show_hold_s=0)
     prefix = again.memory.prefix_memory()
     assert prefix.name == "Rio"
     assert any("Toast" in f for f in prefix.facts)
@@ -106,7 +108,7 @@ async def test_pinecone_use_case_and_memory_restart(tmp_path: Path) -> None:
 
 @pytest.mark.asyncio
 async def test_nonsense_and_remember_yesterday(tmp_path: Path) -> None:
-    friend = Friend(tmp_path, video=NullVideo(), openai_key="")
+    friend = Friend(tmp_path, video=NullVideo(), openai_key="", show_hold_s=0)
     queue = friend.subscribe()
     await friend.handle(Click())
     await drain(friend, queue)
@@ -122,7 +124,7 @@ async def test_nonsense_and_remember_yesterday(tmp_path: Path) -> None:
 
 @pytest.mark.asyncio
 async def test_fake_transport_keeps_frozen_instructions(tmp_path: Path) -> None:
-    friend = Friend(tmp_path, video=NullVideo(), openai_key="")
+    friend = Friend(tmp_path, video=NullVideo(), openai_key="", show_hold_s=0)
     await friend.handle(Click())
     assert friend.transport_name == "fake"
     assert friend._transport is not None
