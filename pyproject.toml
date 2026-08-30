@@ -1,0 +1,42 @@
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "gizmo"
+version = "0.1.0"
+description = "Gizmo — a wizard in a kid's pocket. Laptop brain (Friend), stub body, glass, and reach."
+readme = "README.md"
+requires-python = ">=3.11"
+authors = [{ name = "Gizmo" }]
+dependencies = [
+  "fastapi>=0.115",
+  "uvicorn[standard]>=0.32",
+  "websockets>=14.0",
+  "httpx>=0.28",
+  "python-multipart>=0.0.12",
+]
+
+[project.optional-dependencies]
+dev = [
+  "pytest>=8.0",
+  "pytest-asyncio>=0.24",
+]
+
+[project.scripts]
+gizmo = "gizmo_friend.__main__:main"
+
+[tool.setuptools.packages.find]
+where = ["friend", "reach"]
+include = ["gizmo_friend*", "gizmo_reach*"]
+
+[tool.setuptools.package-data]
+gizmo_friend = ["static/*"]
+
+[tool.pytest.ini_options]
+testpaths = ["friend/tests"]
+asyncio_mode = "auto"
+pythonpath = ["friend", "reach"]
+markers = [
+  "asyncio: async tests",
+]
