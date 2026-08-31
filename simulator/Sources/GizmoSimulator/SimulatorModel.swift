@@ -93,6 +93,7 @@ final class SimulatorModel: ObservableObject {
     }
 
     func click() {
+        DeviceHaptics.trackballTick()
         guard deviceState != "asleep" else { return }
         send(["type": "click"])
     }
@@ -155,11 +156,10 @@ final class SimulatorModel: ObservableObject {
     }
 
     func navigate(_ direction: String) {
-        guard deviceState != "asleep",
-              ["up", "down", "left", "right"].contains(direction)
-        else { return }
+        guard ["up", "down", "left", "right"].contains(direction) else { return }
+        DeviceHaptics.trackballTick()
+        guard deviceState != "asleep" else { return }
         send(["type": "navigate", "direction": direction])
-        NSHapticFeedbackManager.defaultPerformer.perform(.alignment, performanceTime: .now)
     }
 
     func say(_ text: String) {

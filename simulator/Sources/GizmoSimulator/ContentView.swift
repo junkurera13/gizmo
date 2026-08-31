@@ -80,11 +80,15 @@ private struct DeviceView: View {
             let size = proxy.size.width
 
             ZStack(alignment: .topLeading) {
-                Image(nsImage: activeDeviceImage)
-                    .resizable()
-                    .interpolation(.high)
-                    .frame(width: size, height: size)
-                    .animation(.easeOut(duration: 0.06), value: showingPressedSkin)
+                deviceArtwork(deviceImage, size: size)
+                    .opacity(showingPressedSkin ? 0 : 1)
+                    .animation(nil, value: showingPressedSkin)
+
+                if let pressedDeviceImage {
+                    deviceArtwork(pressedDeviceImage, size: size)
+                        .opacity(showingPressedSkin ? 1 : 0)
+                        .animation(nil, value: showingPressedSkin)
+                }
 
                 screen(size: size)
                 movingTrackball(size: size)
@@ -129,10 +133,7 @@ private struct DeviceView: View {
             let inner = outer.insetBy(dx: outer.width * 0.145, dy: outer.height * 0.145)
 
             ZStack(alignment: .topLeading) {
-                Image(nsImage: activeDeviceImage)
-                    .resizable()
-                    .interpolation(.high)
-                    .frame(width: size, height: size)
+                deviceArtwork(deviceImage, size: size)
                     .offset(
                         x: -inner.minX + trackballOffset.width,
                         y: -inner.minY + trackballOffset.height
@@ -301,12 +302,15 @@ private struct DeviceView: View {
         )
     }
 
-    private var showingPressedSkin: Bool {
-        pressedDeviceImage != nil && (model.isPushToTalking || pressedControl == "side")
+    private func deviceArtwork(_ image: NSImage, size: CGFloat) -> some View {
+        Image(nsImage: image)
+            .resizable()
+            .interpolation(.high)
+            .frame(width: size, height: size)
     }
 
-    private var activeDeviceImage: NSImage {
-        showingPressedSkin ? (pressedDeviceImage ?? deviceImage) : deviceImage
+    private var showingPressedSkin: Bool {
+        pressedDeviceImage != nil && (model.isPushToTalking || pressedControl == "side")
     }
 }
 
