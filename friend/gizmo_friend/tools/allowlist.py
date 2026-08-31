@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-ALLOWED_TOOLS = ("see", "show", "make", "reach")
+ALLOWED_TOOLS = ("see", "show", "make", "think", "reach")
 FORBIDDEN_TOOLS = ("web_search", "browser", "search", "mcp", "code_interpreter")
 
 TOOL_SCHEMAS: list[dict] = [
@@ -61,6 +61,28 @@ TOOL_SCHEMAS: list[dict] = [
                 },
             },
             "required": ["line"],
+            "additionalProperties": False,
+        },
+    },
+    {
+        "type": "function",
+        "name": "think",
+        "description": (
+            "Go quiet and think hard. Use only for genuinely difficult questions — real "
+            "math, science why-chains, anything you might get wrong answering from the hip. "
+            "Say one short beat line first (like 'Hold on. Big one.'), then call this. "
+            "Re-voice the answer in your own words. Never use it for chat, feelings, or "
+            "things you already know."
+        ),
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "question": {
+                    "type": "string",
+                    "description": "The hard question, complete and self-contained.",
+                }
+            },
+            "required": ["question"],
             "additionalProperties": False,
         },
     },

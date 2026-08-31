@@ -57,6 +57,18 @@ struct GizmoSimulatorApp: App {
                     SimulatorModel.shared.reconnect()
                 }
                 .keyboardShortcut("k", modifiers: [.command])
+
+                Button("Reload Sprites") {
+                    SpriteStore.shared.load()
+                }
+                .keyboardShortcut("r", modifiers: [.command])
+
+                Divider()
+
+                Button("Drain Battery 10%") {
+                    SimulatorModel.shared.drainBattery()
+                }
+                .keyboardShortcut("b", modifiers: [.command, .shift])
             }
         }
     }

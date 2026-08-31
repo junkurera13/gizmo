@@ -5,8 +5,10 @@ from enum import Enum
 
 class State(str, Enum):
     ASLEEP = "asleep"
+    BOOTING = "booting"
     LISTENING = "listening"
     TALKING = "talking"
+    THINKING = "thinking"
     SEEING = "seeing"
     SHOWING = "showing"
     MAKING = "making"
@@ -23,11 +25,17 @@ class IllegalTransition(Exception):
 # (from, action) -> to. Tool "done" returns to listening.
 # Hold (reach) is allowed from listening or talking.
 _TRANSITIONS: dict[tuple[State, str], State] = {
-    (State.ASLEEP, "power_on"): State.LISTENING,
+    (State.ASLEEP, "power_on"): State.BOOTING,
+    (State.BOOTING, "boot_done"): State.LISTENING,
+    (State.BOOTING, "power_off"): State.ASLEEP,
     (State.LISTENING, "click"): State.LISTENING,
     (State.LISTENING, "speech_out"): State.TALKING,
     (State.TALKING, "click"): State.LISTENING,
     (State.TALKING, "done"): State.LISTENING,
+    (State.LISTENING, "think"): State.THINKING,
+    (State.TALKING, "think"): State.THINKING,
+    (State.THINKING, "done"): State.LISTENING,
+    (State.THINKING, "click"): State.LISTENING,
     (State.LISTENING, "see"): State.SEEING,
     (State.TALKING, "see"): State.SEEING,
     (State.SEEING, "done"): State.LISTENING,
@@ -50,6 +58,7 @@ _TRANSITIONS: dict[tuple[State, str], State] = {
     (State.REACHING, "click"): State.LISTENING,
     (State.LISTENING, "power_off"): State.ASLEEP,
     (State.TALKING, "power_off"): State.ASLEEP,
+    (State.THINKING, "power_off"): State.ASLEEP,
     (State.SEEING, "power_off"): State.ASLEEP,
     (State.SHOWING, "power_off"): State.ASLEEP,
     (State.MAKING, "power_off"): State.ASLEEP,
@@ -70,6 +79,9 @@ class StateMachine:
             raise IllegalTransition(self.state, action)
         self.state = _TRANSITIONS[key]
         return self.state
+
+    def awake(self) -> bool:
+        return self.state is not State.ASLEEP
 
     def screen_on(self, viewing_page: bool = False) -> bool:
         return self.state in {State.SHOWING, State.MAKING} or viewing_page

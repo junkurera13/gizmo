@@ -12,9 +12,10 @@ from gizmo_friend.tools.show import NullVideo, show
 from gizmo_reach.outbox import ParentOutbox
 
 
-def test_allowlist_is_exactly_four() -> None:
+def test_allowlist_is_exactly_five() -> None:
     names = assert_allowlist()
     assert tuple(names) == ALLOWED_TOOLS
+    assert "think" in names
     assert "web_search" not in names
     for forbidden in FORBIDDEN_TOOLS:
         assert forbidden not in names
@@ -83,6 +84,62 @@ def test_reach_queues(tmp_path: Path) -> None:
     queued = outbox.list_pages()
     assert queued[0].line == "Yours."
     mem.close()
+
+
+@pytest.mark.asyncio
+async def test_think_returns_answer_from_backend() -> None:
+    from gizmo_friend.tools.think import ThinkBackend, think
+
+    class CannedThink(ThinkBackend):
+        async def answer(self, question: str) -> str | None:
+            return f"Short true answer about: {question}"
+
+    result = await think(CannedThink(), "why is the sky blue?")
+    assert result["ok"] is True
+    assert "sky blue" in result["answer"]
+
+
+@pytest.mark.asyncio
+async def test_think_fails_soft_offline() -> None:
+    from gizmo_friend.tools.think import NullThink, think
+
+    result = await think(NullThink(), "why is the sky blue?")
+    assert result["ok"] is False
+    assert "say" in result
+    # He never pretends: the fallback admits he can't reach the deep mind.
+    assert "can't reach" in result["say"].lower()
+
+    empty = await think(NullThink(), "   ")
+    assert empty["ok"] is False
+
+
+def test_think_backend_selection(monkeypatch: pytest.MonkeyPatch) -> None:
+    from gizmo_friend.tools.think import (
+        NullThink,
+        OpenAIThink,
+        OpenRouterThink,
+        think_backend_from_env,
+    )
+
+    assert isinstance(think_backend_from_env(), NullThink)
+
+    monkeypatch.setenv("OPENROUTER_API_KEY", "or-key")
+    backend = think_backend_from_env()
+    assert isinstance(backend, OpenRouterThink)
+    assert backend.model == "openai/gpt-5.6-terra"
+
+    # OpenAI key wins when both are present.
+    assert isinstance(think_backend_from_env(api_key="oa-key"), OpenAIThink)
+
+
+def test_openrouter_chat_parsing() -> None:
+    from gizmo_friend.tools.think import _chat_text
+
+    good = {"choices": [{"message": {"content": "Blue light scatters the most."}}]}
+    assert _chat_text(good) == "Blue light scatters the most."
+    assert _chat_text({"choices": []}) is None
+    assert _chat_text({"choices": [{"message": {"content": "  "}}]}) is None
+    assert _chat_text("nope") is None
 
 
 def test_no_web_in_schemas() -> None:

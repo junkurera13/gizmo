@@ -105,7 +105,7 @@ async function onMessage(msg) {
   if (msg.state === "asleep") {
     glassHoldUntil = 0;
     setGlass(false);
-  } else if (msg.screen === false && msg.type === "state") {
+  } else if (msg.viewing === false && msg.type === "state") {
     setGlass(false);
   }
   if (msg.type === "transcript" && msg.role === "gizmo") {

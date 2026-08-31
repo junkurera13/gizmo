@@ -80,7 +80,8 @@ def app_factory(data_dir: Path) -> FastAPI:
             {
                 "type": "hello",
                 "state": friend.state.value,
-                "screen": False,
+                "screen": friend.machine.awake(),
+                "viewing": friend.machine.screen_on(friend.viewing_page),
                 "transport": friend.transport_name,
                 "name": friend.memory.get_name(),
             }

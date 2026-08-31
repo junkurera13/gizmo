@@ -16,6 +16,9 @@ _SEE = re.compile(r"\b(look|see|what(?:'s| is) (?:this|that)|camera|point)\b", r
 _SHOW = re.compile(r"\b(show|spell|make it move|do the (?:thing|spell))\b", re.I)
 _MAKE = re.compile(r"\b(keep|save|make (?:a )?page|remember this (?:one|page)|mine)\b", re.I)
 _REACH = re.compile(r"\b(send|mom|dad|parent|phone|reach)\b", re.I)
+_THINK = re.compile(
+    r"\b(why\b|explain|what if|how (?:does|do|come|far|many|much|old|big|long))", re.I
+)
 _YESTERDAY = re.compile(r"\b(yesterday|last time|remember when|do you remember)\b", re.I)
 _BORED = re.compile(r"\b(bored|nothing|whatever|idk|i don't know|meh)\b", re.I)
 _WHO = re.compile(r"\b(who are you|what are you|what can you do|are you real)\b", re.I)
@@ -52,6 +55,8 @@ def classify(text: str) -> tuple[str, dict[str, Any]]:
         return "make", {"line": t.strip()}
     if _REACH.search(t):
         return "reach", {}
+    if _THINK.search(t):
+        return "think", {"question": t}
     return "talk", {"text": t}
 
 
@@ -102,7 +107,7 @@ class FakeTransport:
 
     async def send_text(self, text: str) -> None:
         intent, args = classify(text)
-        if intent in {"see", "show", "make", "reach"}:
+        if intent in {"see", "show", "make", "reach", "think"}:
             if intent == "show":
                 subject = str(args.get("subject") or "thing")
                 if subject == "thing":
@@ -168,6 +173,11 @@ class FakeTransport:
             await self._speak(AFTER_SHOW)
         elif name == "make":
             await self._speak(AFTER_MAKE)
+        elif name == "think":
+            if data.get("ok") and data.get("answer"):
+                await self._speak(str(data["answer"]), cap=False)
+            else:
+                await self._speak(str(data.get("say") or "Big one. I don't have it right now."))
         elif name == "reach":
             if data.get("ok"):
                 await self._speak("It's on its way. I'm not a phone.")

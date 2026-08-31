@@ -4,8 +4,10 @@ import asyncio
 import base64
 import json
 import os
+import ssl
 from typing import Any
 
+import certifi
 import websockets
 from websockets.exceptions import ConnectionClosed
 
@@ -67,6 +69,8 @@ class OpenAIRealtimeTransport:
             REALTIME_URL,
             additional_headers={"Authorization": f"Bearer {self.api_key}"},
             max_size=16 * 1024 * 1024,
+            # macOS Python often lacks system CAs; use certifi's bundle.
+            ssl=ssl.create_default_context(cafile=certifi.where()),
         )
         await self._send(session_update_payload(instructions))
         self._reader = asyncio.create_task(self._read_loop())

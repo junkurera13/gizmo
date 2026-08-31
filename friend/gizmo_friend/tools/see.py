@@ -1,11 +1,24 @@
 from __future__ import annotations
 
+import asyncio
+import os
+
 from gizmo_friend.body_protocol import WorldCamera
+
+# Real hardware takes a beat to point, focus, and look. Holding the seeing
+# state open keeps the viewfinder on the glass long enough to aim.
+_DWELL_ENV = "GIZMO_SEE_DWELL_S"
 
 
 async def see(camera: WorldCamera, image: str | None = None) -> dict:
     """Name what's in the outward frame in one beat. Fast. Does not block listen."""
     del image  # body provides the frame
+    try:
+        dwell = float(os.environ.get(_DWELL_ENV, "2.5"))
+    except ValueError:
+        dwell = 2.5
+    if dwell > 0:
+        await asyncio.sleep(dwell)
     frame = camera.grab()
     if frame.hint:
         beat = _one_beat(frame.hint)

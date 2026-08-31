@@ -27,7 +27,7 @@ def test_session_payload_keeps_frozen_front_and_low_reasoning() -> None:
     assert session["audio"]["input"]["turn_detection"] is None
     assert session["instructions"].startswith(FROZEN_PROMPT)
     names = [t["name"] for t in session["tools"]]
-    assert names == ["see", "show", "make", "reach"]
+    assert names == ["see", "show", "make", "think", "reach"]
     assert "web_search" not in names
 
 

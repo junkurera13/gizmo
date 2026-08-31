@@ -18,6 +18,7 @@ struct ContentView: View {
         .background(Color(nsColor: .windowBackgroundColor))
         .task {
             skinStore.loadDefault()
+            SpriteStore.shared.load()
             model.start()
         }
     }
@@ -65,6 +66,8 @@ private struct DeviceStageView: View {
 
 private struct DeviceView: View {
     @ObservedObject var model: SimulatorModel
+    @ObservedObject private var spriteStore = SpriteStore.shared
+    @ObservedObject private var cameraFeed = CameraFeed.shared
     let skin: DeviceSkin
     let deviceImage: NSImage
     let pressedDeviceImage: NSImage?
@@ -109,13 +112,22 @@ private struct DeviceView: View {
         ZStack {
             Color.black
 
-            if let screenImage = model.screenImage {
+            if let screenImage = model.screenImage, model.viewingStill {
                 Image(nsImage: screenImage)
                     .resizable()
                     .interpolation(.none)
                     .aspectRatio(contentMode: skin.screen.contentMode == "fill" ? .fill : .fit)
                     .padding(10)
+            } else if model.deviceState == "seeing" {
+                viewfinder
+            } else if let spriteName, let animation = spriteStore.animation(for: spriteName) {
+                SpriteAnimationView(animation: animation)
+            } else if let faceMode {
+                GizmoFaceView(mode: faceMode)
             }
+
+            statusBar
+                .animation(.easeOut(duration: 0.28), value: statusBarVisible)
         }
         .frame(width: rect.width, height: rect.height)
         .clipShape(RoundedRectangle(cornerRadius: radius, style: .continuous))
@@ -124,6 +136,90 @@ private struct DeviceView: View {
         .animation(.easeOut(duration: 0.16), value: model.screenOn)
         .allowsHitTesting(false)
         .accessibilityHidden(true)
+        .onChange(of: model.deviceState) { _, state in
+            if state == "seeing" {
+                CameraFeed.shared.start()
+            } else {
+                CameraFeed.shared.stop()
+            }
+        }
+    }
+
+    /// Camera mode: the live feed fills the glass, and the wizard's
+    /// floating head drifts on top of it, watching along.
+    @ViewBuilder
+    private var viewfinder: some View {
+        ZStack {
+            if let frame = cameraFeed.frame {
+                Image(decorative: frame, scale: 1)
+                    .resizable()
+                    .aspectRatio(contentMode: .fill)
+            } else if cameraFeed.unavailable {
+                VStack(spacing: 6) {
+                    Image(systemName: "video.slash")
+                        .font(.system(size: 22, weight: .light))
+                    Text("No camera")
+                        .font(.system(size: 11))
+                }
+                .foregroundStyle(Color.white.opacity(0.4))
+            } else {
+                GizmoFaceView(mode: .thinking)
+            }
+
+            if let head = spriteStore.animations["see"] {
+                SpriteAnimationView(animation: head)
+            }
+        }
+    }
+
+    /// The status strip shows whenever the glass belongs to the face.
+    /// Camera, videos, and kept pages own the whole screen.
+    private var statusBarVisible: Bool {
+        guard model.screenOn, !model.viewingStill else { return false }
+        return !["asleep", "seeing"].contains(model.deviceState)
+    }
+
+    @ViewBuilder
+    private var statusBar: some View {
+        if statusBarVisible, let hearts = spriteStore.hearts {
+            StatusBarView(art: hearts, level: model.batteryLevel)
+                .transition(.opacity)
+        }
+    }
+
+    /// Which of Jun's animations to play for the current device state.
+    /// Missing animations fall back inside SpriteStore, then to the
+    /// procedural face below, so art can land one folder at a time.
+    private var spriteName: String? {
+        switch model.deviceState {
+        case "booting":
+            return "boot"
+        case "listening":
+            return model.isPushToTalking ? "listen" : "idle"
+        case "talking":
+            return "talk"
+        case "showing":
+            return "show"
+        case "thinking", "making", "reaching":
+            return "think"
+        default:
+            return nil
+        }
+    }
+
+    private var faceMode: GizmoFaceMode? {
+        switch model.deviceState {
+        case "booting":
+            return .booting
+        case "listening":
+            return model.isPushToTalking ? .attentive : .idle
+        case "talking":
+            return .talking
+        case "thinking", "seeing", "showing", "making", "reaching":
+            return .thinking
+        default:
+            return nil
+        }
     }
 
     @ViewBuilder

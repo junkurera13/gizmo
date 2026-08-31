@@ -9,9 +9,11 @@ This repo is the device: Friend (brain), Body (firmware later), Glass (jun's 240
 ## Tree
 
 ```
-docs/PRODUCT.md   companion + See / Show / Make / Reach
+docs/PRODUCT.md   companion + six verbs
+docs/CRAFT.md     what he actually does — talk / think / see / show / make / reach
 docs/FRIEND.md    realtime talk, memory, tools, states, frozen prompt
 docs/V1.md        what v1 is and is not
+docs/ROADMAP.md   from held prototype to magic
 friend/           THE laptop brain — all agent code
 body/             ESP32-S3 firmware later (README only)
 glass/            1.54" 240×240 page/blit (jun drawing the face)
@@ -35,7 +37,9 @@ Or: `python -m gizmo_friend` from a venv with this repo installed.
 
 | Variable | Required | What |
 | --- | --- | --- |
-| `OPENAI_API_KEY` | for live voice | OpenAI Realtime, model `gpt-realtime-2.1-mini`. If missing, a local fake transport still runs the state machine and tools. |
+| `OPENAI_API_KEY` | for live voice | OpenAI Realtime, model `gpt-realtime-2.1-mini`. Also powers `think()`. If missing, a local fake transport still runs the state machine and tools. |
+| `OPENROUTER_API_KEY` | no | Deep think fallback when `OPENAI_API_KEY` is unset. No realtime speech — live voice still needs the OpenAI key. |
+| `GIZMO_THINK_MODEL` | no | Reasoning model for hard questions. Default `gpt-5.6-terra` (`openai/gpt-5.6-terra` via OpenRouter). |
 | `FAL_KEY` | no | MiniMax H3 Max image-to-video for `show()` clips. If missing, he still does the still and the spoken line. |
 | `GIZMO_DATA_DIR` | no | sqlite + saved pages. Default `./data`. Survives restart. |
 

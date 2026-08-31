@@ -38,6 +38,7 @@ final class SimulatorModel: ObservableObject {
     @Published private(set) var deviceState = "asleep"
     @Published private(set) var transport = "—"
     @Published private(set) var screenOn = false
+    @Published private(set) var viewingStill = false
     @Published private(set) var spokenLine = ""
     @Published private(set) var screenImage: NSImage?
     @Published private(set) var cameraSource = "No frame"
@@ -45,6 +46,9 @@ final class SimulatorModel: ObservableObject {
     @Published private(set) var conversation: [ConversationMessage] = []
     @Published private(set) var isPushToTalking = false
     @Published private(set) var voiceError: String?
+
+    // Fake battery until the real body reports one.
+    @Published private(set) var batteryLevel: Double = 1.0
 
     private let baseHTTPURL = URL(string: "http://127.0.0.1:43147")!
     private let webSocketURL = URL(string: "ws://127.0.0.1:43147/ws")!
@@ -101,6 +105,10 @@ final class SimulatorModel: ObservableObject {
     func hold() {
         guard deviceState != "asleep" else { return }
         send(["type": "hold"])
+    }
+
+    func drainBattery() {
+        batteryLevel = batteryLevel <= 0 ? 1.0 : max(0, batteryLevel - 0.1)
     }
 
     func togglePower() {
@@ -309,6 +317,12 @@ final class SimulatorModel: ObservableObject {
         }
         if let isOn = object["screen"] as? Bool {
             screenOn = isOn
+        }
+        if let viewing = object["viewing"] as? Bool {
+            viewingStill = viewing
+            if !viewing {
+                screenImage = nil
+            }
         }
 
         if type == "hello" {

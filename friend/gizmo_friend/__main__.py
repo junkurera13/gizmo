@@ -10,6 +10,10 @@ from gizmo_friend.session import Friend
 
 
 def main() -> None:
+    # Keys live in .env at the repo root; the simulator launches Friend from there.
+    from dotenv import load_dotenv
+
+    load_dotenv()
     parser = argparse.ArgumentParser(prog="gizmo", description="Gizmo Friend — laptop brain")
     parser.add_argument("--host", default="0.0.0.0")
     parser.add_argument("--port", type=int, default=int(os.environ.get("GIZMO_PORT", "43147")))
