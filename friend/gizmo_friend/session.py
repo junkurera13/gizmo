@@ -90,6 +90,10 @@ class Friend:
         self._idle_task: asyncio.Task[None] | None = None
         self._last_activity = 0.0
         self._ptt_active = False
+        # Double-click on the trackball opens the camera; one click closes it.
+        self.double_click_s = 0.45
+        self._last_click_at = float("-inf")
+        self._last_click_state: State | None = None
 
     @property
     def state(self) -> State:
@@ -146,6 +150,24 @@ class Friend:
     async def on_click(self) -> None:
         if not self._ready_for_input():
             return
+
+        now = asyncio.get_running_loop().time()
+        previous_at = self._last_click_at
+        previous_state = self._last_click_state
+        self._last_click_at = now
+        self._last_click_state = self.machine.state
+
+        # Second fast click while idle: open the camera. The body stays dumb;
+        # the brain recognizes the gesture, so real hardware gets it for free.
+        if (
+            self.machine.state is State.LISTENING
+            and previous_state is State.LISTENING
+            and now - previous_at <= self.double_click_s
+        ):
+            self.machine.apply("see")
+            await self.emit({"type": "camera", "open": True})
+            return
+
         if self.machine.state is State.TALKING:
             await self._interrupt()
             self.machine.apply("click")

@@ -220,6 +220,49 @@ async def test_think_fails_soft_without_cloud(tmp_path: Path) -> None:
 
 
 @pytest.mark.asyncio
+async def test_double_click_opens_camera_and_click_closes_it(tmp_path: Path) -> None:
+    friend = Friend(tmp_path, video=NullVideo(), openai_key="", show_hold_s=0, boot_s=0)
+    queue = friend.subscribe()
+    await friend.handle(Power(on=True))
+    await drain(friend, queue)
+    assert friend.state is State.LISTENING
+
+    # Two fast clicks: camera opens and stays open.
+    await friend.handle(Click())
+    await friend.handle(Click())
+    events = await drain(friend, queue)
+    assert friend.state is State.SEEING
+    assert any(e.get("type") == "camera" and e.get("open") is True for e in events)
+
+    # One click while the camera is up: back to the face.
+    await friend.handle(Click())
+    await drain(friend, queue)
+    assert friend.state is State.LISTENING
+
+    # A click right after closing must not reopen the camera.
+    await friend.handle(Click())
+    await drain(friend, queue)
+    assert friend.state is State.LISTENING
+    await friend.close()
+
+
+@pytest.mark.asyncio
+async def test_slow_clicks_do_not_open_camera(tmp_path: Path) -> None:
+    friend = Friend(tmp_path, video=NullVideo(), openai_key="", show_hold_s=0, boot_s=0)
+    friend.double_click_s = 0.1
+    queue = friend.subscribe()
+    await friend.handle(Power(on=True))
+    await drain(friend, queue)
+
+    await friend.handle(Click())
+    await asyncio.sleep(0.25)
+    await friend.handle(Click())
+    await drain(friend, queue)
+    assert friend.state is State.LISTENING
+    await friend.close()
+
+
+@pytest.mark.asyncio
 async def test_boot_sequence_passes_through_booting(tmp_path: Path) -> None:
     friend = Friend(tmp_path, video=NullVideo(), openai_key="", show_hold_s=0, boot_s=0.15)
     queue = friend.subscribe()
