@@ -51,7 +51,9 @@ def test_think_cycle_and_click_cancels() -> None:
     assert m.apply("click") is State.LISTENING
 
 
-def test_hold_is_reach() -> None:
+def test_reaching_state_cycles() -> None:
+    # The "hold" action is what the reach tool applies internally;
+    # the physical trackball hold no longer triggers it.
     m = StateMachine()
     m.apply("power_on")
     m.apply("boot_done")

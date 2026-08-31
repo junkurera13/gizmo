@@ -381,7 +381,7 @@ private struct DeviceView: View {
 
     private func helpText(for control: DeviceControl) -> String {
         if control.id == "trackball" {
-            return "Hover to navigate. Click to select. Hold to Reach."
+            return "Hover to navigate. Click to select. Double-click for camera."
         }
         if control.shortAction == "ptt" {
             return "Press and hold to talk."
@@ -433,12 +433,12 @@ private struct ConversationPanel: View {
                 Image(systemName: "power")
                     .font(.system(size: 14, weight: .semibold))
                     .frame(width: 30, height: 30)
-                    .foregroundStyle(model.deviceState == "asleep" ? Color.red : Color.primary)
+                    .foregroundStyle(model.poweredOff ? Color.red : Color.primary)
             }
             .buttonStyle(.plain)
             .background(Circle().fill(Color.primary.opacity(0.06)))
-            .help(model.deviceState == "asleep" ? "Turn Gizmo on" : "Turn Gizmo off")
-            .accessibilityLabel(model.deviceState == "asleep" ? "Turn Gizmo on" : "Turn Gizmo off")
+            .help(model.poweredOff ? "Power on (cold boot)" : "Shut down")
+            .accessibilityLabel(model.poweredOff ? "Power on" : "Shut down")
             .disabled(model.connectionStatus != .connected)
         }
         .padding(.horizontal, 16)

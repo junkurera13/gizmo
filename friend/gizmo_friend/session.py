@@ -94,6 +94,10 @@ class Friend:
         self.double_click_s = 0.45
         self._last_click_at = float("-inf")
         self._last_click_state: State | None = None
+        # The talk button works like a phone's side button: tap toggles
+        # sleep/wake, and only a hold past this threshold opens the mic.
+        self.ptt_hold_s = 0.35
+        self._ptt_press_task: asyncio.Task[None] | None = None
 
     @property
     def state(self) -> State:
@@ -185,24 +189,9 @@ class Friend:
             await self.emit({"type": "interrupted"})
 
     async def on_hold(self) -> None:
-        if not self._ready_for_input():
-            return
-        try:
-            self.machine.apply("hold")
-        except IllegalTransition:
-            return
-        await self.emit({"type": "state"})
-        result = await self._run_tool("reach", {})
-        if self.machine.state is State.REACHING:
-            self.machine.apply("done")
-        line = (
-            "It's on its way. I'm not a phone."
-            if result.get("ok")
-            else "Didn't go. We can try later."
-        )
-        await self.mouth.speak_text(line)
-        await self.emit({"type": "tool", "name": "reach", "result": result})
-        await self.emit({"type": "transcript", "role": "gizmo", "text": line})
+        # Reserved. Reaching a parent goes through conversation
+        # ("tell mom I'll be 5 mins late"), not a gesture.
+        return
 
     async def on_power(self, on: bool) -> None:
         if on:
@@ -250,21 +239,50 @@ class Friend:
         await self.emit({"type": "navigate", "direction": cleaned})
 
     async def on_push_to_talk(self, active: bool) -> None:
+        # The talk button is a phone side button: press while asleep wakes,
+        # a tap while awake sleeps, and only a hold opens the mic.
+        if self.machine.state is State.ASLEEP:
+            if active:
+                await self.on_power(True)
+            return
         if not self._ready_for_input():
             return
-        self._ptt_active = active
-        await self._ensure_connected()
+
         if active:
-            if self.machine.state is State.TALKING:
-                await self._interrupt()
-                self.machine.apply("click")
-                await self.emit({"type": "interrupted"})
-            await self.emit({"type": "ptt", "active": True})
+            self._cancel_press_watch()
+            self._ptt_press_task = asyncio.create_task(self._ptt_hold_watch())
             return
+
+        # Release before the hold threshold: it was a tap. Sleep.
+        if self._ptt_press_task and not self._ptt_press_task.done():
+            self._cancel_press_watch()
+            await self.on_power(False)
+            return
+        self._ptt_press_task = None
+
+        if not self._ptt_active:
+            return
+        self._ptt_active = False
         if self._transport:
             await self._transport.commit_audio()
             await self._transport.request_response()
         await self.emit({"type": "ptt", "active": False})
+
+    def _cancel_press_watch(self) -> None:
+        if self._ptt_press_task and not self._ptt_press_task.done():
+            self._ptt_press_task.cancel()
+        self._ptt_press_task = None
+
+    async def _ptt_hold_watch(self) -> None:
+        """Held past the threshold: now it's push-to-talk. Mic goes hot."""
+        await asyncio.sleep(self.ptt_hold_s)
+        self._ptt_active = True
+        await self._ensure_connected()
+        if self.machine.state is State.TALKING:
+            await self._interrupt()
+            self.machine.apply("click")
+            await self.emit({"type": "interrupted"})
+        await self.emit({"type": "ptt", "active": True})
 
     async def on_text(self, text: str) -> None:
         cleaned = text.strip()
@@ -279,6 +297,9 @@ class Friend:
 
     async def on_mic(self, pcm: bytes) -> None:
         if not self._ready_for_input():
+            return
+        # Mic is only hot while the talk button is held past the threshold.
+        if not self._ptt_active:
             return
         await self._ensure_connected()
         if self._transport:
@@ -518,9 +539,15 @@ class Friend:
             await self.emit({"type": "glass", "still": payload["still"], "clips": [], "page": payload})
             return payload
         if name == "reach":
+            if self.machine.can("hold"):
+                self.machine.apply("hold")
+            await self.emit({"type": "state"})
             page = self.memory.last_page()
             result = reach(self.outbox, page)
+            if self.machine.state is State.REACHING:
+                self.machine.apply("done")
             self.memory.add_episode("reached a parent" if result.get("ok") else "reach failed soft")
+            await self.emit({"type": "tool", "name": "reach", "result": result})
             return result
         return {"ok": False, "reason": "unhandled"}
 

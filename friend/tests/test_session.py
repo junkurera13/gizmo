@@ -92,7 +92,11 @@ async def test_pinecone_use_case_and_memory_restart(tmp_path: Path) -> None:
     assert page is not None
     assert page.subject == "pinecone"
     assert page.line == "pinecone"
+    # Reaching a parent goes through conversation, not a gesture.
     await friend.handle(Hold())
+    events = await drain(friend, queue)
+    assert not friend.outbox.list_pages()
+    await friend.handle(TextLine("send this to mom"))
     events = await drain(friend, queue)
     assert friend.outbox.list_pages()
     await friend.close()
@@ -153,7 +157,9 @@ async def test_power_and_navigation_use_the_body_protocol(tmp_path: Path) -> Non
     assert friend.state is State.LISTENING
     assert any(event.get("type") == "select" for event in events)
 
+    friend.ptt_hold_s = 0.05
     await friend.handle(PushToTalk(active=True))
+    await asyncio.sleep(0.15)
     events = await drain(friend, queue)
     assert any(event.get("type") == "ptt" and event.get("active") is True for event in events)
 
@@ -259,6 +265,57 @@ async def test_slow_clicks_do_not_open_camera(tmp_path: Path) -> None:
     await friend.handle(Click())
     await drain(friend, queue)
     assert friend.state is State.LISTENING
+    await friend.close()
+
+
+@pytest.mark.asyncio
+async def test_talk_button_wakes_from_sleep(tmp_path: Path) -> None:
+    friend = Friend(tmp_path, video=NullVideo(), openai_key="", show_hold_s=0, boot_s=0)
+    queue = friend.subscribe()
+    assert friend.state is State.ASLEEP
+
+    await friend.handle(PushToTalk(active=True))
+    events = await drain(friend, queue)
+    assert friend.state in {State.LISTENING, State.TALKING}
+    # The waking press is swallowed: no ptt session begins.
+    assert not any(e.get("type") == "ptt" for e in events)
+
+    # Releasing after the wake press is a no-op, not a commit.
+    await friend.handle(PushToTalk(active=False))
+    events = await drain(friend, queue)
+    assert not any(e.get("type") == "ptt" for e in events)
+    await friend.close()
+
+
+@pytest.mark.asyncio
+async def test_tap_talk_button_sleeps_hold_talks(tmp_path: Path) -> None:
+    friend = Friend(tmp_path, video=NullVideo(), openai_key="", show_hold_s=0, boot_s=0)
+    friend.ptt_hold_s = 0.1
+    queue = friend.subscribe()
+    await friend.handle(Power(on=True))
+    await drain(friend, queue)
+    assert friend.state is State.LISTENING
+
+    # Quick tap: no mic, straight to sleep.
+    await friend.handle(PushToTalk(active=True))
+    await friend.handle(PushToTalk(active=False))
+    events = await drain(friend, queue)
+    assert friend.state is State.ASLEEP
+    assert not any(e.get("type") == "ptt" for e in events)
+
+    # Press again: wakes. Then a real hold: mic opens, release commits.
+    await friend.handle(PushToTalk(active=True))
+    await friend.handle(PushToTalk(active=False))
+    await drain(friend, queue)
+    assert friend.state is State.LISTENING
+
+    await friend.handle(PushToTalk(active=True))
+    await asyncio.sleep(0.25)
+    await friend.handle(PushToTalk(active=False))
+    events = await drain(friend, queue)
+    ptt = [e.get("active") for e in events if e.get("type") == "ptt"]
+    assert ptt == [True, False]
+    assert friend.state is not State.ASLEEP
     await friend.close()
 
 

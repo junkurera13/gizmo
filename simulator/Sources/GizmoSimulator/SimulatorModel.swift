@@ -50,6 +50,13 @@ final class SimulatorModel: ObservableObject {
     // Fake battery until the real body reports one.
     @Published private(set) var batteryLevel: Double = 1.0
 
+    private var bootSound: NSSound?
+    private var hasColdBooted = false
+
+    // The hardware power toggle: physically cuts power. While off, no
+    // other control does anything. Flipping it on is the cold boot.
+    @Published private(set) var poweredOff = true
+
     private let baseHTTPURL = URL(string: "http://127.0.0.1:43147")!
     private let webSocketURL = URL(string: "ws://127.0.0.1:43147/ws")!
     private let session = URLSession(configuration: .default)
@@ -98,13 +105,24 @@ final class SimulatorModel: ObservableObject {
 
     func click() {
         DeviceHaptics.trackballTick()
-        guard deviceState != "asleep" else { return }
+        guard !poweredOff, deviceState != "asleep" else { return }
         send(["type": "click"])
     }
 
     func hold() {
-        guard deviceState != "asleep" else { return }
+        guard !poweredOff, deviceState != "asleep" else { return }
         send(["type": "hold"])
+    }
+
+    /// The Game Boy moment: one chime, same every time, synced to the
+    /// boot animation. The sound is Jun's file at glass/sounds/boot.wav.
+    private func playBootSound() {
+        let url = ProjectLocator.repositoryRoot()?
+            .appendingPathComponent("glass/sounds/boot.wav")
+        guard let url, FileManager.default.fileExists(atPath: url.path) else { return }
+        bootSound?.stop()
+        bootSound = NSSound(contentsOf: url, byReference: true)
+        bootSound?.play()
     }
 
     func drainBattery() {
@@ -112,19 +130,27 @@ final class SimulatorModel: ObservableObject {
     }
 
     func togglePower() {
-        let turnOn = deviceState == "asleep"
-        if !turnOn, isPushToTalking {
-            endPushToTalk()
+        if poweredOff {
+            // Flipping the toggle on: power arrives, cold boot begins.
+            poweredOff = false
+            hasColdBooted = false
+            send(["type": "power", "on": true])
+        } else {
+            // Flipping it off: everything stops, whatever he was doing.
+            if isPushToTalking {
+                endPushToTalk()
+            }
+            poweredOff = true
+            send(["type": "power", "on": false])
         }
-        send(["type": "power", "on": turnOn])
         NSHapticFeedbackManager.defaultPerformer.perform(.alignment, performanceTime: .now)
     }
 
     func beginPushToTalk() {
-        guard connectionStatus == .connected,
-              deviceState != "asleep",
-              !isPushToTalking
-        else { return }
+        // The body reports every press, even while asleep — the brain
+        // decides what it means (a press while sleeping wakes him).
+        // While the power toggle is off there is no power: nothing reports.
+        guard connectionStatus == .connected, !poweredOff, !isPushToTalking else { return }
 
         isPushToTalking = true
         voiceError = nil
@@ -166,11 +192,12 @@ final class SimulatorModel: ObservableObject {
     func navigate(_ direction: String) {
         guard ["up", "down", "left", "right"].contains(direction) else { return }
         DeviceHaptics.trackballTick()
-        guard deviceState != "asleep" else { return }
+        guard !poweredOff, deviceState != "asleep" else { return }
         send(["type": "navigate", "direction": direction])
     }
 
     func say(_ text: String) {
+        guard !poweredOff else { return }
         let cleaned = text.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !cleaned.isEmpty else { return }
         send(["type": "text", "text": cleaned])
@@ -310,7 +337,14 @@ final class SimulatorModel: ObservableObject {
 
         let type = object["type"] as? String ?? "event"
         if let state = object["state"] as? String {
+            let previous = deviceState
             deviceState = state
+            // The chime is for the cold boot only — the once-per-power-up
+            // ritual. Waking from sleep is silent, like a phone.
+            if state == "booting", previous == "asleep", !hasColdBooted {
+                hasColdBooted = true
+                playBootSound()
+            }
         }
         if let path = object["transport"] as? String {
             transport = path

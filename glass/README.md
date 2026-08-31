@@ -55,6 +55,16 @@ Draw, export the PNGs into the folder, then in the simulator hit **Device → Re
 
 Tools that export numbered PNG sequences: Aseprite (built for exactly this), Procreate (Animation Assist → export PNG frames), Photoshop timeline. Any of them works.
 
+## Sounds
+
+`glass/sounds/` holds Gizmo's few fixed noises. WAV files, short, mono.
+
+| File       | When it plays        | Notes                                        |
+| ---------- | -------------------- | -------------------------------------------- |
+| `boot.wav` | the moment he wakes  | The Game Boy ding. Under 2 seconds. Design the boot flipbook so its landing beat matches. |
+
+A placeholder chime lives there until Jun replaces it. jsfxr (browser, free) makes exactly this kind of 8-bit sound.
+
 ## Stills
 
 Friend already blits:

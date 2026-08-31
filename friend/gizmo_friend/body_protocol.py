@@ -1,4 +1,33 @@
-"""Stick / mic / camera events. Firmware will speak this later; laptop keys do now."""
+"""Stick / mic / camera events. Firmware will speak this later; laptop keys do now.
+
+THE CONTROL CONTRACT (locked with Jun, 2026-08-31)
+
+The body is dumb: it reports raw physical events and never interprets
+them. All meaning lives in the brain (session.py), so the simulator and
+the real hardware behave identically. The physical controls map to raw
+events like this:
+
+  on/off toggle (top-left)  -> Power(on=True/False)
+      Shutdown and boot. Off is off: firmware sends Power(off), saves,
+      and powers down. Flipping it on is the cold boot: chime + boot
+      animation, every time.
+
+  push-to-talk button        -> PushToTalk(active=True/False) on press/release
+      The brain decides what a press means:
+        tap  (released before ~0.35s)  -> sleep if awake, wake if asleep
+        hold (past ~0.35s)             -> mic hot, talk; release commits
+      The mic streams only while a hold is live.
+
+  trackball click            -> Click
+      One click: select / interrupt / close camera.
+      Two fast clicks (~0.45s, brain-detected): open the camera.
+
+  trackball hold             -> Hold   (reported, currently reserved;
+      reaching a parent happens through conversation, not a gesture)
+  trackball roll             -> Navigate(up/down/left/right)
+  camera frame               -> Frame  (image and/or hint)
+  mic audio while holding    -> MicChunk (pcm16, 24kHz mono)
+"""
 
 from __future__ import annotations
 
