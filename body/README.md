@@ -12,7 +12,7 @@ The laptop maps keys onto these events. Firmware should emit the same later (exa
 | --- | --- | --- |
 | `power` | Emulator power control; hardware mapping TBD | Explicit wake / sleep |
 | `ptt` | Pink side button down / up | Start / stop push-to-talk and commit the captured turn |
-| `click` | Trackball short press | Wake / interrupt / select |
+| `click` | Trackball short press | Interrupt / select. Does not power on |
 | `hold` | Trackball press and hold | `reach()` — queue the current page to the parent outbox |
 | `navigate` | Trackball roll / emulator drag | Move the device UI selection up, down, left, or right |
 | `frame` | World camera JPEG/RGB | `see()` / `show()` source |

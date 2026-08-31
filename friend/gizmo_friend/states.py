@@ -23,7 +23,7 @@ class IllegalTransition(Exception):
 # (from, action) -> to. Tool "done" returns to listening.
 # Hold (reach) is allowed from listening or talking.
 _TRANSITIONS: dict[tuple[State, str], State] = {
-    (State.ASLEEP, "click"): State.LISTENING,
+    (State.ASLEEP, "power_on"): State.LISTENING,
     (State.LISTENING, "click"): State.LISTENING,
     (State.LISTENING, "speech_out"): State.TALKING,
     (State.TALKING, "click"): State.LISTENING,

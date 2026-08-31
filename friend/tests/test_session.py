@@ -44,7 +44,7 @@ async def test_wake_interrupt_and_open_talk(tmp_path: Path) -> None:
     mouth.cancel = cancel  # type: ignore[method-assign]
     friend = Friend(tmp_path, mouth=mouth, video=NullVideo(), openai_key="", show_hold_s=0)
     queue = friend.subscribe()
-    await friend.handle(Click())
+    await friend.handle(Power(on=True))
     events = await drain(friend, queue)
     assert friend.state in {State.LISTENING, State.TALKING}
     assert WAKE_LINE in spoken(events)
@@ -67,7 +67,7 @@ async def test_wake_interrupt_and_open_talk(tmp_path: Path) -> None:
 async def test_pinecone_use_case_and_memory_restart(tmp_path: Path) -> None:
     friend = Friend(tmp_path, video=NullVideo(), openai_key="", show_hold_s=0)
     queue = friend.subscribe()
-    await friend.handle(Click())
+    await friend.handle(Power(on=True))
     await drain(friend, queue)
     await friend.handle(TextLine("I'm Rio"))
     await drain(friend, queue)
@@ -114,7 +114,7 @@ async def test_pinecone_use_case_and_memory_restart(tmp_path: Path) -> None:
 async def test_nonsense_and_remember_yesterday(tmp_path: Path) -> None:
     friend = Friend(tmp_path, video=NullVideo(), openai_key="", show_hold_s=0)
     queue = friend.subscribe()
-    await friend.handle(Click())
+    await friend.handle(Power(on=True))
     await drain(friend, queue)
     await friend.handle(TextLine("blorp zarf nine thousand bees"))
     events = await drain(friend, queue)
@@ -129,7 +129,7 @@ async def test_nonsense_and_remember_yesterday(tmp_path: Path) -> None:
 @pytest.mark.asyncio
 async def test_fake_transport_keeps_frozen_instructions(tmp_path: Path) -> None:
     friend = Friend(tmp_path, video=NullVideo(), openai_key="", show_hold_s=0)
-    await friend.handle(Click())
+    await friend.handle(Power(on=True))
     assert friend.transport_name == "fake"
     assert friend._transport is not None
     assert isinstance(friend._transport, FakeTransport)
@@ -162,6 +162,10 @@ async def test_power_and_navigation_use_the_body_protocol(tmp_path: Path) -> Non
     await friend.handle(Power(on=False))
     await drain(friend, queue)
     assert friend.state is State.ASLEEP
+    await friend.handle(Click())
+    events = await drain(friend, queue)
+    assert friend.state is State.ASLEEP
+    assert not any(event.get("type") == "select" for event in events)
     await friend.close()
 
 

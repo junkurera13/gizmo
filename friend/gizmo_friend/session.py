@@ -123,10 +123,6 @@ class Friend:
 
     async def on_click(self) -> None:
         if self.machine.state is State.ASLEEP:
-            self.machine.apply("click")
-            await self._ensure_connected()
-            await self.emit({"type": "state"})
-            await self._wake()
             return
         if self.machine.state is State.TALKING:
             await self._interrupt()
@@ -167,7 +163,10 @@ class Friend:
     async def on_power(self, on: bool) -> None:
         if on:
             if self.machine.state is State.ASLEEP:
-                await self.on_click()
+                self.machine.apply("power_on")
+                await self._ensure_connected()
+                await self.emit({"type": "state"})
+                await self._wake()
             return
         if self.machine.state is State.ASLEEP:
             return
@@ -206,7 +205,7 @@ class Friend:
         if not cleaned:
             return
         if self.machine.state is State.ASLEEP:
-            await self.on_click()
+            return
         self.memory.remember_from_utterance(cleaned)
         await self._ensure_connected()
         if self._transport:

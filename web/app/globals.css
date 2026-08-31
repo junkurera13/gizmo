@@ -1,0 +1,26 @@
+@import "tailwindcss";
+
+html,
+body {
+  min-height: 100dvh;
+  background: #000;
+}
+
+body {
+  overflow: hidden;
+}
+
+.bg-video {
+  position: fixed;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  pointer-events: none;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .bg-video {
+    display: none;
+  }
+}

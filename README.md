@@ -2,7 +2,7 @@
 
 A wizard in a kid's pocket. One face, one voice, one coat. Kids 9–14. Dry, a little weird, two sentences then stop. Magic is a chore he's good at.
 
-This repo is the device: Friend (brain), Body (firmware later), Glass (jun's 240×240 art later), Reach (parent-phone outbox).
+This repo is the device: Friend (brain), Body (firmware later), Glass (jun's 240×240 art later), Reach (parent-phone outbox). The public site lives in `web/`.
 
 **v1 runs on a laptop.** Click the stick (space / button) to wake him. Talk with the mic or by typing. Hold to send a page home. The 90-second pinecone walk is a use case, not the product — he also has to handle boredom, questions, "remember yesterday," play, and nonsense.
 
@@ -16,6 +16,7 @@ friend/           THE laptop brain — all agent code
 body/             ESP32-S3 firmware later (README only)
 glass/            1.54" 240×240 page/blit (jun drawing the face)
 reach/            parent-phone outbox stub
+web/              public site (empty until we design it)
 ```
 
 ## Run (Mac / Linux)
@@ -96,5 +97,6 @@ State machine, memory round-trip, tool allowlist (no web), prefix assembly (froz
 | Body | hardware protocol; firmware not in this slice |
 | Glass | jun's face and pages; do not lock a character sheet |
 | Reach | parent phone; local outbox only in v1 |
+| Web | public site in `web/`; not the device |
 
 Frozen prompt is in `friend/gizmo_friend/prompt.py` and `docs/FRIEND.md`. Do not invent a second personality.

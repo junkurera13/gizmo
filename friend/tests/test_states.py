@@ -3,16 +3,22 @@ import pytest
 from gizmo_friend.states import IllegalTransition, State, StateMachine
 
 
-def test_click_wakes_and_selects() -> None:
+def test_click_does_not_wake() -> None:
     m = StateMachine()
     assert m.state is State.ASLEEP
-    assert m.apply("click") is State.LISTENING
+    with pytest.raises(IllegalTransition):
+        m.apply("click")
+
+
+def test_power_on_wakes_and_click_selects() -> None:
+    m = StateMachine()
+    assert m.apply("power_on") is State.LISTENING
     assert m.apply("click") is State.LISTENING
 
 
 def test_talking_click_interrupts() -> None:
     m = StateMachine()
-    m.apply("click")
+    m.apply("power_on")
     m.apply("speech_out")
     assert m.state is State.TALKING
     assert m.apply("click") is State.LISTENING
@@ -20,14 +26,14 @@ def test_talking_click_interrupts() -> None:
 
 def test_hold_is_reach() -> None:
     m = StateMachine()
-    m.apply("click")
+    m.apply("power_on")
     assert m.apply("hold") is State.REACHING
     assert m.apply("done") is State.LISTENING
 
 
 def test_see_show_make_cycle() -> None:
     m = StateMachine()
-    m.apply("click")
+    m.apply("power_on")
     m.apply("see")
     assert m.state is State.SEEING
     m.apply("done")
@@ -44,7 +50,7 @@ def test_see_show_make_cycle() -> None:
 
 def test_screen_off_while_listening() -> None:
     m = StateMachine()
-    m.apply("click")
+    m.apply("power_on")
     assert not m.screen_on()
     assert m.screen_on(viewing_page=True)
 

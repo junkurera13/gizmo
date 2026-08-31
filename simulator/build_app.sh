@@ -13,6 +13,10 @@ mkdir -p "$APP_PATH/Contents/Resources"
 install -m 755 "$BIN_DIR/GizmoSimulator" "$APP_PATH/Contents/MacOS/GizmoSimulator"
 install -m 644 "$SCRIPT_DIR/Info.plist" "$APP_PATH/Contents/Info.plist"
 
+ICON_SOURCE="$SCRIPT_DIR/AppIcon.png"
+ICON_DESTINATION="$APP_PATH/Contents/Resources/AppIcon.icns"
+swift "$SCRIPT_DIR/tools/make_app_icon.swift" "$ICON_SOURCE" "$ICON_DESTINATION"
+
 SKIN_SOURCE="$SCRIPT_DIR/DeviceSkins/current"
 SKIN_DESTINATION="$APP_PATH/Contents/Resources/DeviceSkins/current"
 SKIN_IMAGE="$(plutil -extract imageFilename raw "$SKIN_SOURCE/skin.json")"

@@ -73,7 +73,7 @@ On wake: inject identity + running_summary + last few episodes + object index in
 | --- | --- |
 | Emulator **power** button / hardware mapping TBD | Explicit wake or sleep. |
 | Pink side button **push-to-talk** | Hold to stream 24 kHz PCM; release to commit the voice turn. |
-| Trackball / key **click** | From asleep: wake and listen. From talking: interrupt. Otherwise select. |
+| Trackball / key **click** | From asleep: ignore. From talking: interrupt. Otherwise select. |
 | Trackball **hold** / second key | Reach. Fail soft. |
 | Trackball roll / emulator drag | Emit directional navigation for the device UI. |
 | Screen | On only for showing and for a saved page. |

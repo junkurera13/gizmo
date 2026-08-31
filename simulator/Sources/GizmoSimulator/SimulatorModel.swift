@@ -93,10 +93,12 @@ final class SimulatorModel: ObservableObject {
     }
 
     func click() {
+        guard deviceState != "asleep" else { return }
         send(["type": "click"])
     }
 
     func hold() {
+        guard deviceState != "asleep" else { return }
         send(["type": "hold"])
     }
 

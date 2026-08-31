@@ -45,4 +45,5 @@ ESP32-S3, stick, mic, speaker, 1.54" 240×240 glass, world camera. Firmware live
 | `body/` | Hardware | ESP32-S3 firmware, stick / mic / speaker / camera protocol |
 | `glass/` | Jun | Face and page art, 240×240 blit |
 | `reach/` | Parent path | Phone outbox. Local stub in v1 |
+| `web/` | Public site | Landing. Not the glass. Not a second personality |
 | `docs/` | Shared | This file, Friend architecture, v1 scope |

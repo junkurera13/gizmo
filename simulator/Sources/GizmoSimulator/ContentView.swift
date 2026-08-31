@@ -317,38 +317,14 @@ private struct ConversationPanel: View {
     var body: some View {
         VStack(spacing: 0) {
             header
-            Divider()
             transcript
-            Divider()
             composer
         }
         .background(Color(nsColor: .windowBackgroundColor))
     }
 
     private var header: some View {
-        HStack(spacing: 11) {
-            ZStack {
-                Circle()
-                    .fill(Color(hex: "#D9EF00"))
-                Text("G")
-                    .font(.system(size: 15, weight: .bold, design: .rounded))
-                    .foregroundStyle(.black)
-            }
-            .frame(width: 36, height: 36)
-
-            VStack(alignment: .leading, spacing: 2) {
-                Text("Gizmo")
-                    .font(.system(size: 14, weight: .semibold))
-                HStack(spacing: 5) {
-                    Circle()
-                        .fill(connectionColor)
-                        .frame(width: 6, height: 6)
-                    Text(statusText)
-                        .font(.system(size: 11))
-                        .foregroundStyle(.secondary)
-                }
-            }
-
+        HStack {
             Spacer()
 
             Button {
@@ -366,7 +342,7 @@ private struct ConversationPanel: View {
             .disabled(model.connectionStatus != .connected)
         }
         .padding(.horizontal, 16)
-        .frame(height: 62)
+        .frame(height: 48)
     }
 
     private var transcript: some View {
@@ -445,35 +421,6 @@ private struct ConversationPanel: View {
 
     private var draftIsEmpty: Bool {
         draft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
-    }
-
-    private var statusText: String {
-        if let voiceError = model.voiceError {
-            return voiceError
-        }
-        if model.isPushToTalking {
-            return "Listening…"
-        }
-        switch model.connectionStatus {
-        case .connected:
-            return model.deviceState == "asleep" ? "Gizmo is off" : "Gizmo is here"
-        case .starting: return "Starting Gizmo…"
-        case .connecting: return "Connecting…"
-        case .failed: return "Couldn’t connect"
-        case .offline: return "Offline"
-        }
-    }
-
-    private var connectionColor: Color {
-        if model.isPushToTalking {
-            return .red
-        }
-        switch model.connectionStatus {
-        case .connected: return model.deviceState == "asleep" ? .secondary : .green
-        case .starting, .connecting: return .orange
-        case .failed: return .red
-        case .offline: return .secondary
-        }
     }
 
     private func send() {

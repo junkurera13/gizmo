@@ -8,6 +8,8 @@
     <string>Gizmo Simulator</string>
     <key>CFBundleExecutable</key>
     <string>GizmoSimulator</string>
+    <key>CFBundleIconFile</key>
+    <string>AppIcon</string>
     <key>CFBundleIdentifier</key>
     <string>studio.gizmo.simulator</string>
     <key>CFBundleInfoDictionaryVersion</key>
@@ -19,7 +21,7 @@
     <key>CFBundleShortVersionString</key>
     <string>0.1.0</string>
     <key>CFBundleVersion</key>
-    <string>1</string>
+    <string>2</string>
     <key>LSMinimumSystemVersion</key>
     <string>15.0</string>
     <key>NSAppTransportSecurity</key>
