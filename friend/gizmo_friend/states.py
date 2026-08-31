@@ -24,7 +24,7 @@ class IllegalTransition(Exception):
 # Hold (reach) is allowed from listening or talking.
 _TRANSITIONS: dict[tuple[State, str], State] = {
     (State.ASLEEP, "click"): State.LISTENING,
-    (State.LISTENING, "click"): State.ASLEEP,
+    (State.LISTENING, "click"): State.LISTENING,
     (State.LISTENING, "speech_out"): State.TALKING,
     (State.TALKING, "click"): State.LISTENING,
     (State.TALKING, "done"): State.LISTENING,
@@ -48,6 +48,12 @@ _TRANSITIONS: dict[tuple[State, str], State] = {
     (State.MAKING, "hold"): State.REACHING,
     (State.REACHING, "done"): State.LISTENING,
     (State.REACHING, "click"): State.LISTENING,
+    (State.LISTENING, "power_off"): State.ASLEEP,
+    (State.TALKING, "power_off"): State.ASLEEP,
+    (State.SEEING, "power_off"): State.ASLEEP,
+    (State.SHOWING, "power_off"): State.ASLEEP,
+    (State.MAKING, "power_off"): State.ASLEEP,
+    (State.REACHING, "power_off"): State.ASLEEP,
 }
 
 

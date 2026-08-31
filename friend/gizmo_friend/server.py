@@ -9,7 +9,7 @@ from fastapi import FastAPI, HTTPException, WebSocket, WebSocketDisconnect
 from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 
-from gizmo_friend.body_protocol import Click, Frame, Hold, MicChunk, TextLine
+from gizmo_friend.body_protocol import Click, Frame, Hold, MicChunk, Navigate, Power, PushToTalk, TextLine
 from gizmo_friend.session import Friend
 
 STATIC = Path(__file__).parent / "static"
@@ -113,6 +113,14 @@ async def _dispatch(friend: Friend, message: dict) -> None:
         await friend.handle(Click())
     elif kind == "hold":
         await friend.handle(Hold())
+    elif kind == "power":
+        await friend.handle(Power(on=bool(message.get("on", True))))
+    elif kind == "ptt":
+        await friend.handle(PushToTalk(active=bool(message.get("active", False))))
+    elif kind == "navigate":
+        direction = str(message.get("direction") or "").lower()
+        if direction in {"up", "down", "left", "right"}:
+            await friend.handle(Navigate(direction=direction))
     elif kind == "text":
         await friend.handle(TextLine(text=str(message.get("text") or "")))
     elif kind == "audio":

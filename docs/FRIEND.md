@@ -11,7 +11,7 @@ Not STT → LLM → TTS. One realtime speech-to-speech session.
 - **Reasoning:** `reasoning.effort = low`
 - **Prompt:** frozen system prompt (see below) is a **cacheable prefix** — stable, front of context. Memory is appended after it, never before.
 - **Audio:** streaming mic → model → speaker. Target: first audio under 1s.
-- **Interrupt:** stick click or key always barge-in / cancels the current response.
+- **Interrupt:** pressing push-to-talk while Gizmo speaks barges in and cancels the response.
 - **Voice:** built-in realtime voice now. `Mouth` is an interface so a Cartesia mouth can replace playback later without a rewrite.
 - **Key:** `OPENAI_API_KEY`. If missing, a **local fake transport** still runs the state machine and tools so tests and an offline demo work.
 
@@ -71,13 +71,16 @@ On wake: inject identity + running_summary + last few episodes + object index in
 
 | Input | Effect |
 | --- | --- |
-| Stick / key **click** | From asleep: wake and listen. From talking: interrupt (listen). From listening: sleep. |
-| Stick **hold** / second key | Reach. Fail soft. |
+| Emulator **power** button / hardware mapping TBD | Explicit wake or sleep. |
+| Pink side button **push-to-talk** | Hold to stream 24 kHz PCM; release to commit the voice turn. |
+| Trackball / key **click** | From asleep: wake and listen. From talking: interrupt. Otherwise select. |
+| Trackball **hold** / second key | Reach. Fail soft. |
+| Trackball roll / emulator drag | Emit directional navigation for the device UI. |
 | Screen | On only for showing and for a saved page. |
 
 ## Body protocol (stub)
 
-Laptop keys stand in for the stick. The protocol (`Click`, `Hold`, `Frame`, `Mic`) is what `body/` firmware will speak later. Friend does not contain firmware.
+Laptop keys and the clickable render stand in for the body. The protocol (`Power`, `PushToTalk`, `Click`, `Hold`, `Navigate`, `Frame`, `Mic`) is what `body/` firmware will speak later. Friend does not contain firmware.
 
 ## Open conversation
 

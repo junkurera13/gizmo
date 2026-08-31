@@ -162,6 +162,9 @@ class FakeTransport:
             beat = data.get("beat", "something.")
             await self._speak(str(beat))
         elif name == "show":
+            subject = str(data.get("subject") or "").strip()
+            if subject and subject != "thing":
+                self._last_subject = subject
             await self._speak(AFTER_SHOW)
         elif name == "make":
             await self._speak(AFTER_MAKE)

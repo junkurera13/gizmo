@@ -4,7 +4,7 @@ from pathlib import Path
 import pytest
 
 from gizmo_friend.audio_out import BroadcastMouth
-from gizmo_friend.body_protocol import Click, Frame, Hold, TextLine
+from gizmo_friend.body_protocol import Click, Frame, Hold, Navigate, Power, PushToTalk, TextLine
 from gizmo_friend.memory import Memory
 from gizmo_friend.prompt import AFTER_MAKE, AFTER_SHOW, WAKE_LINE
 from gizmo_friend.session import Friend
@@ -88,6 +88,10 @@ async def test_pinecone_use_case_and_memory_restart(tmp_path: Path) -> None:
     await friend.handle(TextLine("keep it"))
     events = await drain(friend, queue)
     assert AFTER_MAKE in spoken(events)
+    page = friend.memory.last_page()
+    assert page is not None
+    assert page.subject == "pinecone"
+    assert page.line == "pinecone"
     await friend.handle(Hold())
     events = await drain(friend, queue)
     assert friend.outbox.list_pages()
@@ -130,6 +134,34 @@ async def test_fake_transport_keeps_frozen_instructions(tmp_path: Path) -> None:
     assert friend._transport is not None
     assert isinstance(friend._transport, FakeTransport)
     assert friend._transport.instructions.startswith("You are Gizmo")
+    await friend.close()
+
+
+@pytest.mark.asyncio
+async def test_power_and_navigation_use_the_body_protocol(tmp_path: Path) -> None:
+    friend = Friend(tmp_path, video=NullVideo(), openai_key="", show_hold_s=0)
+    queue = friend.subscribe()
+
+    await friend.handle(Power(on=True))
+    await drain(friend, queue)
+    assert friend.state is State.LISTENING
+
+    await friend.handle(Click())
+    events = await drain(friend, queue)
+    assert friend.state is State.LISTENING
+    assert any(event.get("type") == "select" for event in events)
+
+    await friend.handle(PushToTalk(active=True))
+    events = await drain(friend, queue)
+    assert any(event.get("type") == "ptt" and event.get("active") is True for event in events)
+
+    await friend.handle(Navigate(direction="left"))
+    events = await drain(friend, queue)
+    assert any(event.get("type") == "navigate" and event.get("direction") == "left" for event in events)
+
+    await friend.handle(Power(on=False))
+    await drain(friend, queue)
+    assert friend.state is State.ASLEEP
     await friend.close()
 
 

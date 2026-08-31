@@ -3,11 +3,11 @@ import pytest
 from gizmo_friend.states import IllegalTransition, State, StateMachine
 
 
-def test_click_wakes_and_sleeps() -> None:
+def test_click_wakes_and_selects() -> None:
     m = StateMachine()
     assert m.state is State.ASLEEP
     assert m.apply("click") is State.LISTENING
-    assert m.apply("click") is State.ASLEEP
+    assert m.apply("click") is State.LISTENING
 
 
 def test_talking_click_interrupts() -> None:
@@ -53,3 +53,9 @@ def test_illegal_from_asleep() -> None:
     m = StateMachine()
     with pytest.raises(IllegalTransition):
         m.apply("show")
+
+
+@pytest.mark.parametrize("state", [state for state in State if state is not State.ASLEEP])
+def test_power_off_from_every_awake_state(state: State) -> None:
+    m = StateMachine(start=state)
+    assert m.apply("power_off") is State.ASLEEP

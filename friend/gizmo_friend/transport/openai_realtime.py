@@ -39,7 +39,7 @@ def session_update_payload(instructions: str) -> dict[str, Any]:
             "audio": {
                 "input": {
                     "format": {"type": "audio/pcm", "rate": 24000},
-                    "turn_detection": {"type": "semantic_vad"},
+                    "turn_detection": None,
                 },
                 "output": {
                     "format": {"type": "audio/pcm", "rate": 24000},

@@ -9,7 +9,18 @@ from pathlib import Path
 from typing import Any
 
 from gizmo_friend.audio_out import BroadcastMouth, Mouth
-from gizmo_friend.body_protocol import BodyEvent, Click, Frame, Hold, MicChunk, TextLine, WorldCamera
+from gizmo_friend.body_protocol import (
+    BodyEvent,
+    Click,
+    Frame,
+    Hold,
+    MicChunk,
+    Navigate,
+    Power,
+    PushToTalk,
+    TextLine,
+    WorldCamera,
+)
 from gizmo_friend.memory import Memory
 from gizmo_friend.prefix import assemble_prefix
 from gizmo_friend.prompt import FROZEN_PROMPT
@@ -96,6 +107,12 @@ class Friend:
             await self.on_click()
         elif isinstance(event, Hold):
             await self.on_hold()
+        elif isinstance(event, Power):
+            await self.on_power(event.on)
+        elif isinstance(event, PushToTalk):
+            await self.on_push_to_talk(event.active)
+        elif isinstance(event, Navigate):
+            await self.on_navigate(event.direction)
         elif isinstance(event, TextLine):
             await self.on_text(event.text)
         elif isinstance(event, MicChunk):
@@ -117,11 +134,8 @@ class Friend:
             await self.emit({"type": "interrupted"})
             return
         if self.machine.state is State.LISTENING:
-            self.memory.rewrite_summary()
             self.machine.apply("click")
-            self.viewing_page = False
-            self._page_lit = False
-            await self.emit({"type": "state"})
+            await self.emit({"type": "select"})
             return
         if self.machine.can("click"):
             await self._interrupt()
@@ -149,6 +163,43 @@ class Friend:
         await self.mouth.speak_text(line)
         await self.emit({"type": "tool", "name": "reach", "result": result})
         await self.emit({"type": "transcript", "role": "gizmo", "text": line})
+
+    async def on_power(self, on: bool) -> None:
+        if on:
+            if self.machine.state is State.ASLEEP:
+                await self.on_click()
+            return
+        if self.machine.state is State.ASLEEP:
+            return
+        await self._interrupt()
+        self.memory.rewrite_summary()
+        if self.machine.can("power_off"):
+            self.machine.apply("power_off")
+        self.viewing_page = False
+        self._page_lit = False
+        await self.emit({"type": "state", "power": False})
+
+    async def on_navigate(self, direction: str) -> None:
+        cleaned = direction.strip().lower()
+        if self.machine.state is State.ASLEEP or cleaned not in {"up", "down", "left", "right"}:
+            return
+        await self.emit({"type": "navigate", "direction": cleaned})
+
+    async def on_push_to_talk(self, active: bool) -> None:
+        if self.machine.state is State.ASLEEP:
+            return
+        await self._ensure_connected()
+        if active:
+            if self.machine.state is State.TALKING:
+                await self._interrupt()
+                self.machine.apply("click")
+                await self.emit({"type": "interrupted"})
+            await self.emit({"type": "ptt", "active": True})
+            return
+        if self._transport:
+            await self._transport.commit_audio()
+            await self._transport.request_response()
+        await self.emit({"type": "ptt", "active": False})
 
     async def on_text(self, text: str) -> None:
         cleaned = text.strip()

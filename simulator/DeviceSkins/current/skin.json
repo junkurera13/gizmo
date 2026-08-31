@@ -1,0 +1,49 @@
+{
+  "id": "acid-pink-v1",
+  "name": "Acid / Pink v1",
+  "imageFilename": "device-transparent.png",
+  "pressedImageFilename": "device-transparent-ptt-pressed.png",
+  "canvasWidth": 1254,
+  "canvasHeight": 1254,
+  "stageColor": "#171719",
+  "screen": {
+    "x": 0.2090,
+    "y": 0.0877,
+    "width": 0.5970,
+    "height": 0.4860,
+    "cornerRadius": 0.0360,
+    "pixelWidth": 240,
+    "pixelHeight": 240,
+    "contentMode": "fit"
+  },
+  "controls": [
+    {
+      "id": "trackball",
+      "label": "Trackball",
+      "shape": "circle",
+      "rect": {
+        "x": 0.5215,
+        "y": 0.6150,
+        "width": 0.2540,
+        "height": 0.2550
+      },
+      "shortAction": "click",
+      "longAction": "hold",
+      "longPressSeconds": 0.65
+    },
+    {
+      "id": "side",
+      "label": "Push to talk",
+      "shape": "roundedRect",
+      "rect": {
+        "x": 0.1170,
+        "y": 0.1360,
+        "width": 0.0640,
+        "height": 0.3620
+      },
+      "shortAction": "ptt",
+      "longAction": "ptt",
+      "longPressSeconds": 0.65
+    }
+  ]
+}

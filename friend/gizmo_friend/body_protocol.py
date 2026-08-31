@@ -10,6 +10,9 @@ from typing import Union
 class BodyEventType(str, Enum):
     CLICK = "click"
     HOLD = "hold"
+    POWER = "power"
+    PUSH_TO_TALK = "ptt"
+    NAVIGATE = "navigate"
     FRAME = "frame"
     MIC = "mic"
     TEXT = "text"  # laptop keyboard stand-in for a spoken line
@@ -23,6 +26,24 @@ class Click:
 @dataclass(frozen=True)
 class Hold:
     type: str = BodyEventType.HOLD.value
+
+
+@dataclass(frozen=True)
+class Power:
+    on: bool
+    type: str = BodyEventType.POWER.value
+
+
+@dataclass(frozen=True)
+class PushToTalk:
+    active: bool
+    type: str = BodyEventType.PUSH_TO_TALK.value
+
+
+@dataclass(frozen=True)
+class Navigate:
+    direction: str
+    type: str = BodyEventType.NAVIGATE.value
 
 
 @dataclass(frozen=True)
@@ -45,7 +66,7 @@ class TextLine:
     type: str = BodyEventType.TEXT.value
 
 
-BodyEvent = Union[Click, Hold, Frame, MicChunk, TextLine]
+BodyEvent = Union[Click, Hold, Power, PushToTalk, Navigate, Frame, MicChunk, TextLine]
 
 
 @dataclass
