@@ -5,7 +5,7 @@ import SwiftUI
 /// while the face is up; hidden whenever the screen is busy being a
 /// camera, a video, or a kept page.
 struct StatusBarView: View {
-    let art: HeartArt
+    let art: HeartArt?
     let level: Double
 
     var body: some View {
@@ -23,11 +23,7 @@ struct StatusBarView: View {
 
                     HStack(spacing: heartSide * 0.22) {
                         ForEach(0..<5, id: \.self) { index in
-                            Image(nsImage: image(at: index, halfSteps: halfSteps))
-                                .resizable()
-                                .interpolation(.none)
-                                .aspectRatio(contentMode: .fit)
-                                .frame(width: heartSide, height: heartSide)
+                            heart(at: index, halfSteps: halfSteps, side: heartSide)
                         }
                     }
                 }
@@ -43,7 +39,26 @@ struct StatusBarView: View {
         return formatter.string(from: date)
     }
 
-    private func image(at index: Int, halfSteps: Int) -> NSImage {
+    @ViewBuilder
+    private func heart(at index: Int, halfSteps: Int, side: CGFloat) -> some View {
+        let filled = halfSteps - index * 2
+        if let image = image(at: index, halfSteps: halfSteps) {
+            Image(nsImage: image)
+                .resizable()
+                .interpolation(.none)
+                .aspectRatio(contentMode: .fit)
+                .frame(width: side, height: side)
+        } else {
+            Image(systemName: filled > 0 ? "heart.fill" : "heart")
+                .resizable()
+                .aspectRatio(contentMode: .fit)
+                .foregroundStyle(Color.red.opacity(filled == 1 ? 0.55 : 1))
+                .frame(width: side, height: side)
+        }
+    }
+
+    private func image(at index: Int, halfSteps: Int) -> NSImage? {
+        guard let art else { return nil }
         let filled = halfSteps - index * 2
         if filled >= 2 { return art.full }
         if filled == 1 { return art.half }

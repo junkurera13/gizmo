@@ -96,7 +96,15 @@ def app_factory(data_dir: Path) -> FastAPI:
         try:
             while True:
                 message = await socket.receive_json()
-                await _dispatch(friend, message)
+                try:
+                    await _dispatch(friend, message)
+                except Exception as error:  # noqa: BLE001 - one bad action must not drop the body
+                    await friend.emit(
+                        {
+                            "type": "error",
+                            "message": f"device action failed: {error}",
+                        }
+                    )
         except WebSocketDisconnect:
             pass
         finally:

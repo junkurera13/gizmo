@@ -62,9 +62,11 @@ final class SimulatorModel: ObservableObject {
     private let session = URLSession(configuration: .default)
     private var socket: URLSessionWebSocketTask?
     private var receiveTask: Task<Void, Never>?
+    private var reconnectTask: Task<Void, Never>?
     private var backendProcess: Process?
     private var launchedBackend = false
     private var hasStarted = false
+    private var isShuttingDown = false
     private let microphone = MicrophoneCapture()
 
     private init() {}
@@ -72,6 +74,7 @@ final class SimulatorModel: ObservableObject {
     func start() {
         guard !hasStarted else { return }
         hasStarted = true
+        isShuttingDown = false
 
         Task {
             await ensureBackendAndConnect()
@@ -79,9 +82,12 @@ final class SimulatorModel: ObservableObject {
     }
 
     func reconnect() {
+        reconnectTask?.cancel()
+        reconnectTask = nil
         receiveTask?.cancel()
         socket?.cancel(with: .goingAway, reason: nil)
         socket = nil
+        connectionStatus = .connecting
 
         Task {
             await ensureBackendAndConnect()
@@ -89,6 +95,9 @@ final class SimulatorModel: ObservableObject {
     }
 
     func shutdown() {
+        isShuttingDown = true
+        reconnectTask?.cancel()
+        reconnectTask = nil
         microphone.stop()
         isPushToTalking = false
         receiveTask?.cancel()
@@ -322,11 +331,31 @@ final class SimulatorModel: ObservableObject {
                 }
             } catch {
                 if !Task.isCancelled {
-                    connectionStatus = .offline
-                    appendEvent("connection", "Friend disconnected.")
+                    markDisconnected("Friend disconnected. Reconnecting…")
                 }
                 return
             }
+        }
+    }
+
+    private func markDisconnected(_ detail: String) {
+        guard !isShuttingDown else { return }
+        connectionStatus = .offline
+        socket = nil
+        appendEvent("connection", detail)
+        scheduleReconnect()
+    }
+
+    private func scheduleReconnect() {
+        guard reconnectTask == nil, !isShuttingDown else { return }
+        reconnectTask = Task { [weak self] in
+            try? await Task.sleep(for: .milliseconds(400))
+            guard let self, !Task.isCancelled, !self.isShuttingDown else { return }
+
+            // Clear the slot before connecting so an immediate socket failure
+            // can schedule the next retry instead of leaving the UI dead.
+            self.reconnectTask = nil
+            await self.ensureBackendAndConnect()
         }
     }
 
@@ -405,6 +434,7 @@ final class SimulatorModel: ObservableObject {
                     try await socket.send(.string(text))
                 } catch {
                     appendEvent("send error", error.localizedDescription)
+                    markDisconnected("Could not reach Friend. Reconnecting…")
                 }
             }
         } catch {

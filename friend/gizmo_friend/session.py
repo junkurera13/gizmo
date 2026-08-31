@@ -204,14 +204,18 @@ class Friend:
             return
         if self._boot_task and not self._boot_task.done():
             self._boot_task.cancel()
+        self._cancel_press_watch()
         self._ptt_active = False
-        await self._interrupt()
         self.memory.rewrite_summary()
         if self.machine.can("power_off"):
             self.machine.apply("power_off")
         self.viewing_page = False
         self._page_lit = False
         await self.emit({"type": "state", "power": False})
+        # Power-off is a local body transition and must complete even if the
+        # cloud voice socket has already gone stale. Cancel cloud output only
+        # after the device is observably asleep; _interrupt itself fails soft.
+        await self._interrupt()
 
     async def _boot(self) -> None:
         """Boot moment: connect the brain while the glass plays wake-up."""
@@ -363,7 +367,18 @@ class Friend:
     async def _interrupt(self) -> None:
         self.mouth.cancel()
         if self._transport:
-            await self._transport.interrupt(played_ms=self.mouth.played_ms, item_id=self._item_id)
+            try:
+                await self._transport.interrupt(
+                    played_ms=self.mouth.played_ms,
+                    item_id=self._item_id,
+                )
+            except Exception as error:  # noqa: BLE001 - controls stay local when cloud is stale
+                await self.emit(
+                    {
+                        "type": "error",
+                        "message": f"voice interrupt failed: {error}",
+                    }
+                )
 
     async def _ensure_connected(self) -> None:
         if self._connected and self._transport:

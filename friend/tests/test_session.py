@@ -354,6 +354,49 @@ async def test_boot_cancelled_by_power_off(tmp_path: Path) -> None:
 
 
 @pytest.mark.asyncio
+async def test_power_off_survives_a_stale_voice_transport(tmp_path: Path) -> None:
+    class StaleTransport(FakeTransport):
+        async def interrupt(self, played_ms: int = 0, item_id: str = "") -> None:
+            del played_ms, item_id
+            raise RuntimeError("voice socket is gone")
+
+    friend = Friend(tmp_path, video=NullVideo(), openai_key="", show_hold_s=0, boot_s=0)
+    queue = friend.subscribe()
+    await friend.handle(Power(on=True))
+    await drain(friend, queue)
+    friend._transport = StaleTransport(lambda: friend.memory.prefix_memory())
+
+    await friend.handle(Power(on=False))
+    events = await drain(friend, queue)
+
+    assert friend.state is State.ASLEEP
+    assert any(event.get("type") == "error" for event in events)
+    await friend.close()
+
+
+@pytest.mark.asyncio
+async def test_talk_button_tap_sleeps_with_a_stale_voice_transport(tmp_path: Path) -> None:
+    class StaleTransport(FakeTransport):
+        async def interrupt(self, played_ms: int = 0, item_id: str = "") -> None:
+            del played_ms, item_id
+            raise RuntimeError("voice socket is gone")
+
+    friend = Friend(tmp_path, video=NullVideo(), openai_key="", show_hold_s=0, boot_s=0)
+    friend.ptt_hold_s = 0.1
+    queue = friend.subscribe()
+    await friend.handle(Power(on=True))
+    await drain(friend, queue)
+    friend._transport = StaleTransport(lambda: friend.memory.prefix_memory())
+
+    await friend.handle(PushToTalk(active=True))
+    await friend.handle(PushToTalk(active=False))
+    await drain(friend, queue)
+
+    assert friend.state is State.ASLEEP
+    await friend.close()
+
+
+@pytest.mark.asyncio
 async def test_idle_auto_sleep(tmp_path: Path) -> None:
     friend = Friend(
         tmp_path, video=NullVideo(), openai_key="", show_hold_s=0, boot_s=0, idle_sleep_s=1.0

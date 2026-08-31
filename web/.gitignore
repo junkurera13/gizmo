@@ -39,3 +39,6 @@ yarn-error.log*
 # typescript
 *.tsbuildinfo
 next-env.d.ts
+
+# Office-licensed; do not ship
+/app/fonts/NeueHaasGroteskTextPro-*.ttf

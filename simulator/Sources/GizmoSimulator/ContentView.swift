@@ -122,11 +122,10 @@ private struct DeviceView: View {
                 viewfinder
             } else if let spriteName, let animation = spriteStore.animation(for: spriteName) {
                 SpriteAnimationView(animation: animation)
-            } else if let faceMode {
-                GizmoFaceView(mode: faceMode)
             }
 
             statusBar
+                .frame(width: rect.width, height: rect.height, alignment: .top)
                 .animation(.easeOut(duration: 0.28), value: statusBarVisible)
         }
         .frame(width: rect.width, height: rect.height)
@@ -163,11 +162,7 @@ private struct DeviceView: View {
                 }
                 .foregroundStyle(Color.white.opacity(0.4))
             } else {
-                GizmoFaceView(mode: .thinking)
-            }
-
-            if let head = spriteStore.animations["see"] {
-                SpriteAnimationView(animation: head)
+                Color.black
             }
         }
     }
@@ -181,8 +176,8 @@ private struct DeviceView: View {
 
     @ViewBuilder
     private var statusBar: some View {
-        if statusBarVisible, let hearts = spriteStore.hearts {
-            StatusBarView(art: hearts, level: model.batteryLevel)
+        if statusBarVisible {
+            StatusBarView(art: spriteStore.hearts, level: model.batteryLevel)
                 .transition(.opacity)
         }
     }
@@ -202,21 +197,6 @@ private struct DeviceView: View {
             return "show"
         case "thinking", "making", "reaching":
             return "think"
-        default:
-            return nil
-        }
-    }
-
-    private var faceMode: GizmoFaceMode? {
-        switch model.deviceState {
-        case "booting":
-            return .booting
-        case "listening":
-            return model.isPushToTalking ? .attentive : .idle
-        case "talking":
-            return .talking
-        case "thinking", "seeing", "showing", "making", "reaching":
-            return .thinking
         default:
             return nil
         }

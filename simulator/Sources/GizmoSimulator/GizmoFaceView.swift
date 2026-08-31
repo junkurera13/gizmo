@@ -24,7 +24,6 @@ struct GizmoFaceView: View {
                 draw(in: &context, size: size, now: timeline.date)
             }
         }
-        .background(Color.black)
         .onAppear {
             if mode == .booting { bootStarted = Date() }
         }

@@ -37,18 +37,26 @@ final class MicrophoneCapture: @unchecked Sendable {
         self.converter = converter
         input.installTap(onBus: 0, bufferSize: 2_048, format: sourceFormat) { buffer, _ in
             let ratio = targetFormat.sampleRate / sourceFormat.sampleRate
-            let capacity = AVAudioFrameCount(ceil(Double(buffer.frameLength) * ratio)) + 1
+            let capacity = AVAudioFrameCount(ceil(Double(buffer.frameLength) * ratio)) + 32
             guard let converted = AVAudioPCMBuffer(pcmFormat: targetFormat, frameCapacity: capacity) else {
                 return
             }
 
-            do {
-                try converter.convert(to: converted, from: buffer)
-            } catch {
-                return
+            let input = ConverterInput(buffer)
+            var conversionError: NSError?
+            let status = converter.convert(to: converted, error: &conversionError) { _, inputStatus in
+                if input.supplied {
+                    inputStatus.pointee = .noDataNow
+                    return nil
+                }
+                input.supplied = true
+                inputStatus.pointee = .haveData
+                return input.buffer
             }
 
-            guard converted.frameLength > 0,
+            guard conversionError == nil,
+                  status != .error,
+                  converted.frameLength > 0,
                   let bytes = converted.audioBufferList.pointee.mBuffers.mData
             else { return }
 
@@ -67,6 +75,15 @@ final class MicrophoneCapture: @unchecked Sendable {
         engine.stop()
         converter = nil
         running = false
+    }
+}
+
+private final class ConverterInput: @unchecked Sendable {
+    let buffer: AVAudioPCMBuffer
+    var supplied = false
+
+    init(_ buffer: AVAudioPCMBuffer) {
+        self.buffer = buffer
     }
 }
 
