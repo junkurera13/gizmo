@@ -1,85 +1,26 @@
 from __future__ import annotations
 
-ALLOWED_TOOLS = ("see", "show", "make", "think", "reach")
-FORBIDDEN_TOOLS = ("web_search", "browser", "search", "mcp", "code_interpreter")
+# Google Search is a native Gemini tool and is deliberately not represented as
+# an application function. These are the only functions Gizmo itself executes.
+ALLOWED_TOOLS = ("deep_think", "set_expression")
+RETIRED_AGENT_TOOLS = ("make", "reach", "see", "show", "think")
+FUTURE_MEDIA_TOOLS = ("show_image", "show_video")
 
 TOOL_SCHEMAS: list[dict] = [
     {
         "type": "function",
-        "name": "see",
+        "name": "deep_think",
         "description": (
-            "Look out the world camera. Name what's there in one beat. "
-            "Use only when this moment needs looking. The body provides the frame; "
-            "you may omit image."
-        ),
-        "parameters": {
-            "type": "object",
-            "properties": {
-                "image": {
-                    "type": "string",
-                    "description": "Unused. The current outward frame is grabbed by the body.",
-                }
-            },
-            "additionalProperties": False,
-        },
-    },
-    {
-        "type": "function",
-        "name": "show",
-        "description": (
-            "Show the thing in our print look: one still, then at most two short clips. "
-            "Never photoreal, never their face, never a third clip, never a player."
-        ),
-        "parameters": {
-            "type": "object",
-            "properties": {
-                "subject": {
-                    "type": "string",
-                    "description": "What to show, in a few words (e.g. pinecone).",
-                }
-            },
-            "required": ["subject"],
-            "additionalProperties": False,
-        },
-    },
-    {
-        "type": "function",
-        "name": "make",
-        "description": (
-            "Keep one page — the still plus one line you wrote together. Instant. Tomorrow you still have it."
-        ),
-        "parameters": {
-            "type": "object",
-            "properties": {
-                "line": {
-                    "type": "string",
-                    "description": "The one line on the page.",
-                },
-                "subject": {
-                    "type": "string",
-                    "description": "Optional. What the page is of.",
-                },
-            },
-            "required": ["line"],
-            "additionalProperties": False,
-        },
-    },
-    {
-        "type": "function",
-        "name": "think",
-        "description": (
-            "Go quiet and think hard. Use only for genuinely difficult questions — real "
-            "math, science why-chains, anything you might get wrong answering from the hip. "
-            "Say one short beat line first (like 'Hold on. Big one.'), then call this. "
-            "Re-voice the answer in your own words. Never use it for chat, feelings, or "
-            "things you already know."
+            "Privately ask the deeper reasoning model to solve a genuinely difficult question. "
+            "Use for multi-step reasoning, difficult math or science, or when a quick answer may "
+            "be wrong. After the result returns, answer the user in Gizmo's own voice."
         ),
         "parameters": {
             "type": "object",
             "properties": {
                 "question": {
                     "type": "string",
-                    "description": "The hard question, complete and self-contained.",
+                    "description": "The complete question and any context needed to solve it.",
                 }
             },
             "required": ["question"],
@@ -88,14 +29,20 @@ TOOL_SCHEMAS: list[dict] = [
     },
     {
         "type": "function",
-        "name": "reach",
+        "name": "set_expression",
         "description": (
-            "They asked to send the current page home. Queue it to a parent's phone. "
-            "Not a live call. You are not a phone."
+            "Set Gizmo's face expression when a visible emotional beat helps. "
+            "Do not call it for every reply."
         ),
         "parameters": {
             "type": "object",
-            "properties": {},
+            "properties": {
+                "expression": {
+                    "type": "string",
+                    "enum": ["idle", "curious", "thinking", "happy", "concerned", "surprised"],
+                }
+            },
+            "required": ["expression"],
             "additionalProperties": False,
         },
     },
@@ -103,14 +50,11 @@ TOOL_SCHEMAS: list[dict] = [
 
 
 def assert_allowlist(schemas: list[dict] | None = None) -> list[str]:
-    names = [s["name"] for s in (schemas if schemas is not None else TOOL_SCHEMAS)]
-    extra = [n for n in names if n not in ALLOWED_TOOLS]
+    names = [str(schema.get("name") or "") for schema in (schemas or TOOL_SCHEMAS)]
+    extra = [name for name in names if name not in ALLOWED_TOOLS]
     if extra:
         raise ValueError(f"tools not on allowlist: {extra}")
-    forbidden = [n for n in names if n in FORBIDDEN_TOOLS]
-    if forbidden:
-        raise ValueError(f"forbidden tools: {forbidden}")
-    missing = [n for n in ALLOWED_TOOLS if n not in names]
+    missing = [name for name in ALLOWED_TOOLS if name not in names]
     if missing:
         raise ValueError(f"missing tools: {missing}")
     return names

@@ -7,15 +7,11 @@ from collections.abc import Callable
 from typing import Any
 
 from gizmo_friend.prefix import PrefixMemory
-from gizmo_friend.prompt import AFTER_MAKE, AFTER_SHOW, wake_speech
+from gizmo_friend.prompt import wake_speech
 from gizmo_friend.transport.base import TransportEvent
 
 ContextFn = Callable[[], PrefixMemory]
 
-_SEE = re.compile(r"\b(look|see|what(?:'s| is) (?:this|that)|camera|point)\b", re.I)
-_SHOW = re.compile(r"\b(show|spell|make it move|do the (?:thing|spell))\b", re.I)
-_MAKE = re.compile(r"\b(keep|save|make (?:a )?page|remember this (?:one|page)|mine)\b", re.I)
-_REACH = re.compile(r"\b(send|mom|dad|parent|phone|reach)\b", re.I)
 _THINK = re.compile(
     r"\b(why\b|explain|what if|how (?:does|do|come|far|many|much|old|big|long))", re.I
 )
@@ -46,17 +42,8 @@ def _two_sentences(text: str) -> str:
 
 def classify(text: str) -> tuple[str, dict[str, Any]]:
     t = text.strip()
-    if _SEE.search(t) and not _SHOW.search(t):
-        return "see", {}
-    if _SHOW.search(t):
-        subject = "pinecone" if "pine" in t.lower() else "thing"
-        return "show", {"subject": subject}
-    if _MAKE.search(t):
-        return "make", {"line": t.strip()}
-    if _REACH.search(t):
-        return "reach", {}
     if _THINK.search(t):
-        return "think", {"question": t}
+        return "deep_think", {"question": t}
     return "talk", {"text": t}
 
 
@@ -107,17 +94,7 @@ class FakeTransport:
 
     async def send_text(self, text: str) -> None:
         intent, args = classify(text)
-        if intent in {"see", "show", "make", "reach", "think"}:
-            if intent == "show":
-                subject = str(args.get("subject") or "thing")
-                if subject == "thing":
-                    args["subject"] = self._last_subject
-                else:
-                    self._last_subject = subject
-            if intent == "make":
-                args["subject"] = args.get("subject") or self._last_subject
-                if args.get("line") == text.strip():
-                    args["line"] = self._last_subject
+        if intent == "deep_think":
             self._pending_tool = intent
             await self._queue.put(
                 TransportEvent(
@@ -134,6 +111,9 @@ class FakeTransport:
 
     async def send_audio(self, pcm: bytes) -> None:
         del pcm  # fake has no STT; laptop typed path covers tests
+
+    async def begin_audio(self) -> None:
+        return
 
     async def commit_audio(self) -> None:
         return
@@ -163,26 +143,11 @@ class FakeTransport:
             data = json.loads(output) if output else {}
         except json.JSONDecodeError:
             data = {}
-        if name == "see":
-            beat = data.get("beat", "something.")
-            await self._speak(str(beat))
-        elif name == "show":
-            subject = str(data.get("subject") or "").strip()
-            if subject and subject != "thing":
-                self._last_subject = subject
-            await self._speak(AFTER_SHOW)
-        elif name == "make":
-            await self._speak(AFTER_MAKE)
-        elif name == "think":
+        if name == "deep_think":
             if data.get("ok") and data.get("answer"):
                 await self._speak(str(data["answer"]), cap=False)
             else:
                 await self._speak(str(data.get("say") or "Big one. I don't have it right now."))
-        elif name == "reach":
-            if data.get("ok"):
-                await self._speak("It's on its way. I'm not a phone.")
-            else:
-                await self._speak("Didn't go. We can try later.")
         else:
             await self._speak("Okay.")
 

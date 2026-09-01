@@ -10,13 +10,13 @@ from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 
 from gizmo_friend.body_protocol import Frame, MicChunk, Navigate, Power, PushToTalk, Select, TextLine
-from gizmo_friend.session import Friend
+from gizmo_friend.session import GizmoSession
 
 STATIC = Path(__file__).parent / "static"
 
 
 def app_factory(data_dir: Path) -> FastAPI:
-    friend = Friend(data_dir)
+    friend = GizmoSession(data_dir)
 
     @asynccontextmanager
     async def lifespan(app: FastAPI):
@@ -117,7 +117,7 @@ def app_factory(data_dir: Path) -> FastAPI:
     return app
 
 
-async def _dispatch(friend: Friend, message: dict) -> None:
+async def _dispatch(friend: GizmoSession, message: dict) -> None:
     kind = message.get("type")
     if kind == "select":
         await friend.handle(Select())

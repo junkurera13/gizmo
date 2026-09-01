@@ -18,7 +18,7 @@ simulator and real hardware behave identically.
   up/down rocker             -> Navigate(up/down)
   select button              -> Select
       Selects the focused item or interrupts current output. It does not
-      open the camera; camera capture is requested by the agent's see path.
+      open the camera; camera frames arrive independently from Oddity OS.
   camera frame               -> Frame  (image and/or hint)
   mic audio while holding    -> MicChunk (pcm16, 24kHz mono)
 """

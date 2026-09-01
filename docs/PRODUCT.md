@@ -23,7 +23,7 @@ Used only when this moment needs them. Default is talk. Full craft: `docs/CRAFT.
 | **Make** | They want to keep it. | One page: the still plus one line they wrote together. Tomorrow he still has it. |
 | **Reach** | They ask to send the page home. | That page lands on a parent's phone. He is not a phone. Not a live call. |
 
-No web search. No third clip. No "want to watch another." After the page is theirs, stop.
+No unsolicited feed or browsing theater. Google Search is a quiet grounding tool when a current or accuracy-sensitive answer needs it.
 
 ## Kid line / parent line
 

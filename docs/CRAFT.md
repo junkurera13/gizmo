@@ -49,5 +49,5 @@ Easy question → talk. Hard question → think. Visual question → show.
 
 ## Not verbs (on purpose)
 
-No web search. No app grid. No menu. No games yet. No "want to watch another."
+No unsolicited feed. Search stays invisible and serves the conversation. No app grid, games, or "want to watch another."
 No third clip. No teacher voice. After the page is theirs, stop.

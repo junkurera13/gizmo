@@ -2,22 +2,21 @@
 
 A wizard in a kid's pocket. One face, one voice, one coat. Kids 9–14. Dry, a little weird, two sentences then stop. Magic is a chore he's good at.
 
-This repo is the device: Friend (brain), Body (firmware later), Glass (jun's 240×240 art later), Reach (parent-phone outbox). The public site lives in `web/`.
+This repo is the device: GizmoSession (brain), Body (firmware later), Glass (device renderer), and the native emulator. The public site lives in `web/`.
 
-**v1 runs on a laptop.** Use the power control for a cold boot or hard shutdown. Tap the pink PTT button to sleep or wake; hold it to talk. Use the up/down rocker and Select for device UI. The 90-second pinecone walk is a use case, not the product — he also has to handle boredom, questions, "remember yesterday," play, and nonsense.
+**v1 runs on a laptop.** The existing emulator connects to the same WebSocket contract the eventual ESP32-S3 body will use. Gemini 3.1 Flash Live handles realtime voice and vision; Memobase supplies persistent user memory; Gemini 3.7 Flash is available only through `deep_think()`.
 
 ## Tree
 
 ```
-docs/PRODUCT.md   companion + six verbs
-docs/CRAFT.md     what he actually does — talk / think / see / show / make / reach
-docs/FRIEND.md    realtime talk, memory, tools, states, frozen prompt
+docs/PRODUCT.md   product principles
+docs/FRIEND.md    current brain architecture and runtime contract
 docs/V1.md        what v1 is and is not
 docs/ROADMAP.md   from held prototype to magic
-friend/           THE laptop brain — all agent code
+friend/           GizmoSession, providers, Gemini transport, and server
 body/             ESP32-S3 firmware later (README only)
-glass/            1.54" 240×240 page/blit (jun drawing the face)
-reach/            parent-phone outbox stub
+glass/            device renderer assets
+simulator/        native macOS emulator
 web/              public site (empty until we design it)
 ```
 
@@ -37,17 +36,15 @@ Or: `python -m gizmo_friend` from a venv with this repo installed.
 
 | Variable | Required | What |
 | --- | --- | --- |
-| `OPENAI_API_KEY` | for live voice | OpenAI Realtime, model `gpt-realtime-2.1-mini`. Also powers `think()`. If missing, a local fake transport still runs the state machine and tools. |
-| `OPENROUTER_API_KEY` | no | Deep think fallback when `OPENAI_API_KEY` is unset. No realtime speech — live voice still needs the OpenAI key. |
-| `GIZMO_THINK_MODEL` | no | Reasoning model for hard questions. Default `gpt-5.6-terra` (`openai/gpt-5.6-terra` via OpenRouter). |
-| `FAL_KEY` | no | MiniMax H3 Max image-to-video for `show()` clips. If missing, he still does the still and the spoken line. |
-| `GIZMO_DATA_DIR` | no | sqlite + saved pages. Default `./data`. Survives restart. |
+| `GEMINI_API_KEY` | for live agent | Gemini 3.1 Flash Live and Gemini 3.7 Flash `deep_think()`. If absent, the local fake transport keeps device flows testable. |
+| `GIZMO_USER_ID` | recommended | Stable owner/device identity across separate sessions. |
+| `MEMOBASE_URL` | for persistent memory | Root URL of the self-hosted Railway Memobase service. |
+| `MEMOBASE_API_KEY` | for persistent memory | Memobase project token. |
+| `GIZMO_DATA_DIR` | no | Final transcript JSONL and transitional device data. Default `./data`. |
 
 ### Talk to him
 
-**Browser (laptop body stub):** open the URL. **Power on** cold-boots Gizmo. Tap **PTT** to sleep or wake; hold it while talking. Use **Up**, **Down**, and **Select** for the device UI. Type a line as a laptop-only input. **Point** injects a world-camera hint (there is no ESP32 camera yet).
-
-The glass is 240×240 and **off** unless he is showing or you are looking at a saved page. No player UI. At most two clips.
+**Native emulator:** launch `Gizmo Simulator.app`. **Power on** cold-boots Gizmo. Tap **PTT** to sleep or wake; hold it while talking. Use **Up**, **Down**, and **Select** for device UI. Camera frames and 24 kHz PCM travel over the existing body WebSocket; the backend resamples mic audio to Gemini's 16 kHz input.
 
 **Terminal:** `gizmo --cli`
 
@@ -55,35 +52,29 @@ The glass is 240×240 and **off** unless he is showing or you are looking at a s
 > /power on
 > I'm Maya
 > I have a dog named Toast
-> /look a pinecone on the table
-> what is this
-> show me
-> keep it
-> send this home
+> why is the sky blue?
 > /power off
 ```
 
 ## Memory
 
-Sqlite at `$GIZMO_DATA_DIR/gizmo.db` (or `./data/gizmo.db`).
+Self-hosted Memobase is behind a `MemoryProvider` interface. `GizmoSession` fetches compact context once at session start and appends it after the stable system prompt. Final user/Gizmo transcripts are saved to `$GIZMO_DATA_DIR/transcripts/<session>.jsonl`; completed turns are sent to Memobase in background tasks and flushed on sleep or shutdown.
 
-- identity: name + facts they told him
-- running summary (rewritten when he sleeps)
-- timestamped episodes
-- objects: saved pages
+Railway contains four services: `gizmo-brain`, `memobase`, `postgres`, and `redis`. The complete Singapore-region project is declared in `.railway/railway.ts`. Railway manages the database credentials and volumes; the Postgres resource uses the pgvector image required by Memobase. `gizmo-brain` has its own persistent `/data` volume for transcripts.
 
-Tell him your name and a fact, quit, start again. He still has it. He will not dump memory at you.
+After creating and linking an empty Railway project, provision it with:
 
-## Pinecone use case (not the whole product)
+```bash
+npm install
+npx railway config plan
+npx railway config apply
+```
 
-1. Wake. If he doesn't know the name, he asks once.
-2. Point the camera at a pinecone (`/look a pinecone` or the Point field).
-3. Ask what it is — `see`.
-4. Ask him to show it — still, then at most two clips, print look. Screen off. Something like "Yeah. That's the whole spell."
-5. Keep a page — `make`. "Yours. I don't lose stuff."
-6. Ask Gizmo to send it home — `reach`. The page is in `data/outbox.jsonl`, not a live call.
+Set `GEMINI_API_KEY` on `gizmo-brain`, and `ACCESS_TOKEN` plus `MEMOBASE_LLM_API_KEY` on `memobase`, using Railway secrets rather than source files. The IaC file marks those values with `preserve()` so future applies retain them. Generate a public Railway domain for `gizmo-brain` after its first healthy deployment; Postgres, Redis, and Memobase remain on Railway's private network.
 
-Then talk about nothing. If he only works for the pinecone, we failed.
+## Tools
+
+The model-facing V1 functions are `deep_think(question)` and `set_expression(expression)`. Google Search is Gemini's native grounding tool, not a custom search function. `make`, `reach`, `see`, `show`, and the old text-router fallback are not part of the active agent. `show_image()` and `show_video()` exist only as future interfaces; no Adaptive Media pipeline is implemented.
 
 ## Tests
 
@@ -91,16 +82,16 @@ Then talk about nothing. If he only works for the pinecone, we failed.
 pytest
 ```
 
-State machine, memory round-trip, tool allowlist (no web), prefix assembly (frozen prompt first), interrupt, open conversation + pinecone path on the fake transport.
+Tests cover the device state machine, PTT pre-roll, 24→16 kHz conversion, Gemini event mapping, native Search configuration, camera forwarding, transcript persistence, provider memory flow, and fail-soft controls.
 
 ## Who owns what
 
 | | |
 | --- | --- |
-| Friend | realtime brain in `friend/` |
+| GizmoSession | session lifecycle, identity, transcripts, memory, tools, and recovery in `friend/` |
 | Body | hardware protocol; firmware not in this slice |
-| Glass | jun's face and pages; do not lock a character sheet |
-| Reach | parent phone; local outbox only in v1 |
+| Glass | character display renderer |
+| Memobase | persistent user memory, self-hosted on Railway |
 | Web | public site in `web/`; not the device |
 
 Frozen prompt is in `friend/gizmo_friend/prompt.py` and `docs/FRIEND.md`. Do not invent a second personality.

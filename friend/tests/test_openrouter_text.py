@@ -15,9 +15,9 @@ from gizmo_friend.transport.openrouter_text import OpenRouterTextTransport, chat
 def test_chat_tools_wrap_realtime_schemas() -> None:
     tools = chat_tools()
     names = [t["function"]["name"] for t in tools]
-    assert names == ["see", "show", "make", "think", "reach"]
+    assert names == ["deep_think", "set_expression"]
     assert all(t["type"] == "function" for t in tools)
-    think = next(t for t in tools if t["function"]["name"] == "think")
+    think = next(t for t in tools if t["function"]["name"] == "deep_think")
     assert "question" in think["function"]["parameters"]["properties"]
 
 
@@ -68,7 +68,7 @@ async def test_tool_call_round_trip() -> None:
                             {
                                 "id": "call-1",
                                 "function": {
-                                    "name": "think",
+                                    "name": "deep_think",
                                     "arguments": json.dumps({"question": "why is the sky blue?"}),
                                 },
                             }
@@ -90,7 +90,7 @@ async def test_tool_call_round_trip() -> None:
     call = await _next(transport)
     assert (beat.kind, beat.text) == ("transcript", "Hold on. Big one.")
     assert call.kind == "function_call"
-    assert call.name == "think"
+    assert call.name == "deep_think"
     assert call.arguments == {"question": "why is the sky blue?"}
 
     await transport.submit_tool_output("call-1", json.dumps({"ok": True, "answer": "scatters"}))
@@ -136,82 +136,14 @@ async def test_cloud_error_fails_soft() -> None:
 
 
 @pytest.mark.asyncio
-async def test_openai_falls_back_to_text_brain(
+async def test_openrouter_key_does_not_enable_a_custom_router(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    import gizmo_friend.session as session_mod
-
-    class BoomRealtime:
-        def __init__(self, key: str) -> None:
-            del key
-
-        async def connect(self, instructions: str) -> None:
-            raise RuntimeError("insufficient_quota")
-
-    class StubText:
-        def __init__(self, key: str) -> None:
-            del key
-            self._queue: asyncio.Queue[TransportEvent | None] = asyncio.Queue()
-            self.instructions = ""
-
-        async def connect(self, instructions: str) -> None:
-            self.instructions = instructions
-
-        async def close(self) -> None:
-            await self._queue.put(None)
-
-        async def interrupt(self, played_ms: int = 0, item_id: str = "") -> None:
-            return
-
-        async def send_text(self, text: str) -> None:
-            await self._queue.put(TransportEvent(kind="transcript", text=f"echo: {text}"))
-            await self._queue.put(TransportEvent(kind="done"))
-
-        async def send_audio(self, pcm: bytes) -> None:
-            return
-
-        async def commit_audio(self) -> None:
-            return
-
-        async def request_response(self) -> None:
-            await self._queue.put(TransportEvent(kind="transcript", text="Hey. I'm here."))
-            await self._queue.put(TransportEvent(kind="done"))
-
-        def __aiter__(self) -> "StubText":
-            return self
-
-        async def __anext__(self) -> TransportEvent:
-            item = await self._queue.get()
-            if item is None:
-                raise StopAsyncIteration
-            return item
-
     monkeypatch.setenv("OPENROUTER_API_KEY", "or-key")
-    monkeypatch.setattr(session_mod, "OpenAIRealtimeTransport", BoomRealtime)
-    monkeypatch.setattr(session_mod, "OpenRouterTextTransport", StubText)
-
-    friend = Friend(tmp_path, video=NullVideo(), openai_key="sk-dead", show_hold_s=0, boot_s=0)
-    queue = friend.subscribe()
+    friend = Friend(tmp_path, video=NullVideo(), gemini_key="", show_hold_s=0, boot_s=0)
     await friend.handle(Power(on=True))
-
-    events = []
-    for _ in range(20):
-        try:
-            events.append(await asyncio.wait_for(queue.get(), timeout=0.4))
-        except TimeoutError:
-            break
-
-    assert friend.transport_name == "openrouter"
+    assert friend._boot_task is not None
+    await friend._boot_task
+    assert friend.transport_name == "fake"
     assert friend.state in {State.LISTENING, State.TALKING}
-    assert any("openai unreachable" in str(e.get("message")) for e in events if e.get("type") == "error")
-    assert any(e.get("type") == "transcript" for e in events)
-
-    await friend.handle(TextLine("hello"))
-    replies = []
-    for _ in range(10):
-        try:
-            replies.append(await asyncio.wait_for(queue.get(), timeout=0.4))
-        except TimeoutError:
-            break
-    assert any("echo: hello" in str(e.get("text")) for e in replies if e.get("type") == "transcript")
     await friend.close()

@@ -1,6 +1,6 @@
 # Friend
 
-Laptop brain. Realtime talk, sqlite memory, six verbs. This is the only place agent code lives.
+Gizmo brain. Gemini Live, Memobase-backed persistent memory, transcripts, and typed tools. This is the only place agent code lives.
 
 Run from the **repo root** (see root `README.md`).
 
@@ -13,11 +13,10 @@ gizmo --cli            # keyboard in the terminal
 pytest
 ```
 
-- `OPENAI_API_KEY` — live OpenAI Realtime (`gpt-realtime-2.1-mini`)
+- `GEMINI_API_KEY` — Gemini 3.1 Flash Live plus Gemini 3.7 Flash for `deep_think()`
 - without a key — fake transport, same state machine and tools
-- `OPENROUTER_API_KEY` — optional deep-think fallback (no realtime speech)
-- `GIZMO_THINK_MODEL` — optional reasoning model for `think()` (default `gpt-5.6-terra`)
-- `FAL_KEY` — optional MiniMax H3 Max clips for `show()`
-- `GIZMO_DATA_DIR` — sqlite + pages (default `./data`)
+- `MEMOBASE_URL` / `MEMOBASE_API_KEY` — self-hosted Memobase on Railway
+- `GIZMO_USER_ID` — stable owner/device identity across sessions
+- `GIZMO_DATA_DIR` — final transcript JSONL and transitional device data (default `./data`)
 
 Architecture: `docs/FRIEND.md`. Product: `docs/PRODUCT.md`. Craft: `docs/CRAFT.md`.

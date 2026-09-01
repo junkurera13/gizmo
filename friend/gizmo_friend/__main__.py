@@ -16,7 +16,11 @@ def main() -> None:
     load_dotenv()
     parser = argparse.ArgumentParser(prog="gizmo", description="Gizmo Friend — laptop brain")
     parser.add_argument("--host", default="0.0.0.0")
-    parser.add_argument("--port", type=int, default=int(os.environ.get("GIZMO_PORT", "43147")))
+    parser.add_argument(
+        "--port",
+        type=int,
+        default=int(os.environ.get("GIZMO_PORT") or os.environ.get("PORT") or "43147"),
+    )
     parser.add_argument("--data-dir", type=Path, default=None)
     parser.add_argument("--cli", action="store_true", help="keyboard only, no browser")
     args = parser.parse_args()

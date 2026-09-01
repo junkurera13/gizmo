@@ -33,7 +33,7 @@ Close the gap between "demo" and "friend." Mostly polish, highest leverage.
 
 The first real spell. Show stops being a still and becomes a custom clip.
 
-- Wire H3 Max via fal (`FAL_KEY` hook already exists in `tools/show.py`)
+- Explore H3 Max only when Adaptive Media work begins; it is outside the brain V1
 - "How did the rocket take off?" → he talks while a short clip he conjured plays on the glass
 - Print look holds: stylized, never photoreal, never their face
 - Cache clips, cap spend, degrade gracefully to the still when the cloud is slow

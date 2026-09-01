@@ -3,9 +3,9 @@ from __future__ import annotations
 import os
 from pathlib import Path
 
-from gizmo_friend.session import Friend
+from gizmo_friend.session import Friend, GizmoSession
 
-__all__ = ["Friend"]
+__all__ = ["Friend", "GizmoSession"]
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 

@@ -89,6 +89,9 @@ class OpenRouterTextTransport:
     async def send_audio(self, pcm: bytes) -> None:
         del pcm  # text brain has no ears; the composer is the mouth-side input
 
+    async def begin_audio(self) -> None:
+        return
+
     async def commit_audio(self) -> None:
         return
 

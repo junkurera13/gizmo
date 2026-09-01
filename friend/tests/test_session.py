@@ -1,13 +1,16 @@
 import asyncio
+import json
 from pathlib import Path
 
 import pytest
 
 from gizmo_friend.audio_out import BroadcastMouth
-from gizmo_friend.body_protocol import Frame, Navigate, Power, PushToTalk, Select, TextLine
+from gizmo_friend.brain.memory import MemoryMessage, MemoryProvider
+from gizmo_friend.body_protocol import Frame, MicChunk, Navigate, Power, PushToTalk, Select, TextLine
 from gizmo_friend.memory import Memory
-from gizmo_friend.prompt import AFTER_MAKE, AFTER_SHOW, WAKE_LINE
-from gizmo_friend.session import Friend
+from gizmo_friend.prefix import PrefixMemory
+from gizmo_friend.prompt import WAKE_LINE
+from gizmo_friend.session import Friend, GizmoSession
 from gizmo_friend.states import State
 from gizmo_friend.tools.show import NullVideo
 from gizmo_friend.transport.fake import FakeTransport, _two_sentences, classify
@@ -64,52 +67,53 @@ async def test_wake_interrupt_and_open_talk(tmp_path: Path) -> None:
 
 
 @pytest.mark.asyncio
-async def test_pinecone_use_case_and_memory_restart(tmp_path: Path) -> None:
-    friend = Friend(tmp_path, video=NullVideo(), openai_key="", show_hold_s=0, boot_s=0)
+async def test_memobase_context_transcripts_and_background_write(tmp_path: Path) -> None:
+    class RecordingMemory(MemoryProvider):
+        def __init__(self) -> None:
+            self.remembered: list[list[MemoryMessage]] = []
+            self.flushed = 0
+
+        async def context(self, user_id: str) -> str:
+            assert user_id == "rio"
+            return "Rio has a dog named Toast."
+
+        async def remember(self, user_id: str, messages: list[MemoryMessage]) -> None:
+            assert user_id == "rio"
+            await asyncio.sleep(0)
+            self.remembered.append(list(messages))
+
+        async def flush(self, user_id: str) -> None:
+            assert user_id == "rio"
+            self.flushed += 1
+
+    provider = RecordingMemory()
+    friend = GizmoSession(
+        tmp_path,
+        video=NullVideo(),
+        gemini_key="",
+        memory_provider=provider,
+        user_id="rio",
+        show_hold_s=0,
+        boot_s=0,
+    )
     queue = friend.subscribe()
     await friend.handle(Power(on=True))
     await drain(friend, queue)
-    await friend.handle(TextLine("I'm Rio"))
+    assert "Rio has a dog named Toast" in friend.instructions()
+
+    await friend.handle(TextLine("Do you remember my dog?"))
     await drain(friend, queue)
-    await friend.handle(TextLine("I have a dog named Toast"))
-    await drain(friend, queue)
-    await friend.handle(Frame(hint="a pinecone on the table"))
-    await friend.handle(TextLine("what is this"))
-    events = await drain(friend, queue)
-    assert "pinecone" in spoken(events).lower()
-    await friend.handle(TextLine("show me"))
-    events = await drain(friend, queue)
-    assert AFTER_SHOW in spoken(events)
-    glass = [e for e in events if e.get("type") == "glass"]
-    assert glass
-    assert glass[0].get("clips") == []
-    assert glass[0].get("still")
-    assert glass[0].get("screen") is True
-    await friend.handle(TextLine("keep it"))
-    events = await drain(friend, queue)
-    assert AFTER_MAKE in spoken(events)
-    page = friend.memory.last_page()
-    assert page is not None
-    assert page.subject == "pinecone"
-    assert page.line == "pinecone"
-    # Reaching a parent goes through conversation, not a gesture.
-    assert not friend.outbox.list_pages()
-    await friend.handle(TextLine("send this to mom"))
-    events = await drain(friend, queue)
-    assert friend.outbox.list_pages()
+    await asyncio.sleep(0)
+    assert provider.remembered
+    assert [message["role"] for message in provider.remembered[-1]] == ["user", "assistant"]
+
+    transcript_files = list((tmp_path / "transcripts").glob("*.jsonl"))
+    assert len(transcript_files) == 1
+    records = [json.loads(line) for line in transcript_files[0].read_text().splitlines()]
+    assert any(record["role"] == "user" for record in records)
+    assert any(record["role"] == "assistant" for record in records)
     await friend.close()
-
-    again = Friend(tmp_path, video=NullVideo(), openai_key="", show_hold_s=0, boot_s=0)
-    prefix = again.memory.prefix_memory()
-    assert prefix.name == "Rio"
-    assert any("Toast" in f for f in prefix.facts)
-    assert again.memory.last_page() is not None
-    await again.close()
-
-    # sqlite file itself
-    mem = Memory(tmp_path / "gizmo.db")
-    assert mem.get_name() == "Rio"
-    mem.close()
+    assert provider.flushed >= 1
 
 
 @pytest.mark.asyncio
@@ -207,7 +211,9 @@ async def test_hard_question_goes_through_think(tmp_path: Path) -> None:
     assert "thinking" in states
     assert "scatters" in spoken(events)
     assert friend.state is State.LISTENING
-    tool_events = [e for e in events if e.get("type") == "tool" and e.get("name") == "think"]
+    tool_events = [
+        e for e in events if e.get("type") == "tool" and e.get("name") == "deep_think"
+    ]
     assert tool_events and tool_events[0]["result"]["ok"] is True
     await friend.close()
 
@@ -221,8 +227,7 @@ async def test_think_fails_soft_without_cloud(tmp_path: Path) -> None:
 
     await friend.handle(TextLine("explain black holes"))
     events = await drain(friend, queue)
-    # NullThink offline: he admits it instead of pretending.
-    assert "can't reach" in spoken(events).lower()
+    assert "offline" in spoken(events).lower()
     assert friend.state is State.LISTENING
     await friend.close()
 
@@ -426,14 +431,14 @@ async def test_live_voice_falls_back_to_fake(tmp_path: Path, monkeypatch: pytest
     import gizmo_friend.session as session_mod
 
     class BoomTransport:
-        def __init__(self, key: str) -> None:
-            del key
+        def __init__(self, key: str, *, resume_handle: str = "") -> None:
+            del key, resume_handle
 
         async def connect(self, instructions: str) -> None:
             raise RuntimeError("tls says no")
 
-    monkeypatch.setattr(session_mod, "OpenAIRealtimeTransport", BoomTransport)
-    friend = Friend(tmp_path, video=NullVideo(), openai_key="sk-test", show_hold_s=0, boot_s=0)
+    monkeypatch.setattr(session_mod, "GeminiLiveTransport", BoomTransport)
+    friend = Friend(tmp_path, video=NullVideo(), gemini_key="test-key", show_hold_s=0, boot_s=0)
     queue = friend.subscribe()
     await friend.handle(Power(on=True))
     events = await drain(friend, queue)
@@ -447,6 +452,58 @@ async def test_live_voice_falls_back_to_fake(tmp_path: Path, monkeypatch: pytest
 
 def test_classify_does_not_require_pinecone() -> None:
     assert classify("I'm bored")[0] == "talk"
-    assert classify("what is this")[0] == "see"
-    assert classify("show me the spell")[0] == "show"
-    assert classify("why is the sky blue?")[0] == "think"
+    assert classify("what is this")[0] == "talk"
+    assert classify("show me the spell")[0] == "talk"
+    assert classify("why is the sky blue?")[0] == "deep_think"
+
+
+@pytest.mark.asyncio
+async def test_existing_device_protocol_forwards_camera_and_ptt_preroll(tmp_path: Path) -> None:
+    holder: dict[str, FakeTransport] = {}
+
+    class RecordingTransport(FakeTransport):
+        def __init__(self) -> None:
+            super().__init__(lambda: PrefixMemory())
+            self.begins = 0
+            self.audio: list[bytes] = []
+            self.images: list[str] = []
+            self.commits = 0
+
+        async def begin_audio(self) -> None:
+            self.begins += 1
+
+        async def send_audio(self, pcm: bytes) -> None:
+            self.audio.append(pcm)
+
+        async def commit_audio(self) -> None:
+            self.commits += 1
+
+        async def send_image(self, data_url: str) -> None:
+            self.images.append(data_url)
+
+    def factory(resume_handle: str) -> RecordingTransport:
+        del resume_handle
+        transport = RecordingTransport()
+        holder["transport"] = transport
+        return transport
+
+    friend = GizmoSession(tmp_path, transport_factory=factory, boot_s=0, idle_sleep_s=0)
+    friend.ptt_hold_s = 0.05
+    await friend.handle(Power(on=True))
+    assert friend._boot_task is not None
+    await friend._boot_task
+    transport = holder["transport"]
+    assert isinstance(transport, RecordingTransport)
+
+    png = b"\x89PNG\r\n\x1a\n" + b"camera"
+    await friend.handle(Frame(image=png, mime="image/jpeg"))
+    assert transport.images and transport.images[-1].startswith("data:image/png;base64,")
+
+    await friend.handle(PushToTalk(active=True))
+    await friend.handle(MicChunk(pcm=b"\x01\x00" * 480))
+    await asyncio.sleep(0.08)
+    await friend.handle(PushToTalk(active=False))
+    assert transport.begins == 1
+    assert transport.audio == [b"\x01\x00" * 480]
+    assert transport.commits == 1
+    await friend.close()

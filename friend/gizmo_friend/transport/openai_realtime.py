@@ -99,6 +99,9 @@ class OpenAIRealtimeTransport:
         encoded = base64.b64encode(pcm).decode("ascii")
         await self._send({"type": "input_audio_buffer.append", "audio": encoded})
 
+    async def begin_audio(self) -> None:
+        return
+
     async def commit_audio(self) -> None:
         await self._send({"type": "input_audio_buffer.commit"})
 

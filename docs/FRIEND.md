@@ -1,71 +1,81 @@
-# Friend — laptop brain
+# Gizmo brain
 
-Friend is Gizmo's mind for v1. It runs on a laptop. Hardware is later. All agent code lives in `friend/`.
+`GizmoSession` is the central controller between Oddity OS/the existing emulator and all cloud providers. UI and hardware code know only the body WebSocket events; provider lifecycle and agent policy stay in `friend/`.
 
-## Talk path (latency-critical)
+## Runtime path
 
-Not STT → LLM → TTS. One realtime speech-to-speech session.
+```text
+ESP32-S3 or native emulator
+  └─ Power / PTT / up / down / select / 24 kHz PCM / camera frames
+       └─ GizmoSession
+            ├─ Gemini 3.1 Flash Live
+            │    ├─ realtime voice
+            │    ├─ vision frames
+            │    ├─ native Google Search grounding
+            │    └─ typed function calls
+            ├─ MemoryProvider → self-hosted Memobase
+            ├─ ReasoningProvider → Gemini 3.7 Flash
+            └─ final transcript JSONL
+```
 
-- **API:** OpenAI Realtime, WebSocket
-- **Model:** `gpt-realtime-2.1-mini`
-- **Reasoning:** `reasoning.effort = low`
-- **Prompt:** frozen system prompt (see below) is a **cacheable prefix** — stable, front of context. Memory is appended after it, never before.
-- **Audio:** streaming mic → model → speaker. Target: first audio under 1s.
-- **Interrupt:** pressing push-to-talk while Gizmo speaks barges in and cancels the response.
-- **Voice:** built-in realtime voice now. `Mouth` is an interface so a Cartesia mouth can replace playback later without a rewrite.
-- **Key:** `OPENAI_API_KEY`. If missing, a **local fake transport** still runs the state machine and tools so tests and an offline demo work.
+The active Live model is `gemini-3.1-flash-live-preview`. It receives mono PCM16 at 16 kHz; `GeminiLiveTransport` statefully resamples Gizmo's existing 24 kHz mic stream. Gemini audio returns at 24 kHz and passes through the existing speaker path unchanged.
 
-## Frozen system prompt
+PTT uses explicit activity-start/activity-end events with Gemini automatic activity detection disabled. Gizmo buffers the first 500 ms while distinguishing a tap from a hold, so the 350 ms sleep/wake threshold does not eat the beginning of speech.
 
-Do not invent a second personality. The prefix lives in `friend/gizmo_friend/prompt.py`. It is not paraphrased at runtime. Memory is appended after it, never before.
+## Session controller
 
-Voice: dry, a little weird, warm underneath. Two sentences, then stop. Magic is a chore he's good at. He never performs wizard.
+`GizmoSession` owns:
 
-Care: he shows it by paying attention, not by gushing. One small question back when curious. Never two.
+- Gemini Live connect, close, interruption, resumption handle, context compression, go-away reconnect, and fail-soft fallback
+- stable `GIZMO_USER_ID` and a unique ID for each hard-power session
+- input/output final transcripts
+- camera-frame forwarding over the existing `Frame` event
+- tool validation and execution
+- startup memory context and background memory ingestion
+- device state transitions and idle sleep
 
-Judgment: easy → talk. Hard → think. Visual → show. Keep it → make. Ask to send it home → reach. Craft: `docs/CRAFT.md`.
+`Friend` remains an import alias while older callers migrate. The emulator protocol and controls are unchanged.
 
-## Tools (same session, not a second agent)
+## Memory
 
-Allowlist only. No web search. No extras.
+`MemoryProvider` is the only semantic-memory boundary. Configure `MEMOBASE_URL` and `MEMOBASE_API_KEY` to select `MemobaseMemoryProvider`; without them, `NullMemoryProvider` keeps the local emulator runnable.
 
-| Tool | Behavior |
+At session start, the controller retrieves compact Memobase context once with a strict timeout and adds it after the stable Gizmo prompt. A Memobase outage cannot block later realtime turns. Final transcript entries are always appended to `data/transcripts/<session-id>.jsonl`; completed user/assistant turns are submitted to Memobase in tracked background tasks. Sleep, power-off, and process shutdown request a Memobase buffer flush.
+
+The existing SQLite file remains only for transitional device data and compatibility. New semantic memory behavior belongs in the provider, not in a second custom memory system.
+
+## Tools and search
+
+Only two custom functions are model-facing in V1:
+
+| Function | Behavior |
 | --- | --- |
-| `see(image)` | Name what's in the outward frame in one beat. Fast. Camera is stubbed; inject a frame from the laptop. |
-| `show(subject)` | Still first (fast, local print look). Then up to **two** short clips. fal MiniMax H3 Max behind an interface; if `FAL_KEY` is missing, skip clips but still do the still + the spoken line. Never a third clip, never a player, never photoreal, never the kid's face. |
-| `make(line)` | Persist a page (object + one line) in sqlite. Instant. Recall later. |
-| `think(question)` | Slow brain. Realtime voice is fast and shallow; this calls a reasoning model (`GIZMO_THINK_MODEL`, default `gpt-5.6-terra`) and returns a short kid-true answer Gizmo re-voices. Fail-soft if the key is missing. Never for chat or feelings. |
-| `reach()` | Queue that page to the parent-phone outbox (`reach/`). Not a live call. Fail soft. |
+| `deep_think(question)` | Calls `gemini-3.7-flash` through `ReasoningProvider`. The result is private notes returned to Gemini Live; Live remains the speaker and personality. |
+| `set_expression(expression)` | Emits one validated face-expression event for the existing device renderer. |
 
-## Memory (not three slots)
+Google Search is configured as Gemini's native tool beside these functions. There is no custom search service or model router. The retired `make`, `reach`, `see`, `show`, and `think` functions are not included in the Live schema. `FutureMediaProvider` reserves `show_image()` and `show_video()` signatures without implementing Adaptive Media.
 
-Local sqlite, survives restart. Path: `$GIZMO_DATA_DIR` or `./data/gizmo.db`.
+## Railway
 
-- **identity** — name + small list of facts they told us
-- **running_summary** — ≤500 tokens, rewritten at end of session
-- **episodes** — timestamped what happened
-- **objects** — saved pages
+The Railway project is defined in `.railway/railway.ts`:
 
-On wake: inject identity + running_summary + last few episodes + object index into the prompt **after** the frozen prefix. Never block first audio on retrieval (local file, loaded at process start and on remember).
+```text
+Railway
+├── gizmo-brain   (this repository's Dockerfile)
+├── memobase
+├── postgres
+└── redis
+```
 
-**Remember-this path:** during a session, a name or a "remember that…" / "I have…" line updates identity and episodes immediately. No waiting for shutdown.
+The definition provisions all four services in Singapore. Railway owns the Postgres and Redis credentials and persistent storage; Postgres uses `pgvector/pgvector:pg17`. Memobase is pinned through the wrapper image in `deploy/memobase/`, and only private Railway references connect the services.
 
-## States
+Bootstrap an empty, linked Railway project with `npm install`, `npx railway config plan`, and `npx railway config apply`. Then set these secrets directly in Railway:
 
-`powered_off` → `booting` → `listening` ⇄ `talking`, plus soft `asleep` and tool states `thinking`, `seeing`, `showing`, `making`, `reaching`.
+- `gizmo-brain`: `GEMINI_API_KEY`
+- `memobase`: `ACCESS_TOKEN`, `MEMOBASE_LLM_API_KEY`
 
-| Input | Effect |
-| --- | --- |
-| Top **power** toggle | On cold-boots the device. Off is a hard shutdown. |
-| Pink **push-to-talk** button | Tap while powered on to sleep or wake. Hold to stream 24 kHz PCM; release to commit the voice turn. |
-| **Up / down** rocker | Move the focused item vertically. Left/right navigation does not exist. |
-| Circular **select** button | Select the focused item or interrupt output. It never opens the camera. |
-| Screen | Face on whenever he's awake. A still covers the face only during show / a saved page. |
+The non-secret `GIZMO_USER_ID`, memory URLs, project ID, and data path are already declared. `preserve()` prevents later infrastructure applies from reading or overwriting the secret values. Generate a public domain only for `gizmo-brain`; Memobase, Postgres, and Redis stay private.
 
-## Body protocol (stub)
+## Deliberate V1 exclusions
 
-Laptop keys and the clickable render stand in for the body. The protocol (`Power`, `PushToTalk`, `Select`, `Navigate(up/down)`, `Frame`, `Mic`) is what `body/` firmware will speak later. Friend does not contain firmware. Camera capture comes from the agent's visual path, never a select-button gesture.
-
-## Open conversation
-
-He has to work when they are bored, asking questions, saying "remember yesterday," playing, or talking nonsense. Tools fire only when the moment needs them. Memory is used, not dumped.
+No H3 Max, Adaptive Media director, image-generation pipeline, games, parent dashboard, custom AI router, or custom semantic-memory system is implemented here.

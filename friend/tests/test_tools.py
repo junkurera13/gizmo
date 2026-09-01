@@ -4,7 +4,13 @@ import pytest
 
 from gizmo_friend.body_protocol import WorldCamera
 from gizmo_friend.memory import Memory
-from gizmo_friend.tools.allowlist import ALLOWED_TOOLS, FORBIDDEN_TOOLS, TOOL_SCHEMAS, assert_allowlist
+from gizmo_friend.tools.allowlist import (
+    ALLOWED_TOOLS,
+    FUTURE_MEDIA_TOOLS,
+    RETIRED_AGENT_TOOLS,
+    TOOL_SCHEMAS,
+    assert_allowlist,
+)
 from gizmo_friend.tools.make import make
 from gizmo_friend.tools.reach import reach
 from gizmo_friend.tools.see import see
@@ -12,18 +18,17 @@ from gizmo_friend.tools.show import NullVideo, show
 from gizmo_reach.outbox import ParentOutbox
 
 
-def test_allowlist_is_exactly_five() -> None:
+def test_agent_allowlist_is_exactly_v1_tools() -> None:
     names = assert_allowlist()
     assert tuple(names) == ALLOWED_TOOLS
-    assert "think" in names
-    assert "web_search" not in names
-    for forbidden in FORBIDDEN_TOOLS:
-        assert forbidden not in names
+    assert names == ["deep_think", "set_expression"]
+    assert not set(RETIRED_AGENT_TOOLS).intersection(names)
+    assert FUTURE_MEDIA_TOOLS == ("show_image", "show_video")
 
 
-def test_allowlist_rejects_web() -> None:
+def test_allowlist_rejects_custom_search() -> None:
     with pytest.raises(ValueError, match="not on allowlist"):
-        assert_allowlist([{"name": "web_search", "type": "function"}])
+        assert_allowlist([{"name": "search", "type": "function"}])
 
 
 @pytest.mark.asyncio
@@ -142,7 +147,7 @@ def test_openrouter_chat_parsing() -> None:
     assert _chat_text("nope") is None
 
 
-def test_no_web_in_schemas() -> None:
+def test_search_is_not_a_custom_function_schema() -> None:
     blob = str(TOOL_SCHEMAS).lower()
-    assert "web_search" not in blob
-    assert "mcp" not in blob
+    assert "google_search" not in blob
+    assert "deep_think" in blob

@@ -1,4 +1,9 @@
 from gizmo_friend.transport.fake import FakeTransport
-from gizmo_friend.transport.openai_realtime import MODEL, OpenAIRealtimeTransport, session_update_payload
+from gizmo_friend.transport.gemini_live import MODEL, GeminiLiveTransport, live_config
 
-__all__ = ["FakeTransport", "MODEL", "OpenAIRealtimeTransport", "session_update_payload"]
+__all__ = [
+    "FakeTransport",
+    "GeminiLiveTransport",
+    "MODEL",
+    "live_config",
+]

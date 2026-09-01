@@ -4,11 +4,16 @@ import asyncio
 import base64
 import json
 import os
+import uuid
+from collections import deque
 from collections.abc import Callable
 from pathlib import Path
 from typing import Any
 
 from gizmo_friend.audio_out import BroadcastMouth, Mouth
+from gizmo_friend.brain.memory import MemoryProvider, memory_provider_from_env
+from gizmo_friend.brain.reasoning import ReasoningProvider, reasoning_provider_from_env
+from gizmo_friend.brain.transcripts import TranscriptStore
 from gizmo_friend.body_protocol import (
     BodyEvent,
     Frame,
@@ -23,23 +28,31 @@ from gizmo_friend.body_protocol import (
 from gizmo_friend.memory import Memory
 from gizmo_friend.prefix import assemble_prefix
 from gizmo_friend.prompt import FROZEN_PROMPT
-from gizmo_friend.states import IllegalTransition, State, StateMachine
+from gizmo_friend.states import State, StateMachine
 from gizmo_friend.tools.allowlist import ALLOWED_TOOLS
-from gizmo_friend.tools.make import make
-from gizmo_friend.tools.reach import reach
-from gizmo_friend.tools.see import see
-from gizmo_friend.tools.show import VideoBackend, show, video_backend_from_env
-from gizmo_friend.tools.think import ThinkBackend, think, think_backend_from_env
+from gizmo_friend.tools.show import VideoBackend
+from gizmo_friend.tools.think import ThinkBackend
+from gizmo_friend.transport.base import Transport
 from gizmo_friend.transport.fake import FakeTransport
-from gizmo_friend.transport.openai_realtime import OpenAIRealtimeTransport
-from gizmo_friend.transport.openrouter_text import OpenRouterTextTransport
+from gizmo_friend.transport.gemini_live import GeminiLiveTransport
 from gizmo_reach.outbox import ParentOutbox
 
 Listener = Callable[[dict[str, Any]], Any]
 
 
-class Friend:
-    """Laptop brain. One session, six verbs, local memory."""
+class _LegacyReasoningAdapter(ReasoningProvider):
+    """Temporary source-compatibility for callers that injected ThinkBackend."""
+
+    def __init__(self, backend: ThinkBackend) -> None:
+        self.backend = backend
+
+    async def reason(self, question: str, memory_context: str = "") -> str | None:
+        del memory_context
+        return await self.backend.answer(question)
+
+
+class GizmoSession:
+    """Central agent controller shared by the emulator and the physical device."""
 
     def __init__(
         self,
@@ -50,6 +63,11 @@ class Friend:
         video: VideoBackend | None = None,
         thinker: ThinkBackend | None = None,
         openai_key: str | None = None,
+        gemini_key: str | None = None,
+        memory_provider: MemoryProvider | None = None,
+        reasoning_provider: ReasoningProvider | None = None,
+        user_id: str | None = None,
+        transport_factory: Callable[[str], Transport] | None = None,
         show_hold_s: float = 2.2,
         boot_s: float = 1.6,
         idle_sleep_s: float = 120.0,
@@ -63,24 +81,40 @@ class Friend:
         self.mouth = mouth or BroadcastMouth()
         self.camera = camera or WorldCamera()
         self.outbox = outbox or ParentOutbox(self.data_dir / "outbox.jsonl")
-        self.video = video if video is not None else video_backend_from_env()
+        # Legacy injection point only; Adaptive Media is not activated in V1.
+        self.video = video
         self.show_hold_s = show_hold_s
         self.boot_s = boot_s
         self.idle_sleep_s = idle_sleep_s
-        self.openai_key = openai_key if openai_key is not None else os.environ.get("OPENAI_API_KEY")
-        self.openrouter_key = os.environ.get("OPENROUTER_API_KEY")
-        self.thinker = thinker if thinker is not None else think_backend_from_env(self.openai_key)
+        # openai_key/thinker remain accepted so older callers do not break;
+        # neither is exposed to the agent as an alternate router.
+        self.openai_key = openai_key
+        self.gemini_key = (
+            gemini_key if gemini_key is not None else os.environ.get("GEMINI_API_KEY")
+        )
+        self.thinker = thinker
+        self.memory_provider = memory_provider or memory_provider_from_env()
+        self.reasoning = (
+            reasoning_provider
+            or (_LegacyReasoningAdapter(thinker) if thinker else None)
+            or reasoning_provider_from_env(self.gemini_key)
+        )
+        self.user_id = user_id or os.environ.get("GIZMO_USER_ID", "gizmo-local-user")
+        self.session_id = uuid.uuid4().hex
+        self.transcripts = TranscriptStore(self.data_dir / "transcripts")
+        self._memory_context = ""
+        self._memory_tasks: set[asyncio.Task[Any]] = set()
+        self._memory_loaded = False
+        self._transport_factory = transport_factory
+        self._resume_handle = ""
+        self._connect_lock = asyncio.Lock()
+        self._reconnect_task: asyncio.Task[None] | None = None
         self.last_still: str | None = None
         self.last_subject = "thing"
         self.viewing_page = False
         self._page_lit = False
-        if self.openai_key:
-            self.transport_name = "openai"
-        elif self.openrouter_key:
-            self.transport_name = "openrouter"
-        else:
-            self.transport_name = "fake"
-        self._transport: FakeTransport | OpenAIRealtimeTransport | OpenRouterTextTransport | None = None
+        self.transport_name = "gemini" if self.gemini_key else "fake"
+        self._transport: Transport | None = None
         self._pump: asyncio.Task[None] | None = None
         self._listeners: list[asyncio.Queue[dict[str, Any]]] = []
         self._connected = False
@@ -93,6 +127,11 @@ class Friend:
         # sleep/wake, and only a hold past this threshold opens the mic.
         self.ptt_hold_s = 0.35
         self._ptt_press_task: asyncio.Task[None] | None = None
+        self._mic_preroll: deque[bytes] = deque()
+        self._mic_preroll_bytes = 0
+        self._mic_preroll_limit = 24_000  # 500 ms of 24 kHz mono PCM16
+        self._camera_dirty = False
+        self._closing = False
 
     @property
     def state(self) -> State:
@@ -111,6 +150,12 @@ class Friend:
         prefix = assemble_prefix(self.memory.prefix_memory())
         if not prefix.startswith(FROZEN_PROMPT):
             raise RuntimeError("prefix lost the frozen prompt")
+        if self._memory_context.strip():
+            prefix += (
+                "\n\nPERSISTENT MEMORY FROM MEMOBASE\n"
+                "Use only when relevant. Never mention the memory system.\n"
+                f"{self._memory_context.strip()}"
+            )
         return prefix
 
     async def emit(self, event: dict[str, Any]) -> None:
@@ -143,7 +188,11 @@ class Friend:
             await self.on_mic(event.pcm)
         elif isinstance(event, Frame):
             self.camera.inject(image=event.image, hint=event.hint, mime=event.mime)
+            self._camera_dirty = bool(event.image)
             await self.emit({"type": "frame", "hint": event.hint})
+            if self._ready_for_input() and self._camera_dirty:
+                await self._ensure_connected()
+                await self._send_camera_frame()
 
     async def on_select(self) -> None:
         if not self._ready_for_input():
@@ -168,6 +217,11 @@ class Friend:
     async def on_power(self, on: bool) -> None:
         if on:
             if self.machine.state is State.POWERED_OFF:
+                self.session_id = uuid.uuid4().hex
+                self.transcripts = TranscriptStore(self.data_dir / "transcripts")
+                self._memory_context = ""
+                self._memory_loaded = False
+                self._resume_handle = ""
                 self.machine.apply("power_on")
                 await self.emit({"type": "state", "reason": "switch"})
                 self._boot_task = asyncio.create_task(self._boot())
@@ -178,7 +232,10 @@ class Friend:
             self._boot_task.cancel()
         self._cancel_press_watch()
         self._ptt_active = False
+        self._clear_mic_preroll()
         self.memory.rewrite_summary()
+        self._flush_transcript_turns()
+        self._background_memory(self.memory_provider.flush(self.user_id))
         if self.machine.can("power_off"):
             self.machine.apply("power_off")
         self.viewing_page = False
@@ -188,6 +245,7 @@ class Friend:
         # cloud voice socket has already gone stale. Cancel cloud output only
         # after the device is observably asleep; _interrupt itself fails soft.
         await self._interrupt()
+        await self._disconnect_transport()
 
     async def _boot(self) -> None:
         """Boot moment: connect the brain while the glass plays wake-up."""
@@ -234,6 +292,7 @@ class Friend:
         # Release before the hold threshold: it was a tap. Sleep.
         if self._ptt_press_task and not self._ptt_press_task.done():
             self._cancel_press_watch()
+            self._clear_mic_preroll()
             await self._sleep(reason="ptt")
             return
         self._ptt_press_task = None
@@ -243,7 +302,6 @@ class Friend:
         self._ptt_active = False
         if self._transport:
             await self._transport.commit_audio()
-            await self._transport.request_response()
         await self.emit({"type": "ptt", "active": False})
 
     def _cancel_press_watch(self) -> None:
@@ -260,6 +318,12 @@ class Friend:
             await self._interrupt()
             self.machine.apply("select")
             await self.emit({"type": "interrupted"})
+        if self._transport:
+            await self._send_camera_frame()
+            await self._transport.begin_audio()
+            while self._mic_preroll:
+                await self._transport.send_audio(self._mic_preroll.popleft())
+            self._mic_preroll_bytes = 0
         await self.emit({"type": "ptt", "active": True})
 
     async def on_text(self, text: str) -> None:
@@ -269,28 +333,43 @@ class Friend:
         if not self._ready_for_input():
             return
         self.memory.remember_from_utterance(cleaned)
+        self._record_transcript("user", cleaned)
         await self._ensure_connected()
         if self._transport:
+            await self._send_camera_frame()
             await self._transport.send_text(cleaned)
 
     async def on_mic(self, pcm: bytes) -> None:
         if not self._ready_for_input():
             return
-        # Mic is only hot while the talk button is held past the threshold.
         if not self._ptt_active:
+            if self._ptt_press_task and not self._ptt_press_task.done():
+                self._append_mic_preroll(pcm)
             return
         await self._ensure_connected()
         if self._transport:
             await self._transport.send_audio(pcm)
 
     async def close(self) -> None:
+        self._closing = True
         if self.machine.state is not State.POWERED_OFF:
             self.memory.rewrite_summary()
-        for task in (self._boot_task, self._idle_task, self._pump):
+        for task in (self._boot_task, self._idle_task, self._pump, self._reconnect_task):
             if task:
                 task.cancel()
         if self._transport:
             await self._transport.close()
+        self._flush_transcript_turns()
+        self._background_memory(self.memory_provider.flush(self.user_id))
+        if self._memory_tasks:
+            try:
+                async with asyncio.timeout(3.0):
+                    await asyncio.gather(*tuple(self._memory_tasks), return_exceptions=True)
+            except TimeoutError:
+                for task in self._memory_tasks:
+                    task.cancel()
+        await self.memory_provider.close()
+        await self.reasoning.close()
         self.memory.close()
 
     def _ready_for_input(self) -> bool:
@@ -333,7 +412,10 @@ class Friend:
             return
         self._cancel_press_watch()
         self._ptt_active = False
+        self._clear_mic_preroll()
         self.memory.rewrite_summary()
+        self._flush_transcript_turns()
+        self._background_memory(self.memory_provider.flush(self.user_id))
         self.machine.apply("sleep")
         self.viewing_page = False
         self._page_lit = False
@@ -370,40 +452,157 @@ class Friend:
                     }
                 )
 
+    async def _load_memory_context(self) -> None:
+        if self._memory_loaded:
+            return
+        try:
+            async with asyncio.timeout(1.5):
+                self._memory_context = await self.memory_provider.context(self.user_id)
+            self._memory_loaded = True
+            await self.emit({"type": "memory", "status": "ready"})
+        except TimeoutError:
+            await self.emit({"type": "memory", "status": "timeout"})
+        except Exception as error:  # noqa: BLE001 - memory cannot stop realtime boot
+            await self.emit({"type": "error", "message": f"memory unavailable: {error}"})
+        finally:
+            # Retrieval happens once at startup. A slow memory service must not
+            # be retried on the user's first realtime turn.
+            self._memory_loaded = True
+
+    def _record_transcript(self, role: str, text: str) -> None:
+        transcript_role = "assistant" if role == "assistant" else "user"
+        self.transcripts.append(
+            session_id=self.session_id,
+            user_id=self.user_id,
+            role=transcript_role,
+            text=text,
+        )
+
+    def _flush_transcript_turns(self) -> None:
+        completed = self.transcripts.take_completed_turns()
+        if completed:
+            self._background_memory(self.memory_provider.remember(self.user_id, completed))
+
+    def _background_memory(self, operation: Any) -> None:
+        async def guarded() -> None:
+            try:
+                await operation
+            except Exception as error:  # noqa: BLE001 - memory is explicitly fail-soft
+                if not self._closing:
+                    await self.emit({"type": "error", "message": f"memory write failed: {error}"})
+
+        task = asyncio.create_task(guarded())
+        self._memory_tasks.add(task)
+        task.add_done_callback(self._memory_tasks.discard)
+
+    def _append_mic_preroll(self, pcm: bytes) -> None:
+        if not pcm:
+            return
+        self._mic_preroll.append(pcm)
+        self._mic_preroll_bytes += len(pcm)
+        while self._mic_preroll and self._mic_preroll_bytes > self._mic_preroll_limit:
+            self._mic_preroll_bytes -= len(self._mic_preroll.popleft())
+
+    def _clear_mic_preroll(self) -> None:
+        self._mic_preroll.clear()
+        self._mic_preroll_bytes = 0
+
+    async def _send_camera_frame(self) -> None:
+        if not self._camera_dirty or not self._transport:
+            return
+        frame = self.camera.grab()
+        if not frame.image:
+            self._camera_dirty = False
+            return
+        mime = _image_mime(frame.image, frame.mime)
+        data_url = f"data:{mime};base64,{base64.b64encode(frame.image).decode('ascii')}"
+        await self._transport.send_image(data_url)
+        self._camera_dirty = False
+
+    def _schedule_reconnect(self) -> None:
+        if self._closing or not self.machine.awake():
+            return
+        if self._reconnect_task and not self._reconnect_task.done():
+            return
+        self._reconnect_task = asyncio.create_task(self._reconnect())
+
+    async def _reconnect(self) -> None:
+        old = self._transport
+        self._transport = None
+        self._connected = False
+        if old:
+            await old.close()
+        await self.emit({"type": "connection", "status": "reconnecting"})
+        try:
+            await asyncio.sleep(0.25)
+            await self._ensure_connected()
+            await self.emit({"type": "connection", "status": "connected"})
+        except asyncio.CancelledError:
+            return
+        except Exception as error:  # noqa: BLE001
+            await self.emit({"type": "error", "message": f"reconnect failed: {error}"})
+
+    async def _disconnect_transport(self) -> None:
+        transport = self._transport
+        self._transport = None
+        self._connected = False
+        if self._pump:
+            self._pump.cancel()
+            self._pump = None
+        if transport:
+            try:
+                async with asyncio.timeout(1.0):
+                    await transport.close()
+            except Exception:  # noqa: BLE001 - power remains local
+                return
+
     async def _ensure_connected(self) -> None:
         if self._connected and self._transport:
             return
-        # Memory is local sqlite — already loaded. Do not await retrieval.
-        instructions = self.instructions()
-        # Fail-soft chain: live voice -> text brain -> offline stand-in.
-        candidates: list[tuple[str, Any]] = []
-        if self.openai_key:
-            candidates.append(("openai", lambda: OpenAIRealtimeTransport(self.openai_key)))
-        if self.openrouter_key:
-            candidates.append(("openrouter", lambda: OpenRouterTextTransport(self.openrouter_key)))
-        candidates.append(("fake", lambda: FakeTransport(lambda: self.memory.prefix_memory())))
-        for name, build in candidates:
-            transport = build()
-            try:
-                await transport.connect(instructions)
-            except Exception as error:  # noqa: BLE001 — fail soft, never hang the boot
-                await self.emit({"type": "error", "message": f"{name} unreachable: {error}"})
-                continue
-            self._transport = transport
-            self.transport_name = name
-            break
-        self._connected = True
-        self._pump = asyncio.create_task(self._pump_events())
+        async with self._connect_lock:
+            if self._connected and self._transport:
+                return
+            await self._load_memory_context()
+            instructions = self.instructions()
+            candidates: list[tuple[str, Callable[[], Transport]]] = []
+            if self._transport_factory:
+                candidates.append(("custom", lambda: self._transport_factory(self._resume_handle)))
+            elif self.gemini_key:
+                candidates.append(
+                    (
+                        "gemini",
+                        lambda: GeminiLiveTransport(
+                            self.gemini_key,
+                            resume_handle=self._resume_handle,
+                        ),
+                    )
+                )
+            candidates.append(("fake", lambda: FakeTransport(lambda: self.memory.prefix_memory())))
+            for name, build in candidates:
+                transport = build()
+                try:
+                    await transport.connect(instructions)
+                except Exception as error:  # noqa: BLE001 — fail soft, never hang boot
+                    await self.emit({"type": "error", "message": f"{name} unreachable: {error}"})
+                    continue
+                self._transport = transport
+                self.transport_name = name
+                self._connected = True
+                self._pump = asyncio.create_task(self._pump_events(transport))
+                return
+            raise RuntimeError("no Gizmo transport available")
 
-    async def _pump_events(self) -> None:
-        assert self._transport is not None
+    async def _pump_events(self, transport: Transport) -> None:
         try:
-            async for event in self._transport:
+            async for event in transport:
                 await self._on_transport(event)
         except asyncio.CancelledError:
             return
         except StopAsyncIteration:
             return
+        finally:
+            if not self._closing and transport is self._transport and self.machine.awake():
+                self._schedule_reconnect()
 
     async def _on_transport(self, event: Any) -> None:
         self._touch()
@@ -429,7 +628,13 @@ class Friend:
                 self.machine.apply("speech_out")
                 self.mouth.mark_playing()
             await self.mouth.speak_text(event.text)
+            self._record_transcript("assistant", event.text)
             await self.emit({"type": "transcript", "role": "gizmo", "text": event.text})
+            return
+        if kind == "user_transcript":
+            self.memory.remember_from_utterance(event.text)
+            self._record_transcript("user", event.text)
+            await self.emit({"type": "transcript", "role": "user", "text": event.text})
             return
         if kind == "function_call":
             result = await self._run_tool(event.name, event.arguments)
@@ -444,6 +649,8 @@ class Friend:
             return
         if kind in {"done", "cancelled"}:
             self.mouth.mark_idle()
+            if kind == "done":
+                self._flush_transcript_turns()
             if kind == "done" and event.text:
                 await self.emit({"type": "transcript", "role": "gizmo", "text": event.text})
             if self.machine.state is State.TALKING and self.machine.can("done"):
@@ -452,111 +659,68 @@ class Friend:
                 self.viewing_page = False
             await self.emit({"type": "state"})
             return
+        if kind == "grounding":
+            await self.emit({"type": "grounding", "metadata": event.raw})
+            return
+        if kind == "session_resumption":
+            self._resume_handle = event.text
+            return
+        if kind in {"reconnect_required", "disconnected"}:
+            self._schedule_reconnect()
+            return
         if kind == "error":
             await self.emit({"type": "error", "message": event.text})
 
     async def _run_tool(self, name: str, arguments: dict[str, Any]) -> dict[str, Any]:
         if name not in ALLOWED_TOOLS:
             return {"ok": False, "reason": f"unknown tool {name}"}
-        if name == "see":
-            if self.machine.can("see"):
-                self.machine.apply("see")
-            await self.emit({"type": "state"})
-            result = await see(self.camera, arguments.get("image"))
-            beat = str(result.get("beat") or "")
-            if "pinecone" in beat.lower():
-                self.last_subject = "pinecone"
-            elif beat and beat not in {"dark. nothing to name yet."}:
-                self.last_subject = beat.rstrip(".")[:40]
-            frame = self.camera.grab()
-            if frame.image and self._transport and self.transport_name == "openai":
-                mime = frame.mime or "image/jpeg"
-                data_url = f"data:{mime};base64,{base64.b64encode(frame.image).decode('ascii')}"
-                await self._transport.send_image(data_url)
-            if self.machine.state is State.SEEING:
-                self.machine.apply("done")
-            self.memory.add_episode(f"saw: {result.get('beat')}")
-            await self.emit({"type": "tool", "name": "see", "result": result})
-            return result
-        if name == "think":
+        if name == "deep_think":
             question = str(arguments.get("question") or "").strip()
+            if not question:
+                return {"ok": False, "reason": "question is required"}
             if self.machine.can("think"):
                 self.machine.apply("think")
             await self.emit({"type": "state"})
-            result = await think(self.thinker, question)
+            try:
+                answer = await self.reasoning.reason(question, self._memory_context)
+            except Exception as error:  # noqa: BLE001 - deep model must fail soft
+                answer = None
+                await self.emit({"type": "error", "message": f"deep_think failed: {error}"})
+            result = (
+                {"ok": True, "answer": answer}
+                if answer
+                else {
+                    "ok": False,
+                    "reason": "reasoning model unavailable",
+                    "say": "Big one. My deeper brain is offline right now.",
+                }
+            )
             if self.machine.state is State.THINKING:
                 self.machine.apply("done")
-            if result.get("ok"):
-                self.memory.add_episode(f"thought hard about: {question[:80]}")
-            await self.emit({"type": "tool", "name": "think", "result": result})
+            await self.emit({"type": "tool", "name": "deep_think", "result": result})
             return result
-        if name == "show":
-            subject = str(arguments.get("subject") or "").strip()
-            if not subject or subject == "thing":
-                subject = self.last_subject
-            self.last_subject = subject
-            if self.machine.can("show"):
-                self.machine.apply("show")
-            self.viewing_page = True
-            self._page_lit = False
-            await self.emit({"type": "state"})
-            result = await show(subject, self.media_dir, video=self.video)
-            self.last_still = result["still"]
-            still_url = _public_media(result["still"])
-            self.memory.add_episode(f"showed: {subject}")
-            await self.emit({"type": "glass", "still": still_url, "clips": result["clips"]})
-            # Still first. Then screen off. Then he talks.
-            hold = self.show_hold_s
-            if result["clips"]:
-                hold = max(hold, 0.4)
-            if hold:
-                await asyncio.sleep(hold)
-            if self.machine.state is State.SHOWING:
-                self.machine.apply("done")
-            self.viewing_page = False
-            await self.emit({"type": "state"})
-            return {**result, "still": still_url}
-        if name == "make":
-            line = str(arguments.get("line") or "")
-            subject = str(arguments.get("subject") or self.last_subject)
-            if self.machine.can("make"):
-                self.machine.apply("make")
-            self.viewing_page = True
-            self._page_lit = True
-            await self.emit({"type": "state"})
-            page = make(
-                self.memory,
-                self.media_dir,
-                line=line or f"{subject}.",
-                subject=subject,
-                still_path=self.last_still,
-            )
-            self.last_still = page.still_path
-            if self.machine.state is State.MAKING:
-                self.machine.apply("done")
-            payload = {
-                "ok": True,
-                "id": page.id,
-                "line": page.line,
-                "subject": page.subject,
-                "still": _public_media(page.still_path),
-            }
-            await self.emit({"type": "glass", "still": payload["still"], "clips": [], "page": payload})
-            return payload
-        if name == "reach":
-            if self.machine.can("reach"):
-                self.machine.apply("reach")
-            await self.emit({"type": "state"})
-            page = self.memory.last_page()
-            result = reach(self.outbox, page)
-            if self.machine.state is State.REACHING:
-                self.machine.apply("done")
-            self.memory.add_episode("reached a parent" if result.get("ok") else "reach failed soft")
-            await self.emit({"type": "tool", "name": "reach", "result": result})
+        if name == "set_expression":
+            expression = str(arguments.get("expression") or "").strip().lower()
+            allowed = {"idle", "curious", "thinking", "happy", "concerned", "surprised"}
+            if expression not in allowed:
+                return {"ok": False, "reason": "invalid expression"}
+            result = {"ok": True, "expression": expression}
+            await self.emit({"type": "expression", "expression": expression})
             return result
         return {"ok": False, "reason": "unhandled"}
 
 
-def _public_media(path: str) -> str:
-    name = Path(path).name
-    return f"/media/{name}"
+def _image_mime(image: bytes, declared: str) -> str:
+    if image.startswith(b"\x89PNG\r\n\x1a\n"):
+        return "image/png"
+    if image.startswith(b"\xff\xd8\xff"):
+        return "image/jpeg"
+    if image.startswith((b"GIF87a", b"GIF89a")):
+        return "image/gif"
+    if image.startswith(b"RIFF") and image[8:12] == b"WEBP":
+        return "image/webp"
+    return declared if declared.startswith("image/") else "image/jpeg"
+
+
+# Existing imports and third-party callers can migrate incrementally.
+Friend = GizmoSession

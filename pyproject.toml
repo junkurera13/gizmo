@@ -5,7 +5,7 @@ build-backend = "setuptools.build_meta"
 [project]
 name = "gizmo"
 version = "0.1.0"
-description = "Gizmo — a wizard in a kid's pocket. Laptop brain (Friend), stub body, glass, and reach."
+description = "Gizmo — a persistent realtime agent for the Gizmo device."
 readme = "README.md"
 requires-python = ">=3.11"
 authors = [{ name = "Gizmo" }]
@@ -17,6 +17,9 @@ dependencies = [
   "python-multipart>=0.0.12",
   "python-dotenv>=1.0",
   "certifi>=2024.0.0",
+  "google-genai==2.21.0",
+  "memobase==0.0.27",
+  "audioop-lts>=0.2.2; python_version >= '3.13'",
 ]
 
 [project.optional-dependencies]
