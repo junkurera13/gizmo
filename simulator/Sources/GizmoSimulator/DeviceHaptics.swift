@@ -5,7 +5,7 @@ import CoreHaptics
 enum DeviceHaptics {
     private static var engine: CHHapticEngine?
 
-    static func trackballTick() {
+    static func controlTick() {
         NSHapticFeedbackManager.defaultPerformer.perform(.levelChange, performanceTime: .now)
         play(
             CHHapticEvent(

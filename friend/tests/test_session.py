@@ -4,7 +4,7 @@ from pathlib import Path
 import pytest
 
 from gizmo_friend.audio_out import BroadcastMouth
-from gizmo_friend.body_protocol import Click, Frame, Hold, Navigate, Power, PushToTalk, TextLine
+from gizmo_friend.body_protocol import Frame, Navigate, Power, PushToTalk, Select, TextLine
 from gizmo_friend.memory import Memory
 from gizmo_friend.prompt import AFTER_MAKE, AFTER_SHOW, WAKE_LINE
 from gizmo_friend.session import Friend
@@ -51,7 +51,7 @@ async def test_wake_interrupt_and_open_talk(tmp_path: Path) -> None:
     assert "name" in spoken(events).lower()
 
     friend.machine.state = State.TALKING
-    await friend.on_click()
+    await friend.on_select()
     assert friend.state is State.LISTENING
     assert cancelled
 
@@ -93,8 +93,6 @@ async def test_pinecone_use_case_and_memory_restart(tmp_path: Path) -> None:
     assert page.subject == "pinecone"
     assert page.line == "pinecone"
     # Reaching a parent goes through conversation, not a gesture.
-    await friend.handle(Hold())
-    events = await drain(friend, queue)
     assert not friend.outbox.list_pages()
     await friend.handle(TextLine("send this to mom"))
     events = await drain(friend, queue)
@@ -144,7 +142,7 @@ async def test_fake_transport_keeps_frozen_instructions(tmp_path: Path) -> None:
 
 
 @pytest.mark.asyncio
-async def test_power_and_navigation_use_the_body_protocol(tmp_path: Path) -> None:
+async def test_power_select_and_vertical_navigation_use_the_body_protocol(tmp_path: Path) -> None:
     friend = Friend(tmp_path, video=NullVideo(), openai_key="", show_hold_s=0, boot_s=0)
     queue = friend.subscribe()
 
@@ -152,7 +150,7 @@ async def test_power_and_navigation_use_the_body_protocol(tmp_path: Path) -> Non
     await drain(friend, queue)
     assert friend.state is State.LISTENING
 
-    await friend.handle(Click())
+    await friend.handle(Select())
     events = await drain(friend, queue)
     assert friend.state is State.LISTENING
     assert any(event.get("type") == "select" for event in events)
@@ -163,16 +161,20 @@ async def test_power_and_navigation_use_the_body_protocol(tmp_path: Path) -> Non
     events = await drain(friend, queue)
     assert any(event.get("type") == "ptt" and event.get("active") is True for event in events)
 
+    await friend.handle(Navigate(direction="up"))
+    events = await drain(friend, queue)
+    assert any(event.get("type") == "navigate" and event.get("direction") == "up" for event in events)
+
     await friend.handle(Navigate(direction="left"))
     events = await drain(friend, queue)
-    assert any(event.get("type") == "navigate" and event.get("direction") == "left" for event in events)
+    assert not any(event.get("type") == "navigate" for event in events)
 
     await friend.handle(Power(on=False))
     await drain(friend, queue)
-    assert friend.state is State.ASLEEP
-    await friend.handle(Click())
+    assert friend.state is State.POWERED_OFF
+    await friend.handle(Select())
     events = await drain(friend, queue)
-    assert friend.state is State.ASLEEP
+    assert friend.state is State.POWERED_OFF
     assert not any(event.get("type") == "select" for event in events)
     await friend.close()
 
@@ -226,45 +228,18 @@ async def test_think_fails_soft_without_cloud(tmp_path: Path) -> None:
 
 
 @pytest.mark.asyncio
-async def test_double_click_opens_camera_and_click_closes_it(tmp_path: Path) -> None:
+async def test_repeated_select_never_opens_camera(tmp_path: Path) -> None:
     friend = Friend(tmp_path, video=NullVideo(), openai_key="", show_hold_s=0, boot_s=0)
     queue = friend.subscribe()
     await friend.handle(Power(on=True))
     await drain(friend, queue)
     assert friend.state is State.LISTENING
 
-    # Two fast clicks: camera opens and stays open.
-    await friend.handle(Click())
-    await friend.handle(Click())
+    await friend.handle(Select())
+    await friend.handle(Select())
     events = await drain(friend, queue)
-    assert friend.state is State.SEEING
-    assert any(e.get("type") == "camera" and e.get("open") is True for e in events)
-
-    # One click while the camera is up: back to the face.
-    await friend.handle(Click())
-    await drain(friend, queue)
     assert friend.state is State.LISTENING
-
-    # A click right after closing must not reopen the camera.
-    await friend.handle(Click())
-    await drain(friend, queue)
-    assert friend.state is State.LISTENING
-    await friend.close()
-
-
-@pytest.mark.asyncio
-async def test_slow_clicks_do_not_open_camera(tmp_path: Path) -> None:
-    friend = Friend(tmp_path, video=NullVideo(), openai_key="", show_hold_s=0, boot_s=0)
-    friend.double_click_s = 0.1
-    queue = friend.subscribe()
-    await friend.handle(Power(on=True))
-    await drain(friend, queue)
-
-    await friend.handle(Click())
-    await asyncio.sleep(0.25)
-    await friend.handle(Click())
-    await drain(friend, queue)
-    assert friend.state is State.LISTENING
+    assert not any(e.get("type") == "camera" for e in events)
     await friend.close()
 
 
@@ -272,6 +247,13 @@ async def test_slow_clicks_do_not_open_camera(tmp_path: Path) -> None:
 async def test_talk_button_wakes_from_sleep(tmp_path: Path) -> None:
     friend = Friend(tmp_path, video=NullVideo(), openai_key="", show_hold_s=0, boot_s=0)
     queue = friend.subscribe()
+    assert friend.state is State.POWERED_OFF
+
+    await friend.handle(Power(on=True))
+    await drain(friend, queue)
+    await friend.handle(PushToTalk(active=True))
+    await friend.handle(PushToTalk(active=False))
+    await drain(friend, queue)
     assert friend.state is State.ASLEEP
 
     await friend.handle(PushToTalk(active=True))
@@ -302,6 +284,7 @@ async def test_tap_talk_button_sleeps_hold_talks(tmp_path: Path) -> None:
     events = await drain(friend, queue)
     assert friend.state is State.ASLEEP
     assert not any(e.get("type") == "ptt" for e in events)
+    assert any(e.get("reason") == "ptt" and e.get("power") is True for e in events)
 
     # Press again: wakes. Then a real hold: mic opens, release commits.
     await friend.handle(PushToTalk(active=True))
@@ -316,6 +299,27 @@ async def test_tap_talk_button_sleeps_hold_talks(tmp_path: Path) -> None:
     ptt = [e.get("active") for e in events if e.get("type") == "ptt"]
     assert ptt == [True, False]
     assert friend.state is not State.ASLEEP
+    await friend.close()
+
+
+@pytest.mark.asyncio
+async def test_holding_ptt_interrupts_talking_and_opens_mic(tmp_path: Path) -> None:
+    friend = Friend(tmp_path, video=NullVideo(), openai_key="", show_hold_s=0, boot_s=0)
+    friend.ptt_hold_s = 0.05
+    queue = friend.subscribe()
+    await friend.handle(Power(on=True))
+    await drain(friend, queue)
+    friend.machine.state = State.TALKING
+
+    await friend.handle(PushToTalk(active=True))
+    await asyncio.sleep(0.15)
+    events = await drain(friend, queue)
+
+    assert friend.state is State.LISTENING
+    assert any(e.get("type") == "interrupted" for e in events)
+    assert any(e.get("type") == "ptt" and e.get("active") is True for e in events)
+
+    await friend.handle(PushToTalk(active=False))
     await friend.close()
 
 
@@ -337,7 +341,11 @@ async def test_boot_sequence_passes_through_booting(tmp_path: Path) -> None:
     assert "booting" in states
     assert friend.state in {State.LISTENING, State.TALKING}
     # Screen (face) is on for every awake event.
-    assert all(e.get("screen") is True for e in events if e.get("state") != "asleep")
+    assert all(
+        e.get("screen") is True
+        for e in events
+        if e.get("state") not in {"powered_off", "asleep"}
+    )
     await friend.close()
 
 
@@ -347,9 +355,9 @@ async def test_boot_cancelled_by_power_off(tmp_path: Path) -> None:
     await friend.handle(Power(on=True))
     assert friend.state is State.BOOTING
     await friend.handle(Power(on=False))
-    assert friend.state is State.ASLEEP
+    assert friend.state is State.POWERED_OFF
     await asyncio.sleep(0.05)
-    assert friend.state is State.ASLEEP
+    assert friend.state is State.POWERED_OFF
     await friend.close()
 
 
@@ -369,7 +377,7 @@ async def test_power_off_survives_a_stale_voice_transport(tmp_path: Path) -> Non
     await friend.handle(Power(on=False))
     events = await drain(friend, queue)
 
-    assert friend.state is State.ASLEEP
+    assert friend.state is State.POWERED_OFF
     assert any(event.get("type") == "error" for event in events)
     await friend.close()
 
@@ -409,7 +417,7 @@ async def test_idle_auto_sleep(tmp_path: Path) -> None:
     await asyncio.sleep(2.2)
     assert friend.state is State.ASLEEP
     events = await drain(friend, queue, n=5)
-    assert any(e.get("reason") == "idle" and e.get("power") is False for e in events)
+    assert any(e.get("reason") == "idle" and e.get("power") is True for e in events)
     await friend.close()
 
 

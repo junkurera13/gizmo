@@ -4,7 +4,7 @@ A wizard in a kid's pocket. One face, one voice, one coat. Kids 9–14. Dry, a l
 
 This repo is the device: Friend (brain), Body (firmware later), Glass (jun's 240×240 art later), Reach (parent-phone outbox). The public site lives in `web/`.
 
-**v1 runs on a laptop.** Click the stick (space / button) to wake him. Talk with the mic or by typing. Hold to send a page home. The 90-second pinecone walk is a use case, not the product — he also has to handle boredom, questions, "remember yesterday," play, and nonsense.
+**v1 runs on a laptop.** Use the power control for a cold boot or hard shutdown. Tap the pink PTT button to sleep or wake; hold it to talk. Use the up/down rocker and Select for device UI. The 90-second pinecone walk is a use case, not the product — he also has to handle boredom, questions, "remember yesterday," play, and nonsense.
 
 ## Tree
 
@@ -45,22 +45,22 @@ Or: `python -m gizmo_friend` from a venv with this repo installed.
 
 ### Talk to him
 
-**Browser (laptop body stub):** open the URL. Space or **Stick** wakes / interrupts / sleeps. Type a line or turn **Mic** on. **Hold to reach** (or `R`) queues the current page to the parent outbox. **Point** injects a world-camera hint (there is no ESP32 camera yet).
+**Browser (laptop body stub):** open the URL. **Power on** cold-boots Gizmo. Tap **PTT** to sleep or wake; hold it while talking. Use **Up**, **Down**, and **Select** for the device UI. Type a line as a laptop-only input. **Point** injects a world-camera hint (there is no ESP32 camera yet).
 
 The glass is 240×240 and **off** unless he is showing or you are looking at a saved page. No player UI. At most two clips.
 
 **Terminal:** `gizmo --cli`
 
 ```
-> /click              wake
+> /power on
 > I'm Maya
 > I have a dog named Toast
 > /look a pinecone on the table
 > what is this
 > show me
 > keep it
-> /reach
-> /click              sleep
+> send this home
+> /power off
 ```
 
 ## Memory
@@ -81,7 +81,7 @@ Tell him your name and a fact, quit, start again. He still has it. He will not d
 3. Ask what it is — `see`.
 4. Ask him to show it — still, then at most two clips, print look. Screen off. Something like "Yeah. That's the whole spell."
 5. Keep a page — `make`. "Yours. I don't lose stuff."
-6. Hold the stick — `reach`. The page is in `data/outbox.jsonl`, not a live call.
+6. Ask Gizmo to send it home — `reach`. The page is in `data/outbox.jsonl`, not a live call.
 
 Then talk about nothing. If he only works for the pinecone, we failed.
 

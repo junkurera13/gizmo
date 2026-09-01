@@ -30,20 +30,24 @@ private struct DeviceStageView: View {
 
     var body: some View {
         GeometryReader { proxy in
-            let side = min(proxy.size.width, proxy.size.height) * 0.94
-
             ZStack {
                 stageColor
                     .ignoresSafeArea()
 
                 if let skin = skinStore.skin, let image = skinStore.image {
+                    let aspectRatio = CGFloat(skin.canvasWidth) / CGFloat(skin.canvasHeight)
+                    let availableWidth = proxy.size.width * 0.98
+                    let availableHeight = proxy.size.height * 0.94
+                    let width = min(availableWidth, availableHeight * aspectRatio)
+                    let height = width / aspectRatio
+
                     DeviceView(
                         model: model,
                         skin: skin,
                         deviceImage: image,
                         pressedDeviceImage: skinStore.pressedImage
                     )
-                        .frame(width: side, height: side)
+                        .frame(width: width, height: height)
                 } else {
                     VStack(spacing: 12) {
                         ProgressView()
@@ -74,40 +78,37 @@ private struct DeviceView: View {
 
     @State private var pressedControl: String?
     @State private var pressStartedAt: Date?
-    @State private var trackballOffset: CGSize = .zero
-    @State private var trackballRemainder: CGSize = .zero
-    @State private var hoveringTrackball = false
 
     var body: some View {
         GeometryReader { proxy in
-            let size = proxy.size.width
+            let canvasSize = proxy.size
 
             ZStack(alignment: .topLeading) {
-                deviceArtwork(deviceImage, size: size)
+                deviceArtwork(deviceImage, size: canvasSize)
                     .opacity(showingPressedSkin ? 0 : 1)
                     .animation(nil, value: showingPressedSkin)
 
                 if let pressedDeviceImage {
-                    deviceArtwork(pressedDeviceImage, size: size)
+                    deviceArtwork(pressedDeviceImage, size: canvasSize)
                         .opacity(showingPressedSkin ? 1 : 0)
                         .animation(nil, value: showingPressedSkin)
                 }
 
-                screen(size: size)
-                movingTrackball(size: size)
+                screen(size: canvasSize)
+                navigationControls(size: canvasSize)
 
-                ForEach(skin.controls) { control in
-                    controlHitArea(control, size: size)
+                ForEach(skin.controls.filter { $0.shortAction == "ptt" }) { control in
+                    sideButtonHitArea(control, rect: frame(for: control.rect, size: canvasSize))
                 }
             }
         }
-        .aspectRatio(1, contentMode: .fit)
+        .aspectRatio(CGFloat(skin.canvasWidth) / CGFloat(skin.canvasHeight), contentMode: .fit)
     }
 
     @ViewBuilder
-    private func screen(size: CGFloat) -> some View {
+    private func screen(size: CGSize) -> some View {
         let rect = frame(for: skin.screen.rect, size: size)
-        let radius = skin.screen.cornerRadius * size
+        let radius = skin.screen.cornerRadius * min(size.width, size.height)
 
         ZStack {
             Color.black
@@ -203,88 +204,97 @@ private struct DeviceView: View {
     }
 
     @ViewBuilder
-    private func movingTrackball(size: CGFloat) -> some View {
-        if let control = skin.controls.first(where: { $0.id == "trackball" }) {
-            let outer = frame(for: control.rect, size: size)
-            let inner = outer.insetBy(dx: outer.width * 0.145, dy: outer.height * 0.145)
+    private func navigationControls(size: CGSize) -> some View {
+        if
+            let up = skin.controls.first(where: { $0.shortAction == "navigateUp" }),
+            let down = skin.controls.first(where: { $0.shortAction == "navigateDown" }),
+            let select = skin.controls.first(where: { $0.shortAction == "select" })
+        {
+            let upRect = frame(for: up.rect, size: size)
+            let downRect = frame(for: down.rect, size: size)
+            let selectRect = frame(for: select.rect, size: size)
+            let pillRect = upRect.union(downRect)
 
             ZStack(alignment: .topLeading) {
-                deviceArtwork(deviceImage, size: size)
-                    .offset(
-                        x: -inner.minX + trackballOffset.width,
-                        y: -inner.minY + trackballOffset.height
-                    )
-            }
-            .frame(width: inner.width, height: inner.height)
-            .clipShape(Circle())
-            .position(x: inner.midX, y: inner.midY)
-            .allowsHitTesting(false)
-            .accessibilityHidden(true)
-        }
-    }
-
-    @ViewBuilder
-    private func controlHitArea(_ control: DeviceControl, size: CGFloat) -> some View {
-        let rect = frame(for: control.rect, size: size)
-
-        if control.id == "trackball" {
-            trackballHitArea(control, rect: rect)
-        } else {
-            sideButtonHitArea(control, rect: rect)
-        }
-    }
-
-    @ViewBuilder
-    private func trackballHitArea(_ control: DeviceControl, rect: CGRect) -> some View {
-        let isPressed = pressedControl == control.id
-
-        TrackballSurface(
-            longPressSeconds: control.longPressSeconds,
-            onRoll: { delta in
-                rollTrackball(delta, in: rect)
-            },
-            onClick: {
-                model.click()
-            },
-            onHold: {
-                model.hold()
-            },
-            onPressed: { pressed in
-                pressedControl = pressed ? control.id : nil
-            },
-            onHover: { hovering in
-                hoveringTrackball = hovering
-                if !hovering {
-                    trackballRemainder = .zero
-                    withAnimation(.spring(response: 0.32, dampingFraction: 0.82)) {
-                        trackballOffset = .zero
+                RoundedRectangle(cornerRadius: pillRect.width / 2, style: .continuous)
+                    .fill(Color.white.opacity(0.09))
+                    .overlay {
+                        RoundedRectangle(cornerRadius: pillRect.width / 2, style: .continuous)
+                            .stroke(Color.white.opacity(0.16), lineWidth: 1)
                     }
+                    .frame(width: pillRect.width, height: pillRect.height)
+                    .position(x: pillRect.midX, y: pillRect.midY)
+
+                Rectangle()
+                    .fill(Color.white.opacity(0.13))
+                    .frame(width: pillRect.width * 0.62, height: 1)
+                    .position(x: pillRect.midX, y: upRect.maxY)
+
+                navigationButton(up, symbol: "chevron.up", rect: upRect)
+                navigationButton(down, symbol: "chevron.down", rect: downRect)
+
+                Button {
+                    perform(control: select)
+                } label: {
+                    ZStack {
+                        Circle()
+                            .fill(Color.white.opacity(0.09))
+                        Circle()
+                            .stroke(Color.white.opacity(0.16), lineWidth: 1)
+                        Image(systemName: "checkmark")
+                            .font(.system(size: max(10, selectRect.width * 0.27), weight: .bold))
+                            .foregroundStyle(Color.white.opacity(0.9))
+                    }
+                    .frame(width: selectRect.width, height: selectRect.height)
                 }
+                .buttonStyle(DeviceHardwareButtonStyle())
+                .position(x: selectRect.midX, y: selectRect.midY)
+                .help(helpText(for: select))
+                .accessibilityLabel(select.label)
+                .accessibilityHint(helpText(for: select))
             }
-        )
-        .frame(width: rect.width, height: rect.height)
-        .background(
-            Circle()
-                .fill(
-                    isPressed
-                        ? Color.white.opacity(0.12)
-                        : hoveringTrackball ? Color.white.opacity(0.05) : Color.clear
-                )
-        )
+            .frame(width: size.width, height: size.height, alignment: .topLeading)
+        }
+    }
+
+    private func navigationButton(
+        _ control: DeviceControl,
+        symbol: String,
+        rect: CGRect
+    ) -> some View {
+        Button {
+            perform(control: control)
+        } label: {
+            Image(systemName: symbol)
+                .font(.system(size: max(10, rect.width * 0.29), weight: .semibold))
+                .foregroundStyle(Color.white.opacity(0.9))
+                .frame(width: rect.width, height: rect.height)
+                .contentShape(Rectangle())
+        }
+        .buttonStyle(DeviceHardwareButtonStyle())
         .position(x: rect.midX, y: rect.midY)
         .help(helpText(for: control))
         .accessibilityLabel(control.label)
         .accessibilityHint(helpText(for: control))
-        .accessibilityAddTraits(.isButton)
-        .accessibilityAction {
-            model.click()
+    }
+
+    private func perform(control: DeviceControl) {
+        switch control.shortAction {
+        case "navigateUp":
+            model.navigate("up")
+        case "navigateDown":
+            model.navigate("down")
+        case "select":
+            model.select()
+        default:
+            break
         }
     }
 
     @ViewBuilder
     private func sideButtonHitArea(_ control: DeviceControl, rect: CGRect) -> some View {
         let isPressed = pressedControl == control.id
-        let usesPressedSkin = control.shortAction == "ptt"
+        let usesPressedSkin = control.shortAction == "ptt" && pressedDeviceImage != nil
 
         RoundedRectangle(cornerRadius: 10, style: .continuous)
             .fill(isPressed && !usesPressedSkin ? Color.white.opacity(0.16) : Color.clear)
@@ -327,66 +337,48 @@ private struct DeviceView: View {
             }
     }
 
-    private func rollTrackball(_ delta: CGSize, in rect: CGRect) {
-        trackballRemainder.width += delta.width
-        trackballRemainder.height += delta.height
-
-        let visualMax = max(7, rect.width * 0.055)
-        trackballOffset = clamped(trackballRemainder, maximum: visualMax)
-
-        let threshold = max(24, rect.width * 0.16)
-        var steps = 0
-        while steps < 6 {
-            let dx = trackballRemainder.width
-            let dy = trackballRemainder.height
-            if abs(dx) >= threshold, abs(dx) >= abs(dy) {
-                model.navigate(dx < 0 ? "left" : "right")
-                trackballRemainder.width -= dx < 0 ? -threshold : threshold
-            } else if abs(dy) >= threshold {
-                model.navigate(dy < 0 ? "up" : "down")
-                trackballRemainder.height -= dy < 0 ? -threshold : threshold
-            } else {
-                break
-            }
-            steps += 1
-        }
-    }
-
-    private func clamped(_ translation: CGSize, maximum: CGFloat) -> CGSize {
-        let distance = hypot(translation.width, translation.height)
-        guard distance > maximum, distance > 0 else { return translation }
-        let scale = maximum / distance
-        return CGSize(width: translation.width * scale, height: translation.height * scale)
-    }
-
     private func helpText(for control: DeviceControl) -> String {
-        if control.id == "trackball" {
-            return "Hover to navigate. Click to select. Double-click for camera."
+        switch control.shortAction {
+        case "navigateUp":
+            return "Navigate up."
+        case "navigateDown":
+            return "Navigate down."
+        case "select":
+            return "Select."
+        case "ptt":
+            return "Tap to sleep or wake. Press and hold to talk."
+        default:
+            return control.label
         }
-        if control.shortAction == "ptt" {
-            return "Press and hold to talk."
-        }
-        return control.label
     }
 
-    private func frame(for rect: NormalizedRect, size: CGFloat) -> CGRect {
+    private func frame(for rect: NormalizedRect, size: CGSize) -> CGRect {
         CGRect(
-            x: rect.x * size,
-            y: rect.y * size,
-            width: rect.width * size,
-            height: rect.height * size
+            x: rect.x * size.width,
+            y: rect.y * size.height,
+            width: rect.width * size.width,
+            height: rect.height * size.height
         )
     }
 
-    private func deviceArtwork(_ image: NSImage, size: CGFloat) -> some View {
+    private func deviceArtwork(_ image: NSImage, size: CGSize) -> some View {
         Image(nsImage: image)
             .resizable()
             .interpolation(.high)
-            .frame(width: size, height: size)
+            .frame(width: size.width, height: size.height)
     }
 
     private var showingPressedSkin: Bool {
         pressedDeviceImage != nil && (model.isPushToTalking || pressedControl == "side")
+    }
+}
+
+private struct DeviceHardwareButtonStyle: ButtonStyle {
+    func makeBody(configuration: Configuration) -> some View {
+        configuration.label
+            .opacity(configuration.isPressed ? 0.62 : 1)
+            .scaleEffect(configuration.isPressed ? 0.94 : 1)
+            .animation(.spring(response: 0.18, dampingFraction: 0.9), value: configuration.isPressed)
     }
 }
 

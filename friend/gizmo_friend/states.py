@@ -4,6 +4,7 @@ from enum import Enum
 
 
 class State(str, Enum):
+    POWERED_OFF = "powered_off"
     ASLEEP = "asleep"
     BOOTING = "booting"
     LISTENING = "listening"
@@ -23,51 +24,57 @@ class IllegalTransition(Exception):
 
 
 # (from, action) -> to. Tool "done" returns to listening.
-# Hold (reach) is allowed from listening or talking.
 _TRANSITIONS: dict[tuple[State, str], State] = {
-    (State.ASLEEP, "power_on"): State.BOOTING,
+    (State.POWERED_OFF, "power_on"): State.BOOTING,
+    (State.ASLEEP, "wake"): State.LISTENING,
+    (State.ASLEEP, "power_off"): State.POWERED_OFF,
     (State.BOOTING, "boot_done"): State.LISTENING,
-    (State.BOOTING, "power_off"): State.ASLEEP,
-    (State.LISTENING, "click"): State.LISTENING,
+    (State.BOOTING, "power_off"): State.POWERED_OFF,
+    (State.LISTENING, "select"): State.LISTENING,
     (State.LISTENING, "speech_out"): State.TALKING,
-    (State.TALKING, "click"): State.LISTENING,
+    (State.TALKING, "select"): State.LISTENING,
     (State.TALKING, "done"): State.LISTENING,
     (State.LISTENING, "think"): State.THINKING,
     (State.TALKING, "think"): State.THINKING,
     (State.THINKING, "done"): State.LISTENING,
-    (State.THINKING, "click"): State.LISTENING,
+    (State.THINKING, "select"): State.LISTENING,
     (State.LISTENING, "see"): State.SEEING,
     (State.TALKING, "see"): State.SEEING,
     (State.SEEING, "done"): State.LISTENING,
-    (State.SEEING, "click"): State.LISTENING,
+    (State.SEEING, "select"): State.LISTENING,
     (State.LISTENING, "show"): State.SHOWING,
     (State.TALKING, "show"): State.SHOWING,
     (State.SEEING, "show"): State.SHOWING,
     (State.SHOWING, "done"): State.LISTENING,
-    (State.SHOWING, "click"): State.LISTENING,
+    (State.SHOWING, "select"): State.LISTENING,
     (State.LISTENING, "make"): State.MAKING,
     (State.TALKING, "make"): State.MAKING,
     (State.SHOWING, "make"): State.MAKING,
     (State.MAKING, "done"): State.LISTENING,
-    (State.MAKING, "click"): State.LISTENING,
-    (State.LISTENING, "hold"): State.REACHING,
-    (State.TALKING, "hold"): State.REACHING,
-    (State.SHOWING, "hold"): State.REACHING,
-    (State.MAKING, "hold"): State.REACHING,
+    (State.MAKING, "select"): State.LISTENING,
+    (State.LISTENING, "reach"): State.REACHING,
+    (State.TALKING, "reach"): State.REACHING,
+    (State.SHOWING, "reach"): State.REACHING,
+    (State.MAKING, "reach"): State.REACHING,
     (State.REACHING, "done"): State.LISTENING,
-    (State.REACHING, "click"): State.LISTENING,
-    (State.LISTENING, "power_off"): State.ASLEEP,
-    (State.TALKING, "power_off"): State.ASLEEP,
-    (State.THINKING, "power_off"): State.ASLEEP,
-    (State.SEEING, "power_off"): State.ASLEEP,
-    (State.SHOWING, "power_off"): State.ASLEEP,
-    (State.MAKING, "power_off"): State.ASLEEP,
-    (State.REACHING, "power_off"): State.ASLEEP,
+    (State.REACHING, "select"): State.LISTENING,
 }
+
+for active_state in (
+    State.LISTENING,
+    State.TALKING,
+    State.THINKING,
+    State.SEEING,
+    State.SHOWING,
+    State.MAKING,
+    State.REACHING,
+):
+    _TRANSITIONS[(active_state, "sleep")] = State.ASLEEP
+    _TRANSITIONS[(active_state, "power_off")] = State.POWERED_OFF
 
 
 class StateMachine:
-    def __init__(self, start: State = State.ASLEEP) -> None:
+    def __init__(self, start: State = State.POWERED_OFF) -> None:
         self.state = start
 
     def can(self, action: str) -> bool:
@@ -81,7 +88,10 @@ class StateMachine:
         return self.state
 
     def awake(self) -> bool:
-        return self.state is not State.ASLEEP
+        return self.state not in {State.POWERED_OFF, State.ASLEEP}
+
+    def powered(self) -> bool:
+        return self.state is not State.POWERED_OFF
 
     def screen_on(self, viewing_page: bool = False) -> bool:
         return self.state in {State.SHOWING, State.MAKING} or viewing_page

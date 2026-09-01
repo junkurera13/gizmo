@@ -90,7 +90,7 @@ TOOL_SCHEMAS: list[dict] = [
         "type": "function",
         "name": "reach",
         "description": (
-            "They held the stick. Queue the current page to a parent's phone. "
+            "They asked to send the current page home. Queue it to a parent's phone. "
             "Not a live call. You are not a phone."
         ),
         "parameters": {

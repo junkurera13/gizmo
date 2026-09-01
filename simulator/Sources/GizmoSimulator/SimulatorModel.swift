@@ -35,7 +35,7 @@ final class SimulatorModel: ObservableObject {
     static let shared = SimulatorModel()
 
     @Published private(set) var connectionStatus: ConnectionStatus = .offline
-    @Published private(set) var deviceState = "asleep"
+    @Published private(set) var deviceState = "powered_off"
     @Published private(set) var transport = "—"
     @Published private(set) var screenOn = false
     @Published private(set) var viewingStill = false
@@ -112,15 +112,10 @@ final class SimulatorModel: ObservableObject {
         connectionStatus = .offline
     }
 
-    func click() {
-        DeviceHaptics.trackballTick()
+    func select() {
+        DeviceHaptics.controlTick()
         guard !poweredOff, deviceState != "asleep" else { return }
-        send(["type": "click"])
-    }
-
-    func hold() {
-        guard !poweredOff, deviceState != "asleep" else { return }
-        send(["type": "hold"])
+        send(["type": "select"])
     }
 
     /// The Game Boy moment: one chime, same every time, synced to the
@@ -199,8 +194,8 @@ final class SimulatorModel: ObservableObject {
     }
 
     func navigate(_ direction: String) {
-        guard ["up", "down", "left", "right"].contains(direction) else { return }
-        DeviceHaptics.trackballTick()
+        guard ["up", "down"].contains(direction) else { return }
+        DeviceHaptics.controlTick()
         guard !poweredOff, deviceState != "asleep" else { return }
         send(["type": "navigate", "direction": direction])
     }
@@ -370,10 +365,13 @@ final class SimulatorModel: ObservableObject {
             deviceState = state
             // The chime is for the cold boot only — the once-per-power-up
             // ritual. Waking from sleep is silent, like a phone.
-            if state == "booting", previous == "asleep", !hasColdBooted {
+            if state == "booting", previous == "powered_off", !hasColdBooted {
                 hasColdBooted = true
                 playBootSound()
             }
+        }
+        if let power = object["power"] as? Bool {
+            poweredOff = !power
         }
         if let path = object["transport"] as? String {
             transport = path

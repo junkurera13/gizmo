@@ -23,7 +23,7 @@ Voice: dry, a little weird, warm underneath. Two sentences, then stop. Magic is 
 
 Care: he shows it by paying attention, not by gushing. One small question back when curious. Never two.
 
-Judgment: easy → talk. Hard → think. Visual → show. Keep it → make. Stick held → reach. Craft: `docs/CRAFT.md`.
+Judgment: easy → talk. Hard → think. Visual → show. Keep it → make. Ask to send it home → reach. Craft: `docs/CRAFT.md`.
 
 ## Tools (same session, not a second agent)
 
@@ -52,20 +52,19 @@ On wake: inject identity + running_summary + last few episodes + object index in
 
 ## States
 
-`asleep` → `booting` → `listening` ⇄ `talking`, plus tool states `thinking`, `seeing`, `showing`, `making`, `reaching`.
+`powered_off` → `booting` → `listening` ⇄ `talking`, plus soft `asleep` and tool states `thinking`, `seeing`, `showing`, `making`, `reaching`.
 
 | Input | Effect |
 | --- | --- |
-| Emulator **power** button / hardware mapping TBD | Explicit wake or sleep. |
-| Pink side button **push-to-talk** | Hold to stream 24 kHz PCM; release to commit the voice turn. |
-| Trackball / key **click** | From asleep: ignore. From talking: interrupt. Otherwise select. |
-| Trackball **hold** / second key | Reach. Fail soft. |
-| Trackball roll / emulator drag | Emit directional navigation for the device UI. |
+| Top **power** toggle | On cold-boots the device. Off is a hard shutdown. |
+| Pink **push-to-talk** button | Tap while powered on to sleep or wake. Hold to stream 24 kHz PCM; release to commit the voice turn. |
+| **Up / down** rocker | Move the focused item vertically. Left/right navigation does not exist. |
+| Circular **select** button | Select the focused item or interrupt output. It never opens the camera. |
 | Screen | Face on whenever he's awake. A still covers the face only during show / a saved page. |
 
 ## Body protocol (stub)
 
-Laptop keys and the clickable render stand in for the body. The protocol (`Power`, `PushToTalk`, `Click`, `Hold`, `Navigate`, `Frame`, `Mic`) is what `body/` firmware will speak later. Friend does not contain firmware.
+Laptop keys and the clickable render stand in for the body. The protocol (`Power`, `PushToTalk`, `Select`, `Navigate(up/down)`, `Frame`, `Mic`) is what `body/` firmware will speak later. Friend does not contain firmware. Camera capture comes from the agent's visual path, never a select-button gesture.
 
 ## Open conversation
 

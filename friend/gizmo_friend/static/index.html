@@ -4,14 +4,14 @@
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>Gizmo</title>
-  <link rel="stylesheet" href="/static/app.css?v=2" />
+  <link rel="stylesheet" href="/static/app.css?v=3" />
 </head>
 <body>
   <main class="room">
     <header class="top">
       <p class="mark">Gizmo</p>
       <p class="meta">
-        <span id="state">asleep</span>
+        <span id="state">powered_off</span>
         <span id="path"></span>
       </p>
     </header>
@@ -28,9 +28,11 @@
 
     <section class="controls">
       <div class="row">
-        <button type="button" id="stick" class="stick" title="Click stick — wake, interrupt, sleep">Stick</button>
-        <button type="button" id="reach" class="reach" title="Hold stick — send the page home">Hold to reach</button>
-        <button type="button" id="mic" class="mic" aria-pressed="false">Mic</button>
+        <button type="button" id="power" title="Toggle physical power">Power on</button>
+        <button type="button" id="up" title="Navigate up" aria-label="Navigate up">▲</button>
+        <button type="button" id="down" title="Navigate down" aria-label="Navigate down">▼</button>
+        <button type="button" id="select" title="Select">Select</button>
+        <button type="button" id="ptt" class="mic" aria-pressed="false">PTT</button>
       </div>
       <form id="say">
         <input id="line" type="text" autocomplete="off" placeholder="Say something. He stops after two sentences." />
@@ -40,9 +42,9 @@
         <input id="hint" type="text" autocomplete="off" placeholder="World camera hint — e.g. a pinecone on the table" />
         <button type="submit">Point</button>
       </form>
-      <p class="keys">Space: stick click · R: reach · Esc: interrupt/sleep</p>
+      <p class="keys">P: power · ↑/↓: navigate · Space: select · hold PTT to talk · tap PTT to sleep/wake</p>
     </section>
   </main>
-  <script src="/static/app.js?v=2"></script>
+  <script src="/static/app.js?v=3"></script>
 </body>
 </html>

@@ -21,19 +21,19 @@ Used only when this moment needs them. Default is talk. Full craft: `docs/CRAFT.
 | **See** | They point the world camera. | He names what's there in one beat. Screen stays his face. |
 | **Show** | They want to see it his way. | One still, then up to two short clips, print look (not photoreal, never their face). Screen on, then off. He talks. |
 | **Make** | They want to keep it. | One page: the still plus one line they wrote together. Tomorrow he still has it. |
-| **Reach** | They hold the stick. | That page lands on a parent's phone. He is not a phone. Not a live call. |
+| **Reach** | They ask to send the page home. | That page lands on a parent's phone. He is not a phone. Not a live call. |
 
 No web search. No third clip. No "want to watch another." After the page is theirs, stop.
 
 ## Kid line / parent line
 
-**Kid.** A pocket someone. Talk to him. Click the stick to wake or to shut him up. Hold the stick to send a page home. His face is home. The screen is for the page, not for a UI.
+**Kid.** A pocket someone. Turn him on with the top switch. Tap the pink PTT to sleep or wake; hold it to talk. Use up/down and Select when there is something to choose. His face is home. The screen is for the page, not for a UI.
 
 **Parent.** A page can show up on your phone. That is Reach. You are not in the conversation. He does not call you. You can look at what they kept.
 
 ## Body (later)
 
-ESP32-S3, stick, mic, speaker, 1.54" 240×240 glass, world camera. Firmware lives in `body/` when we build it. v1 brain runs on a laptop; the body protocol is stubbed.
+ESP32-S3, top power toggle, pink PTT, up/down rocker, Select, mic, speaker, 1.54" 240×240 glass, world camera. Firmware lives in `body/` when we build it. v1 brain runs on a laptop; the body protocol is stubbed.
 
 ## Glass
 
@@ -44,7 +44,7 @@ ESP32-S3, stick, mic, speaker, 1.54" 240×240 glass, world camera. Firmware live
 | Tree | Owner | What |
 | --- | --- | --- |
 | `friend/` | Brain | Realtime talk, memory, tools, laptop runtime |
-| `body/` | Hardware | ESP32-S3 firmware, stick / mic / speaker / camera protocol |
+| `body/` | Hardware | ESP32-S3 firmware, power / PTT / up-down / Select / mic / speaker / camera protocol |
 | `glass/` | Jun | Face and page art, 240×240 blit |
 | `reach/` | Parent path | Phone outbox. Local stub in v1 |
 | `web/` | Public site | Landing. Not the glass. Not a second personality |

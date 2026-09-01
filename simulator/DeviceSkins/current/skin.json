@@ -1,45 +1,73 @@
 {
-  "id": "acid-pink-v1",
-  "name": "Acid / Pink v1",
-  "imageFilename": "device-transparent.png",
-  "pressedImageFilename": "device-transparent-ptt-pressed.png",
-  "canvasWidth": 1254,
-  "canvasHeight": 1254,
-  "stageColor": "#171719",
+  "id": "gizmo-reference-v2",
+  "name": "Gizmo reference v2",
+  "imageFilename": "device-reference.png",
+  "pressedImageFilename": "device-reference-ptt-pressed.png",
+  "canvasWidth": 1145,
+  "canvasHeight": 1373,
+  "stageColor": "#151517",
   "screen": {
-    "x": 0.2090,
-    "y": 0.0877,
-    "width": 0.5970,
-    "height": 0.4860,
-    "cornerRadius": 0.0360,
+    "x": 0.1581,
+    "y": 0.1755,
+    "width": 0.7153,
+    "height": 0.4975,
+    "cornerRadius": 0.0390,
     "pixelWidth": 240,
     "pixelHeight": 240,
     "contentMode": "fit"
   },
   "controls": [
     {
-      "id": "trackball",
-      "label": "Trackball",
+      "id": "navigate-up",
+      "label": "Navigate up",
+      "shape": "pillTop",
+      "rect": {
+        "x": 0.9220,
+        "y": 0.3270,
+        "width": 0.0500,
+        "height": 0.0460
+      },
+      "shortAction": "navigateUp",
+      "longAction": "navigateUp",
+      "longPressSeconds": 0.0
+    },
+    {
+      "id": "navigate-down",
+      "label": "Navigate down",
+      "shape": "pillBottom",
+      "rect": {
+        "x": 0.9220,
+        "y": 0.3730,
+        "width": 0.0500,
+        "height": 0.0460
+      },
+      "shortAction": "navigateDown",
+      "longAction": "navigateDown",
+      "longPressSeconds": 0.0
+    },
+    {
+      "id": "select",
+      "label": "Select",
       "shape": "circle",
       "rect": {
-        "x": 0.5215,
-        "y": 0.6150,
-        "width": 0.2540,
-        "height": 0.2550
+        "x": 0.9220,
+        "y": 0.4320,
+        "width": 0.0500,
+        "height": 0.0417
       },
-      "shortAction": "click",
-      "longAction": "hold",
-      "longPressSeconds": 0.65
+      "shortAction": "select",
+      "longAction": "select",
+      "longPressSeconds": 0.0
     },
     {
       "id": "side",
       "label": "Push to talk",
       "shape": "roundedRect",
       "rect": {
-        "x": 0.1170,
-        "y": 0.1360,
-        "width": 0.0640,
-        "height": 0.3620
+        "x": 0.0660,
+        "y": 0.2340,
+        "width": 0.0420,
+        "height": 0.3500
       },
       "shortAction": "ptt",
       "longAction": "ptt",

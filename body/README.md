@@ -1,6 +1,6 @@
 # Body
 
-ESP32-S3 handheld: trackball, push-to-talk side button, mic, speaker, 1.54" 240×240, world camera.
+ESP32-S3 handheld: top power toggle, pink push-to-talk button, up/down rocker, circular Select button, mic, speaker, 1.54" 240×240 screen, world camera.
 
 **Not in v1.** Do not add fake firmware here. Friend runs on a laptop and speaks this protocol in software.
 
@@ -10,11 +10,10 @@ The laptop maps keys onto these events. Firmware should emit the same later (exa
 
 | Event | Body input | Friend |
 | --- | --- | --- |
-| `power` | Emulator power control; hardware mapping TBD | Explicit wake / sleep |
-| `ptt` | Pink side button down / up | Start / stop push-to-talk and commit the captured turn |
-| `click` | Trackball short press | Interrupt / select. Does not power on |
-| `hold` | Trackball press and hold | `reach()` — queue the current page to the parent outbox |
-| `navigate` | Trackball roll / emulator drag | Move the device UI selection up, down, left, or right |
+| `power` | Top toggle on / off | Cold boot / hard shutdown |
+| `ptt` | Pink side button down / up | Tap to sleep/wake while powered; hold to talk and release to commit |
+| `select` | Circular Select button | Select the focused item or interrupt output; never open the camera |
+| `navigate` | Up/down rocker | Move the device UI selection up or down |
 | `frame` | World camera JPEG/RGB | `see()` / `show()` source |
 | `mic` | PCM 24 kHz 16-bit mono while PTT is down | Realtime input |
 | `speaker` | PCM 24 kHz 16-bit mono | Mouth output (realtime voice now; Cartesia later) |

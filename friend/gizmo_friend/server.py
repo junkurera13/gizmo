@@ -9,7 +9,7 @@ from fastapi import FastAPI, HTTPException, WebSocket, WebSocketDisconnect
 from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 
-from gizmo_friend.body_protocol import Click, Frame, Hold, MicChunk, Navigate, Power, PushToTalk, TextLine
+from gizmo_friend.body_protocol import Frame, MicChunk, Navigate, Power, PushToTalk, Select, TextLine
 from gizmo_friend.session import Friend
 
 STATIC = Path(__file__).parent / "static"
@@ -80,6 +80,7 @@ def app_factory(data_dir: Path) -> FastAPI:
             {
                 "type": "hello",
                 "state": friend.state.value,
+                "power": friend.machine.powered(),
                 "screen": friend.machine.awake(),
                 "viewing": friend.machine.screen_on(friend.viewing_page),
                 "transport": friend.transport_name,
@@ -118,17 +119,15 @@ def app_factory(data_dir: Path) -> FastAPI:
 
 async def _dispatch(friend: Friend, message: dict) -> None:
     kind = message.get("type")
-    if kind == "click":
-        await friend.handle(Click())
-    elif kind == "hold":
-        await friend.handle(Hold())
+    if kind == "select":
+        await friend.handle(Select())
     elif kind == "power":
         await friend.handle(Power(on=bool(message.get("on", True))))
     elif kind == "ptt":
         await friend.handle(PushToTalk(active=bool(message.get("active", False))))
     elif kind == "navigate":
         direction = str(message.get("direction") or "").lower()
-        if direction in {"up", "down", "left", "right"}:
+        if direction in {"up", "down"}:
             await friend.handle(Navigate(direction=direction))
     elif kind == "text":
         await friend.handle(TextLine(text=str(message.get("text") or "")))

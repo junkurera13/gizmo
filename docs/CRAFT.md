@@ -39,13 +39,13 @@ They want it tomorrow. One page: the still plus one line they wrote together.
 
 ## Reach (send home)
 
-They hold the stick. That page lands on a parent's phone. He is not a phone.
+They ask to send the page home. That page lands on a parent's phone. He is not a phone.
 Not a live call. Not a text thread.
 
 ## Judgment, one line
 
 Easy question → talk. Hard question → think. Visual question → show.
-"Can we keep it" → make. Stick held → reach. Bored → company, not content.
+"Can we keep it" → make. "Send it home" → reach. Bored → company, not content.
 
 ## Not verbs (on purpose)
 

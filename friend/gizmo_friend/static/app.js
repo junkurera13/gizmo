@@ -4,9 +4,11 @@ const speakerEl = document.getElementById("speaker");
 const glassEl = document.getElementById("glass");
 const stillEl = document.getElementById("still");
 const clipEl = document.getElementById("clip");
-const stickBtn = document.getElementById("stick");
-const reachBtn = document.getElementById("reach");
-const micBtn = document.getElementById("mic");
+const powerBtn = document.getElementById("power");
+const upBtn = document.getElementById("up");
+const downBtn = document.getElementById("down");
+const selectBtn = document.getElementById("select");
+const pttBtn = document.getElementById("ptt");
 const sayForm = document.getElementById("say");
 const lineInput = document.getElementById("line");
 const lookForm = document.getElementById("look");
@@ -23,6 +25,8 @@ let micCtx = null;
 let glassHoldUntil = 0;
 let glassOffTimer = 0;
 let wsQueue = Promise.resolve();
+let powered = false;
+let pttPressed = false;
 
 function send(payload) {
   if (ws.readyState === WebSocket.OPEN) ws.send(JSON.stringify(payload));
@@ -101,8 +105,13 @@ ws.addEventListener("message", (ev) => {
 
 async function onMessage(msg) {
   if (msg.state) stateEl.textContent = msg.state;
+  if (typeof msg.power === "boolean") {
+    powered = msg.power;
+    powerBtn.textContent = powered ? "Shut down" : "Power on";
+    powerBtn.setAttribute("aria-pressed", String(powered));
+  }
   if (msg.transport) pathEl.textContent = msg.transport;
-  if (msg.state === "asleep") {
+  if (msg.state === "asleep" || msg.state === "powered_off") {
     glassHoldUntil = 0;
     setGlass(false);
   } else if (msg.viewing === false && msg.type === "state") {
@@ -125,11 +134,16 @@ async function onMessage(msg) {
   if (msg.type === "error") speakerEl.textContent = msg.message || "something broke";
 }
 
-stickBtn.addEventListener("click", () => {
+powerBtn.addEventListener("click", () => {
   flushAudio();
-  send({ type: "click" });
+  send({ type: "power", on: !powered });
 });
-reachBtn.addEventListener("click", () => send({ type: "hold" }));
+upBtn.addEventListener("click", () => send({ type: "navigate", direction: "up" }));
+downBtn.addEventListener("click", () => send({ type: "navigate", direction: "down" }));
+selectBtn.addEventListener("click", () => {
+  flushAudio();
+  send({ type: "select" });
+});
 
 sayForm.addEventListener("submit", (e) => {
   e.preventDefault();
@@ -152,12 +166,14 @@ document.addEventListener("keydown", (e) => {
   if (e.code === "Space") {
     e.preventDefault();
     flushAudio();
-    send({ type: "click" });
+    send({ type: "select" });
   }
-  if (e.key === "r" || e.key === "R") send({ type: "hold" });
+  if (e.key === "p" || e.key === "P") send({ type: "power", on: !powered });
+  if (e.key === "ArrowUp") send({ type: "navigate", direction: "up" });
+  if (e.key === "ArrowDown") send({ type: "navigate", direction: "down" });
   if (e.key === "Escape") {
     flushAudio();
-    send({ type: "click" });
+    send({ type: "select" });
   }
 });
 
@@ -169,7 +185,7 @@ async function setMic(on) {
     processor = null;
     micStream = null;
     micCtx = null;
-    micBtn.setAttribute("aria-pressed", "false");
+    pttBtn.setAttribute("aria-pressed", "false");
     return;
   }
   micStream = await navigator.mediaDevices.getUserMedia({ audio: true });
@@ -190,14 +206,33 @@ async function setMic(on) {
   };
   src.connect(processor);
   processor.connect(micCtx.destination);
-  micBtn.setAttribute("aria-pressed", "true");
+  pttBtn.setAttribute("aria-pressed", "true");
 }
 
-micBtn.addEventListener("click", async () => {
-  const on = micBtn.getAttribute("aria-pressed") !== "true";
+pttBtn.addEventListener("pointerdown", async (event) => {
+  event.preventDefault();
+  pttPressed = true;
+  pttBtn.setPointerCapture(event.pointerId);
+  send({ type: "ptt", active: true });
   try {
-    await setMic(on);
+    await setMic(true);
+    if (!pttPressed) await setMic(false);
   } catch (_) {
+    pttPressed = false;
+    send({ type: "ptt", active: false });
     speakerEl.textContent = "Mic didn't work. Type instead.";
   }
+});
+
+pttBtn.addEventListener("pointerup", async (event) => {
+  event.preventDefault();
+  pttPressed = false;
+  await setMic(false);
+  send({ type: "ptt", active: false });
+});
+
+pttBtn.addEventListener("pointercancel", async () => {
+  pttPressed = false;
+  await setMic(false);
+  send({ type: "ptt", active: false });
 });

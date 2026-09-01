@@ -14,15 +14,10 @@ struct GizmoSimulatorApp: App {
         .windowToolbarStyle(.unifiedCompact)
         .commands {
             CommandMenu("Device") {
-                Button("Press Trackball") {
-                    SimulatorModel.shared.click()
+                Button("Select") {
+                    SimulatorModel.shared.select()
                 }
                 .keyboardShortcut(.space, modifiers: [])
-
-                Button("Hold Trackball") {
-                    SimulatorModel.shared.hold()
-                }
-                .keyboardShortcut("r", modifiers: [])
 
                 Divider()
 
@@ -40,16 +35,6 @@ struct GizmoSimulatorApp: App {
                     SimulatorModel.shared.navigate("down")
                 }
                 .keyboardShortcut(.downArrow, modifiers: [])
-
-                Button("Navigate Left") {
-                    SimulatorModel.shared.navigate("left")
-                }
-                .keyboardShortcut(.leftArrow, modifiers: [])
-
-                Button("Navigate Right") {
-                    SimulatorModel.shared.navigate("right")
-                }
-                .keyboardShortcut(.rightArrow, modifiers: [])
 
                 Divider()
 

@@ -120,14 +120,14 @@ button {
   cursor: pointer;
 }
 
-button.stick {
+#power {
   background: var(--ochre);
   color: var(--ink);
   border-color: var(--ochre);
   flex: 1;
 }
 
-button.reach, button.mic {
+button.mic {
   flex: 1;
 }
 

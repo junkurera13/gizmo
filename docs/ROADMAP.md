@@ -23,7 +23,7 @@ Close the gap between "demo" and "friend." Mostly polish, highest leverage.
 - Real voice by default (`.env` key loads everywhere, including the Dock app)
 - Judgment that holds in live talk: easy questions from the hip, hard ones through think, visual ones through show
 - Jun's hand-drawn face replaces the procedural eyes (`glass/`)
-- Click the stick to wake, not a power button hunt
+- Tap PTT to wake from soft sleep; use the top toggle only for cold boot and hard shutdown
 - Interrupt is instant; silence is comfortable; he never repeats his greeting
 - Memory that carries days: "remember the pinecone" actually lands
 
@@ -55,7 +55,7 @@ One clip becomes a told world. Stories that draw themselves.
 
 The body catches up to the brain.
 
-- ESP32-S3 firmware in `body/`: stick, mic, speaker, world camera, 240×240 glass
+- ESP32-S3 firmware in `body/`: top power toggle, pink PTT, up/down rocker, Select, mic, speaker, world camera, 240×240 glass
 - See uses the real camera; boot/home/sleep run on the device
 - Reach lands on an actual parent phone, not a local outbox
 - Battery honesty: auto-sleep tuned for hardware, wake is instant
@@ -64,7 +64,7 @@ The body catches up to the brain.
 
 ## 5 — Infinite Steam (parked)
 
-Conjured games — "make me a maze" and the trackball plays it. Parked on purpose
+Conjured games — "make me a maze" and the rocker plus Select play it. Parked on purpose
 until stories prove the conjuring pipeline. Same shape: no store, no menu, just ask.
 
 ## Order of operations

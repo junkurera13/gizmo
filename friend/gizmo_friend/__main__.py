@@ -48,7 +48,7 @@ async def _cli(data_dir: Path) -> None:
                 print(f"[{event.get('state')}]")
 
     task = asyncio.create_task(printer())
-    print("Gizmo Friend. Type a line. /click  /reach  /look <hint>  /quit")
+    print("Gizmo Friend. Type a line. /power on  /power off  /select  /up  /down  /look <hint>  /quit")
     print(f"memory: {data_dir / 'gizmo.db'}")
     print(f"talk path: {friend.transport_name}")
     try:
@@ -57,15 +57,25 @@ async def _cli(data_dir: Path) -> None:
             raw = line.strip()
             if raw in {"/quit", "/q"}:
                 break
-            if raw in {"/click", "/c", ""}:
-                from gizmo_friend.body_protocol import Click
+            if raw in {"/power on", "/on"}:
+                from gizmo_friend.body_protocol import Power
 
-                await friend.handle(Click())
+                await friend.handle(Power(on=True))
                 continue
-            if raw in {"/reach", "/r"}:
-                from gizmo_friend.body_protocol import Hold
+            if raw in {"/power off", "/off"}:
+                from gizmo_friend.body_protocol import Power
 
-                await friend.handle(Hold())
+                await friend.handle(Power(on=False))
+                continue
+            if raw in {"/select", "/s", ""}:
+                from gizmo_friend.body_protocol import Select
+
+                await friend.handle(Select())
+                continue
+            if raw in {"/up", "/down"}:
+                from gizmo_friend.body_protocol import Navigate
+
+                await friend.handle(Navigate(direction=raw.removeprefix("/")))
                 continue
             if raw.startswith("/look"):
                 hint = raw[5:].strip() or "a pinecone on the table"

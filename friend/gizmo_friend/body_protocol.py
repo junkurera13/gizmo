@@ -1,30 +1,24 @@
-"""Stick / mic / camera events. Firmware will speak this later; laptop keys do now.
+"""Physical device events. Firmware will speak this later; the simulator does now.
 
-THE CONTROL CONTRACT (locked with Jun, 2026-08-31)
+THE CONTROL CONTRACT (locked with Jun, 2026-09-01)
 
-The body is dumb: it reports raw physical events and never interprets
-them. All meaning lives in the brain (session.py), so the simulator and
-the real hardware behave identically. The physical controls map to raw
-events like this:
+Oddity OS reports raw physical events and never assigns conversational
+meaning to them. The session controller interprets the events, so the
+simulator and real hardware behave identically.
 
-  on/off toggle (top-left)  -> Power(on=True/False)
-      Shutdown and boot. Off is off: firmware sends Power(off), saves,
-      and powers down. Flipping it on is the cold boot: chime + boot
-      animation, every time.
+  on/off toggle (top)       -> Power(on=True/False)
+      Off is hard-off. On cold-boots the device.
 
   push-to-talk button        -> PushToTalk(active=True/False) on press/release
-      The brain decides what a press means:
+      The session controller decides what a press means while power is on:
         tap  (released before ~0.35s)  -> sleep if awake, wake if asleep
         hold (past ~0.35s)             -> mic hot, talk; release commits
       The mic streams only while a hold is live.
 
-  trackball click            -> Click
-      One click: select / interrupt / close camera.
-      Two fast clicks (~0.45s, brain-detected): open the camera.
-
-  trackball hold             -> Hold   (reported, currently reserved;
-      reaching a parent happens through conversation, not a gesture)
-  trackball roll             -> Navigate(up/down/left/right)
+  up/down rocker             -> Navigate(up/down)
+  select button              -> Select
+      Selects the focused item or interrupts current output. It does not
+      open the camera; camera capture is requested by the agent's see path.
   camera frame               -> Frame  (image and/or hint)
   mic audio while holding    -> MicChunk (pcm16, 24kHz mono)
 """
@@ -37,8 +31,7 @@ from typing import Union
 
 
 class BodyEventType(str, Enum):
-    CLICK = "click"
-    HOLD = "hold"
+    SELECT = "select"
     POWER = "power"
     PUSH_TO_TALK = "ptt"
     NAVIGATE = "navigate"
@@ -48,13 +41,8 @@ class BodyEventType(str, Enum):
 
 
 @dataclass(frozen=True)
-class Click:
-    type: str = BodyEventType.CLICK.value
-
-
-@dataclass(frozen=True)
-class Hold:
-    type: str = BodyEventType.HOLD.value
+class Select:
+    type: str = BodyEventType.SELECT.value
 
 
 @dataclass(frozen=True)
@@ -95,7 +83,7 @@ class TextLine:
     type: str = BodyEventType.TEXT.value
 
 
-BodyEvent = Union[Click, Hold, Power, PushToTalk, Navigate, Frame, MicChunk, TextLine]
+BodyEvent = Union[Select, Power, PushToTalk, Navigate, Frame, MicChunk, TextLine]
 
 
 @dataclass

@@ -11,13 +11,12 @@ from typing import Any
 from gizmo_friend.audio_out import BroadcastMouth, Mouth
 from gizmo_friend.body_protocol import (
     BodyEvent,
-    Click,
     Frame,
-    Hold,
     MicChunk,
     Navigate,
     Power,
     PushToTalk,
+    Select,
     TextLine,
     WorldCamera,
 )
@@ -90,10 +89,6 @@ class Friend:
         self._idle_task: asyncio.Task[None] | None = None
         self._last_activity = 0.0
         self._ptt_active = False
-        # Double-click on the trackball opens the camera; one click closes it.
-        self.double_click_s = 0.45
-        self._last_click_at = float("-inf")
-        self._last_click_state: State | None = None
         # The talk button works like a phone's side button: tap toggles
         # sleep/wake, and only a hold past this threshold opens the mic.
         self.ptt_hold_s = 0.35
@@ -122,6 +117,7 @@ class Friend:
         event = {
             **event,
             "state": self.machine.state.value,
+            "power": self.machine.powered(),
             # Glass is alive (face) whenever he's awake; "viewing" means a
             # page/still should cover the face right now.
             "screen": self.machine.awake(),
@@ -133,10 +129,8 @@ class Friend:
 
     async def handle(self, event: BodyEvent) -> None:
         self._touch()
-        if isinstance(event, Click):
-            await self.on_click()
-        elif isinstance(event, Hold):
-            await self.on_hold()
+        if isinstance(event, Select):
+            await self.on_select()
         elif isinstance(event, Power):
             await self.on_power(event.on)
         elif isinstance(event, PushToTalk):
@@ -151,56 +145,34 @@ class Friend:
             self.camera.inject(image=event.image, hint=event.hint, mime=event.mime)
             await self.emit({"type": "frame", "hint": event.hint})
 
-    async def on_click(self) -> None:
+    async def on_select(self) -> None:
         if not self._ready_for_input():
-            return
-
-        now = asyncio.get_running_loop().time()
-        previous_at = self._last_click_at
-        previous_state = self._last_click_state
-        self._last_click_at = now
-        self._last_click_state = self.machine.state
-
-        # Second fast click while idle: open the camera. The body stays dumb;
-        # the brain recognizes the gesture, so real hardware gets it for free.
-        if (
-            self.machine.state is State.LISTENING
-            and previous_state is State.LISTENING
-            and now - previous_at <= self.double_click_s
-        ):
-            self.machine.apply("see")
-            await self.emit({"type": "camera", "open": True})
             return
 
         if self.machine.state is State.TALKING:
             await self._interrupt()
-            self.machine.apply("click")
+            self.machine.apply("select")
             await self.emit({"type": "interrupted"})
             return
         if self.machine.state is State.LISTENING:
-            self.machine.apply("click")
+            self.machine.apply("select")
             await self.emit({"type": "select"})
             return
-        if self.machine.can("click"):
+        if self.machine.can("select"):
             await self._interrupt()
-            self.machine.apply("click")
+            self.machine.apply("select")
             self.viewing_page = False
             self._page_lit = False
             await self.emit({"type": "interrupted"})
 
-    async def on_hold(self) -> None:
-        # Reserved. Reaching a parent goes through conversation
-        # ("tell mom I'll be 5 mins late"), not a gesture.
-        return
-
     async def on_power(self, on: bool) -> None:
         if on:
-            if self.machine.state is State.ASLEEP:
+            if self.machine.state is State.POWERED_OFF:
                 self.machine.apply("power_on")
-                await self.emit({"type": "state"})
+                await self.emit({"type": "state", "reason": "switch"})
                 self._boot_task = asyncio.create_task(self._boot())
             return
-        if self.machine.state is State.ASLEEP:
+        if self.machine.state is State.POWERED_OFF:
             return
         if self._boot_task and not self._boot_task.done():
             self._boot_task.cancel()
@@ -211,7 +183,7 @@ class Friend:
             self.machine.apply("power_off")
         self.viewing_page = False
         self._page_lit = False
-        await self.emit({"type": "state", "power": False})
+        await self.emit({"type": "state", "reason": "switch"})
         # Power-off is a local body transition and must complete even if the
         # cloud voice socket has already gone stale. Cancel cloud output only
         # after the device is observably asleep; _interrupt itself fails soft.
@@ -238,16 +210,18 @@ class Friend:
 
     async def on_navigate(self, direction: str) -> None:
         cleaned = direction.strip().lower()
-        if not self._ready_for_input() or cleaned not in {"up", "down", "left", "right"}:
+        if not self._ready_for_input() or cleaned not in {"up", "down"}:
             return
         await self.emit({"type": "navigate", "direction": cleaned})
 
     async def on_push_to_talk(self, active: bool) -> None:
         # The talk button is a phone side button: press while asleep wakes,
         # a tap while awake sleeps, and only a hold opens the mic.
+        if self.machine.state is State.POWERED_OFF:
+            return
         if self.machine.state is State.ASLEEP:
             if active:
-                await self.on_power(True)
+                await self._wake_from_sleep()
             return
         if not self._ready_for_input():
             return
@@ -260,7 +234,7 @@ class Friend:
         # Release before the hold threshold: it was a tap. Sleep.
         if self._ptt_press_task and not self._ptt_press_task.done():
             self._cancel_press_watch()
-            await self.on_power(False)
+            await self._sleep(reason="ptt")
             return
         self._ptt_press_task = None
 
@@ -284,7 +258,7 @@ class Friend:
         await self._ensure_connected()
         if self.machine.state is State.TALKING:
             await self._interrupt()
-            self.machine.apply("click")
+            self.machine.apply("select")
             await self.emit({"type": "interrupted"})
         await self.emit({"type": "ptt", "active": True})
 
@@ -310,7 +284,7 @@ class Friend:
             await self._transport.send_audio(pcm)
 
     async def close(self) -> None:
-        if self.machine.state is not State.ASLEEP:
+        if self.machine.state is not State.POWERED_OFF:
             self.memory.rewrite_summary()
         for task in (self._boot_task, self._idle_task, self._pump):
             if task:
@@ -320,7 +294,7 @@ class Friend:
         self.memory.close()
 
     def _ready_for_input(self) -> bool:
-        return self.machine.state not in {State.ASLEEP, State.BOOTING}
+        return self.machine.state not in {State.POWERED_OFF, State.ASLEEP, State.BOOTING}
 
     def _touch(self) -> None:
         try:
@@ -352,12 +326,28 @@ class Friend:
             return
 
     async def _sleep_from_idle(self) -> None:
+        await self._sleep(reason="idle")
+
+    async def _sleep(self, reason: str) -> None:
+        if not self.machine.can("sleep"):
+            return
+        self._cancel_press_watch()
+        self._ptt_active = False
         self.memory.rewrite_summary()
-        if self.machine.can("power_off"):
-            self.machine.apply("power_off")
+        self.machine.apply("sleep")
         self.viewing_page = False
         self._page_lit = False
-        await self.emit({"type": "state", "power": False, "reason": "idle"})
+        await self.emit({"type": "state", "reason": reason})
+        await self._interrupt()
+
+    async def _wake_from_sleep(self) -> None:
+        if not self.machine.can("wake"):
+            return
+        self.machine.apply("wake")
+        self._touch()
+        await self.emit({"type": "state", "reason": "ptt"})
+        self._ensure_idle_watch()
+        await self._wake()
 
     async def _wake(self) -> None:
         await self._ensure_connected()
@@ -449,7 +439,7 @@ class Friend:
         if kind == "speech_started":
             if self.machine.state is State.TALKING:
                 await self._interrupt()
-                self.machine.apply("click")
+                self.machine.apply("select")
                 await self.emit({"type": "interrupted"})
             return
         if kind in {"done", "cancelled"}:
@@ -554,8 +544,8 @@ class Friend:
             await self.emit({"type": "glass", "still": payload["still"], "clips": [], "page": payload})
             return payload
         if name == "reach":
-            if self.machine.can("hold"):
-                self.machine.apply("hold")
+            if self.machine.can("reach"):
+                self.machine.apply("reach")
             await self.emit({"type": "state"})
             page = self.memory.last_page()
             result = reach(self.outbox, page)
