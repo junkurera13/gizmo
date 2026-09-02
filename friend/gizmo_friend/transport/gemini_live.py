@@ -9,7 +9,7 @@ from typing import Any
 from google import genai
 from google.genai import types
 
-from gizmo_friend.tools.allowlist import TOOL_SCHEMAS, assert_allowlist
+from gizmo_friend.tools.allowlist import NON_BLOCKING_TOOLS, TOOL_SCHEMAS, assert_allowlist
 from gizmo_friend.transport.base import TransportEvent
 
 try:
@@ -19,6 +19,9 @@ except ImportError:  # Python 3.13+
 
 
 MODEL = "gemini-3.1-flash-live-preview"
+# Gizmo's one voice. Google's default is Puck (upbeat), the opposite of him.
+# Umbriel is the easy-going male voice: unhurried, low energy, warm underneath.
+VOICE = "Umbriel"
 INPUT_RATE = 16_000
 DEVICE_RATE = 24_000
 OUTPUT_RATE = 24_000
@@ -56,12 +59,26 @@ def live_config(instructions: str, resume_handle: str = "") -> types.LiveConnect
             name=schema["name"],
             description=schema["description"],
             parameters_json_schema=schema["parameters"],
+            behavior=(
+                types.Behavior.NON_BLOCKING
+                if schema["name"] in NON_BLOCKING_TOOLS
+                else types.Behavior.BLOCKING
+            ),
         )
         for schema in TOOL_SCHEMAS
     ]
     return types.LiveConnectConfig(
         response_modalities=["AUDIO"],
         system_instruction=instructions,
+        speech_config=types.SpeechConfig(
+            voice_config=types.VoiceConfig(
+                prebuilt_voice_config=types.PrebuiltVoiceConfig(
+                    voice_name=os.environ.get("GIZMO_VOICE", VOICE)
+                )
+            )
+        ),
+        # enable_affective_dialog is rejected by this model at setup (1007),
+        # like safetySettings. Retest when the model line moves.
         # Live setup does not accept safetySettings (provider returns 1007).
         # Its built-in filters remain active; custom thresholds apply only
         # to supported generate-content calls in the reasoning provider.
@@ -225,6 +242,11 @@ class GeminiLiveTransport:
                 id=call_id,
                 name=name,
                 response=payload,
+                scheduling=(
+                    types.FunctionResponseScheduling.SILENT
+                    if name in NON_BLOCKING_TOOLS
+                    else None
+                ),
             )
         )
 

@@ -3,6 +3,10 @@
 He is not a feature list. He is a someone with six verbs. If a moment
 doesn't need a verb, he just talks. If it isn't one of these, he doesn't do it.
 
+> Status: Talk and Think are live. See is live as camera-frame context on the
+> current turn. Show, Make, and Reach are the next verbs; they are not yet wired
+> to the Live agent, and the prompt says so. The vision below is unchanged.
+
 ## Talk (default)
 
 Boredom, play, nonsense, "hi", feelings, "remember yesterday."

@@ -7,8 +7,10 @@ import os
 import uuid
 from collections import deque
 from collections.abc import Callable
+from datetime import datetime
 from pathlib import Path
 from typing import Any
+from zoneinfo import ZoneInfo
 
 from gizmo_friend.audio_out import Mouth
 from gizmo_friend.brain.memory import MemoryProvider, memory_provider_from_env
@@ -34,6 +36,16 @@ from gizmo_friend.transport.gemini_live import GeminiLiveTransport
 Listener = Callable[[dict[str, Any]], Any]
 
 EXPRESSIONS = {"idle", "curious", "thinking", "happy", "concerned", "surprised"}
+
+
+def _today() -> str:
+    """The kid's local date, e.g. 'Wednesday 2 September 2026'. GIZMO_TZ picks the zone."""
+    zone = os.environ.get("GIZMO_TZ", "UTC")
+    try:
+        now = datetime.now(ZoneInfo(zone))
+    except Exception:  # noqa: BLE001 - a bad zone name must not stop a boot
+        now = datetime.now(ZoneInfo("UTC"))
+    return now.strftime("%A %-d %B %Y")
 
 
 class GizmoSession:
@@ -118,7 +130,9 @@ class GizmoSession:
             self._listeners.remove(queue)
 
     def instructions(self) -> str:
-        prefix = FROZEN_PROMPT
+        # The date lets him read the memory block's episode dates as "last
+        # time" and "a while ago" without a clock tool. Fresh per connect.
+        prefix = FROZEN_PROMPT + f"\n\nTODAY\n{_today()}"
         if self._memory_context.strip():
             prefix += (
                 "\n\nPERSISTENT MEMORY FROM MEMOBASE\n"
