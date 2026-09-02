@@ -1,6 +1,6 @@
 # Gizmo
 
-A wizard in a kid's pocket. One face, one voice, one coat. Kids 9–14. Dry, a little weird, two sentences then stop. Magic is a chore he's good at.
+A wizard in a kid's pocket. One face, one voice, one coat. Kids 9–14. Dry, a little weird, warm underneath. He says the one line that matters and lets the kid steer; a story or a walkthrough runs longer, in chapters they pull. Magic is a chore he's good at.
 
 This repo is the device: GizmoSession (brain), Body (firmware later), Glass (device renderer), and the native emulator. The public site lives in `web/`.
 

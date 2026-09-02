@@ -47,7 +47,7 @@ One clip becomes a told world. Stories that draw themselves.
 - Multi-beat stories: his narration drives a sequence of conjured clips
 - The kid steers by voice mid-story; he adapts without breaking stride
 - Stories can be kept (Make) and sent home (Reach)
-- Still two sentences at a time. A storyteller, not a TV.
+- Still in chapters the kid pulls, never a stream. A storyteller, not a TV.
 
 **Magic bar:** "tell me a story about my dog on the moon" produces something worth keeping.
 
