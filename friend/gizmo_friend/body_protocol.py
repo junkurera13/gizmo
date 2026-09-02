@@ -10,15 +10,16 @@ simulator and real hardware behave identically.
       Off is hard-off. On cold-boots the device.
 
   push-to-talk button        -> PushToTalk(active=True/False) on press/release
-      The session controller decides what a press means while power is on:
-        tap  (released before ~0.35s)  -> sleep if awake, wake if asleep
-        hold (past ~0.35s)             -> mic hot, talk; release commits
-      The mic streams only while a hold is live.
+      One meaning: down, he listens; up, he answers. A press while asleep
+      wakes him and the same press keeps listening. There is no tap
+      gesture and no sleep button; sleep is idle-only (see idle_sleep_s).
+      The mic streams only while the button is down.
 
   up/down rocker             -> Navigate(up/down)
   select button              -> Select
       Selects the focused item or interrupts current output. It does not
       open the camera; camera frames arrive independently from Oddity OS.
+      While asleep, any button wakes him and does nothing else.
   camera frame               -> Frame  (image and/or hint)
   mic audio while holding    -> MicChunk (pcm16, 24kHz mono)
 """

@@ -25,8 +25,8 @@ web/              public site (empty until we design it)
 ```bash
 python3 -m venv .venv
 source .venv/bin/activate
-pip install -e ".[dev]"
-cp .env.example .env   # optional
+pip install -e .
+cp .env.example .env   # then set GEMINI_API_KEY
 gizmo                  # http://127.0.0.1:43147
 ```
 
@@ -36,15 +36,17 @@ Or: `python -m gizmo_friend` from a venv with this repo installed.
 
 | Variable | Required | What |
 | --- | --- | --- |
-| `GEMINI_API_KEY` | for live agent | Gemini 3.1 Flash Live and Gemini 3.7 Flash `deep_think()`. If absent, the local fake transport keeps device flows testable. |
+| `GEMINI_API_KEY` | yes | Gemini 3.1 Flash Live and Gemini 3.7 Flash `deep_think()`. Gizmo has no offline brain; if Gemini is unreachable he reports the outage and retries. |
 | `GIZMO_USER_ID` | recommended | Stable owner/device identity across separate sessions. |
 | `MEMOBASE_URL` | for persistent memory | Root URL of the self-hosted Railway Memobase service. |
 | `MEMOBASE_API_KEY` | for persistent memory | Memobase project token. |
-| `GIZMO_DATA_DIR` | no | Final transcript JSONL and transitional device data. Default `./data`. |
+| `GIZMO_DATA_DIR` | no | Final transcript JSONL. Default `./data`. |
 
 ### Talk to him
 
-**Native emulator:** launch `Gizmo Simulator.app`. **Power on** cold-boots Gizmo. Tap **PTT** to sleep or wake; hold it while talking. Use **Up**, **Down**, and **Select** for device UI. Camera frames and 24 kHz PCM travel over the existing body WebSocket; the backend resamples mic audio to Gemini's 16 kHz input.
+**Native emulator:** launch `Gizmo Simulator.app`. **Power on** cold-boots Gizmo. Hold **PTT** while talking; release to send. Use **Up**, **Down**, and **Select** for device UI. Camera frames and 24 kHz PCM travel over the existing body WebSocket; the backend resamples mic audio to Gemini's 16 kHz input.
+
+Gizmo waits silently after power-on or wake. He sleeps on his own after two idle minutes; any button wakes him, and a PTT press from sleep wakes him *and* captures that first spoken turn. There is no sleep gesture. The conversation panel shows microphone status and any permission/input errors.
 
 For cloud mode, set `GIZMO_BRAIN_URL` to the Railway HTTPS domain and `GIZMO_DEVICE_TOKEN` to the matching service secret in the ignored `.env`. The native emulator reads only those two connection settings, uses an authenticated WSS connection, and plays the returned 24 kHz audio. It never needs the Gemini key in the client. Omit `GIZMO_BRAIN_URL` to retain the existing local-launch workflow.
 
@@ -78,15 +80,7 @@ Set `GEMINI_API_KEY` and a randomly generated `GIZMO_DEVICE_TOKEN` on `gizmo-bra
 
 ## Tools
 
-The model-facing V1 functions are `deep_think(question)` and `set_expression(expression)`. Google Search is Gemini's native grounding tool, not a custom search function. `make`, `reach`, `see`, `show`, and the old text-router fallback are not part of the active agent. `show_image()` and `show_video()` exist only as future interfaces; no Adaptive Media pipeline is implemented.
-
-## Tests
-
-```bash
-pytest
-```
-
-Tests cover the device state machine, PTT pre-roll, 24→16 kHz conversion, Gemini event mapping, native Search configuration, camera forwarding, transcript persistence, provider memory flow, and fail-soft controls.
+The model-facing V1 functions are `deep_think(question)` and `set_expression(expression)`. Google Search is Gemini's native grounding tool, not a custom search function. No media generation pipeline exists yet.
 
 ## Who owns what
 

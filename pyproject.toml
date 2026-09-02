@@ -22,26 +22,12 @@ dependencies = [
   "audioop-lts>=0.2.2; python_version >= '3.13'",
 ]
 
-[project.optional-dependencies]
-dev = [
-  "pytest>=8.0",
-  "pytest-asyncio>=0.24",
-]
-
 [project.scripts]
 gizmo = "gizmo_friend.__main__:main"
 
 [tool.setuptools.packages.find]
-where = ["friend", "reach"]
-include = ["gizmo_friend*", "gizmo_reach*"]
+where = ["friend"]
+include = ["gizmo_friend*"]
 
 [tool.setuptools.package-data]
 gizmo_friend = ["static/*"]
-
-[tool.pytest.ini_options]
-testpaths = ["friend/tests"]
-asyncio_mode = "auto"
-pythonpath = ["friend", "reach"]
-markers = [
-  "asyncio: async tests",
-]

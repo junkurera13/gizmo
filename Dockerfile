@@ -7,7 +7,6 @@ WORKDIR /app
 
 COPY pyproject.toml README.md ./
 COPY friend ./friend
-COPY reach ./reach
 
 RUN pip install --no-cache-dir .
 

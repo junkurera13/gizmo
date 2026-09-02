@@ -7,7 +7,7 @@ import os
 from contextlib import asynccontextmanager
 from pathlib import Path
 
-from fastapi import FastAPI, HTTPException, Request, WebSocket, WebSocketDisconnect
+from fastapi import FastAPI, Request, WebSocket, WebSocketDisconnect
 from fastapi.responses import FileResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 
@@ -47,9 +47,6 @@ def app_factory(data_dir: Path) -> FastAPI:
             return JSONResponse({"detail": "unauthorized"}, status_code=401)
         return await call_next(request)
 
-    media = data_dir / "media"
-    media.mkdir(parents=True, exist_ok=True)
-
     @app.get("/")
     async def index() -> FileResponse:
         return FileResponse(STATIC / "index.html")
@@ -62,37 +59,6 @@ def app_factory(data_dir: Path) -> FastAPI:
             "transport": friend.transport_name,
             "authentication_required": bool(device_token),
         }
-
-    @app.get("/api/outbox")
-    async def outbox() -> dict:
-        pages = [p.__dict__ for p in friend.outbox.list_pages()]
-        return {"pages": pages}
-
-    @app.get("/api/pages")
-    async def pages() -> dict:
-        prefix = friend.memory.prefix_memory()
-        last = friend.memory.last_page()
-        return {
-            "name": prefix.name,
-            "facts": prefix.facts,
-            "objects": prefix.objects,
-            "last": None
-            if last is None
-            else {
-                "id": last.id,
-                "subject": last.subject,
-                "line": last.line,
-                "still": f"/media/{Path(last.still_path).name}",
-            },
-        }
-
-    @app.get("/media/{name}")
-    async def media_file(name: str) -> FileResponse:
-        path = media / Path(name).name
-        if not path.exists() or not path.is_file():
-            raise HTTPException(status_code=404, detail="no page")
-        media_type = "image/svg+xml" if path.suffix.lower() == ".svg" else None
-        return FileResponse(path, media_type=media_type)
 
     @app.websocket("/ws")
     async def ws(socket: WebSocket) -> None:
@@ -107,9 +73,7 @@ def app_factory(data_dir: Path) -> FastAPI:
                 "state": friend.state.value,
                 "power": friend.machine.powered(),
                 "screen": friend.machine.awake(),
-                "viewing": friend.machine.screen_on(friend.viewing_page),
                 "transport": friend.transport_name,
-                "name": friend.memory.get_name(),
             }
         )
 

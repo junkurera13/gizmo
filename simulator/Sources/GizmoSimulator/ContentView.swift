@@ -346,7 +346,7 @@ private struct DeviceView: View {
         case "select":
             return "Select."
         case "ptt":
-            return "Tap to sleep or wake. Press and hold to talk."
+            return "Hold to talk. Wakes him if he's asleep."
         default:
             return control.label
         }
@@ -390,6 +390,20 @@ private struct ConversationPanel: View {
         VStack(spacing: 0) {
             header
             transcript
+            if let error = model.voiceError {
+                Text(error)
+                    .font(.system(size: 12))
+                    .foregroundStyle(.red)
+                    .padding(.horizontal, 14)
+                    .padding(.vertical, 8)
+            } else if let status = model.microphoneStatus {
+                Text(status)
+                    .font(.system(size: 12))
+                    .foregroundStyle(.secondary)
+                    .accessibilityValue("Microphone input level \(Int(model.microphoneLevel * 100)) percent")
+                    .padding(.horizontal, 14)
+                    .padding(.vertical, 8)
+            }
             composer
         }
         .background(Color(nsColor: .windowBackgroundColor))

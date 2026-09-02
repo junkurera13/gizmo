@@ -10,10 +10,6 @@ class State(str, Enum):
     LISTENING = "listening"
     TALKING = "talking"
     THINKING = "thinking"
-    SEEING = "seeing"
-    SHOWING = "showing"
-    MAKING = "making"
-    REACHING = "reaching"
 
 
 class IllegalTransition(Exception):
@@ -23,7 +19,7 @@ class IllegalTransition(Exception):
         self.action = action
 
 
-# (from, action) -> to. Tool "done" returns to listening.
+# (from, action) -> to. "done" always returns to listening.
 _TRANSITIONS: dict[tuple[State, str], State] = {
     (State.POWERED_OFF, "power_on"): State.BOOTING,
     (State.ASLEEP, "wake"): State.LISTENING,
@@ -38,37 +34,9 @@ _TRANSITIONS: dict[tuple[State, str], State] = {
     (State.TALKING, "think"): State.THINKING,
     (State.THINKING, "done"): State.LISTENING,
     (State.THINKING, "select"): State.LISTENING,
-    (State.LISTENING, "see"): State.SEEING,
-    (State.TALKING, "see"): State.SEEING,
-    (State.SEEING, "done"): State.LISTENING,
-    (State.SEEING, "select"): State.LISTENING,
-    (State.LISTENING, "show"): State.SHOWING,
-    (State.TALKING, "show"): State.SHOWING,
-    (State.SEEING, "show"): State.SHOWING,
-    (State.SHOWING, "done"): State.LISTENING,
-    (State.SHOWING, "select"): State.LISTENING,
-    (State.LISTENING, "make"): State.MAKING,
-    (State.TALKING, "make"): State.MAKING,
-    (State.SHOWING, "make"): State.MAKING,
-    (State.MAKING, "done"): State.LISTENING,
-    (State.MAKING, "select"): State.LISTENING,
-    (State.LISTENING, "reach"): State.REACHING,
-    (State.TALKING, "reach"): State.REACHING,
-    (State.SHOWING, "reach"): State.REACHING,
-    (State.MAKING, "reach"): State.REACHING,
-    (State.REACHING, "done"): State.LISTENING,
-    (State.REACHING, "select"): State.LISTENING,
 }
 
-for active_state in (
-    State.LISTENING,
-    State.TALKING,
-    State.THINKING,
-    State.SEEING,
-    State.SHOWING,
-    State.MAKING,
-    State.REACHING,
-):
+for active_state in (State.LISTENING, State.TALKING, State.THINKING):
     _TRANSITIONS[(active_state, "sleep")] = State.ASLEEP
     _TRANSITIONS[(active_state, "power_off")] = State.POWERED_OFF
 
@@ -92,6 +60,3 @@ class StateMachine:
 
     def powered(self) -> bool:
         return self.state is not State.POWERED_OFF
-
-    def screen_on(self, viewing_page: bool = False) -> bool:
-        return self.state in {State.SHOWING, State.MAKING} or viewing_page

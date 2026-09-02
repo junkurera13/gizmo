@@ -65,7 +65,14 @@ final class MicrophoneCapture: @unchecked Sendable {
         }
 
         engine.prepare()
-        try engine.start()
+        do {
+            try engine.start()
+        } catch {
+            input.removeTap(onBus: 0)
+            engine.stop()
+            self.converter = nil
+            throw error
+        }
         running = true
     }
 

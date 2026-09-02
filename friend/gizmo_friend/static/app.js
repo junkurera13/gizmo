@@ -2,8 +2,6 @@ const stateEl = document.getElementById("state");
 const pathEl = document.getElementById("path");
 const speakerEl = document.getElementById("speaker");
 const glassEl = document.getElementById("glass");
-const stillEl = document.getElementById("still");
-const clipEl = document.getElementById("clip");
 const powerBtn = document.getElementById("power");
 const upBtn = document.getElementById("up");
 const downBtn = document.getElementById("down");
@@ -22,8 +20,6 @@ let sources = [];
 let micStream = null;
 let processor = null;
 let micCtx = null;
-let glassHoldUntil = 0;
-let glassOffTimer = 0;
 let wsQueue = Promise.resolve();
 let powered = false;
 let pttPressed = false;
@@ -33,42 +29,7 @@ function send(payload) {
 }
 
 function setGlass(on) {
-  if (!on && Date.now() < glassHoldUntil) {
-    clearTimeout(glassOffTimer);
-    glassOffTimer = setTimeout(() => setGlass(false), glassHoldUntil - Date.now());
-    return;
-  }
   glassEl.classList.toggle("lit", on);
-  if (!on) {
-    stillEl.classList.remove("visible");
-    clipEl.classList.remove("visible");
-    clipEl.pause();
-    clipEl.removeAttribute("src");
-  }
-}
-
-function showStill(url) {
-  if (!url) return;
-  glassHoldUntil = Date.now() + 2400;
-  stillEl.src = url;
-  stillEl.classList.add("visible");
-  clipEl.classList.remove("visible");
-  setGlass(true);
-}
-
-async function playClips(clips) {
-  if (!clips || !clips.length) return;
-  for (const url of clips.slice(0, 2)) {
-    await new Promise((resolve) => {
-      clipEl.onended = () => resolve();
-      clipEl.onerror = () => resolve();
-      clipEl.src = url;
-      clipEl.classList.add("visible");
-      stillEl.classList.remove("visible");
-      clipEl.play().catch(() => resolve());
-      setTimeout(resolve, 8000);
-    });
-  }
 }
 
 function flushAudio() {
@@ -111,24 +72,13 @@ async function onMessage(msg) {
     powerBtn.setAttribute("aria-pressed", String(powered));
   }
   if (msg.transport) pathEl.textContent = msg.transport;
-  if (msg.state === "asleep" || msg.state === "powered_off") {
-    glassHoldUntil = 0;
-    setGlass(false);
-  } else if (msg.viewing === false && msg.type === "state") {
-    setGlass(false);
-  }
+  if (typeof msg.screen === "boolean") setGlass(msg.screen);
   if (msg.type === "transcript" && msg.role === "gizmo") {
     speakerEl.textContent = msg.text || "";
   }
   if (msg.type === "interrupted") {
     flushAudio();
     speakerEl.textContent = "";
-    glassHoldUntil = 0;
-    setGlass(false);
-  }
-  if (msg.type === "glass") {
-    showStill(msg.still);
-    if (msg.clips && msg.clips.length) await playClips(msg.clips);
   }
   if (msg.type === "audio" && msg.pcm) playPcm(msg.pcm);
   if (msg.type === "error") speakerEl.textContent = msg.message || "something broke";

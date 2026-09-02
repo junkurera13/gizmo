@@ -27,7 +27,7 @@ No unsolicited feed or browsing theater. Google Search is a quiet grounding tool
 
 ## Kid line / parent line
 
-**Kid.** A pocket someone. Turn him on with the top switch. Tap the pink PTT to sleep or wake; hold it to talk. Use up/down and Select when there is something to choose. His face is home. The screen is for the page, not for a UI.
+**Kid.** A pocket someone. Turn him on with the top switch. Hold the pink button to talk; that's all it does. He dozes off on his own and any button wakes him. Use up/down and Select when there is something to choose. His face is home. The screen is for the page, not for a UI.
 
 **Parent.** A page can show up on your phone. That is Reach. You are not in the conversation. He does not call you. You can look at what they kept.
 
@@ -46,6 +46,5 @@ ESP32-S3, top power toggle, pink PTT, up/down rocker, Select, mic, speaker, 1.54
 | `friend/` | Brain | Realtime talk, memory, tools, laptop runtime |
 | `body/` | Hardware | ESP32-S3 firmware, power / PTT / up-down / Select / mic / speaker / camera protocol |
 | `glass/` | Jun | Face and page art, 240×240 blit |
-| `reach/` | Parent path | Phone outbox. Local stub in v1 |
 | `web/` | Public site | Landing. Not the glass. Not a second personality |
 | `docs/` | Shared | This file, Friend architecture, v1 scope |

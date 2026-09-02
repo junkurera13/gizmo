@@ -3,8 +3,6 @@ from __future__ import annotations
 # Google Search is a native Gemini tool and is deliberately not represented as
 # an application function. These are the only functions Gizmo itself executes.
 ALLOWED_TOOLS = ("deep_think", "set_expression")
-RETIRED_AGENT_TOOLS = ("make", "reach", "see", "show", "think")
-FUTURE_MEDIA_TOOLS = ("show_image", "show_video")
 
 TOOL_SCHEMAS: list[dict] = [
     {

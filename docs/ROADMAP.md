@@ -23,7 +23,7 @@ Close the gap between "demo" and "friend." Mostly polish, highest leverage.
 - Real voice by default (`.env` key loads everywhere, including the Dock app)
 - Judgment that holds in live talk: easy questions from the hip, hard ones through think, visual ones through show
 - Jun's hand-drawn face replaces the procedural eyes (`glass/`)
-- Tap PTT to wake from soft sleep; use the top toggle only for cold boot and hard shutdown
+- One button, one meaning: PTT only ever means talk; sleep is idle-only; the top toggle is for cold boot and hard shutdown
 - Interrupt is instant; silence is comfortable; he never repeats his greeting
 - Memory that carries days: "remember the pinecone" actually lands
 

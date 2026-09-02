@@ -11,12 +11,11 @@ The laptop maps keys onto these events. Firmware should emit the same later (exa
 | Event | Body input | Friend |
 | --- | --- | --- |
 | `power` | Top toggle on / off | Cold boot / hard shutdown |
-| `ptt` | Pink side button down / up | Tap to sleep/wake while powered; hold to talk and release to commit |
-| `select` | Circular Select button | Select the focused item or interrupt output; never open the camera |
-| `navigate` | Up/down rocker | Move the device UI selection up or down |
-| `frame` | World camera JPEG/RGB | `see()` / `show()` source |
+| `ptt` | Pink side button down / up | Down: listen (wakes him if asleep). Up: answer. No tap gesture; sleep is idle-only |
+| `select` | Circular Select button | Select the focused item or interrupt output; wakes him if asleep; never opens the camera |
+| `navigate` | Up/down rocker | Move the device UI selection up or down; wakes him if asleep |
+| `frame` | World camera JPEG/RGB | Visual context for the current turn |
 | `mic` | PCM 24 kHz 16-bit mono while PTT is down | Realtime input |
-| `speaker` | PCM 24 kHz 16-bit mono | Mouth output (realtime voice now; Cartesia later) |
-| `blit` | 240×240 page | Glass on only for show / saved page |
+| `speaker` | PCM 24 kHz 16-bit mono | Realtime voice output |
 
 No character art in this tree. No second brain. Body is a body.

@@ -46,6 +46,8 @@ final class SimulatorModel: ObservableObject {
     @Published private(set) var conversation: [ConversationMessage] = []
     @Published private(set) var isPushToTalking = false
     @Published private(set) var voiceError: String?
+    @Published private(set) var microphoneStatus: String?
+    @Published private(set) var microphoneLevel: Double = 0
 
     // Fake battery until the real body reports one.
     @Published private(set) var batteryLevel: Double = 1.0
@@ -62,6 +64,11 @@ final class SimulatorModel: ObservableObject {
     private let session = URLSession(configuration: .default)
     private var socket: URLSessionWebSocketTask?
     private var receiveTask: Task<Void, Never>?
+    private var sendTask: Task<Void, Never>?
+    private var microphonePressID = UUID()
+    private var microphoneBytes = 0
+    private var microphonePeak = 0
+    private var microphoneStartedAt: Date?
     private var reconnectTask: Task<Void, Never>?
     private var backendProcess: Process?
     private var launchedBackend = false
@@ -83,6 +90,8 @@ final class SimulatorModel: ObservableObject {
     }
 
     func reconnect() {
+        stopMicrophone()
+        sendTask?.cancel()
         reconnectTask?.cancel()
         reconnectTask = nil
         receiveTask?.cancel()
@@ -99,7 +108,8 @@ final class SimulatorModel: ObservableObject {
         isShuttingDown = true
         reconnectTask?.cancel()
         reconnectTask = nil
-        microphone.stop()
+        stopMicrophone()
+        sendTask?.cancel()
         speaker.shutdown()
         isPushToTalking = false
         receiveTask?.cancel()
@@ -116,7 +126,9 @@ final class SimulatorModel: ObservableObject {
 
     func select() {
         DeviceHaptics.controlTick()
-        guard !poweredOff, deviceState != "asleep" else { return }
+        // The body reports every press; the brain decides what it means
+        // (while asleep, any button simply wakes him).
+        guard !poweredOff else { return }
         send(["type": "select"])
     }
 
@@ -154,36 +166,45 @@ final class SimulatorModel: ObservableObject {
     }
 
     func beginPushToTalk() {
-        // The body reports every press, even while asleep — the brain
-        // decides what it means (a press while sleeping wakes him).
-        // While the power toggle is off there is no power: nothing reports.
+        // Press means "listen". If he is asleep the same press wakes him
+        // first; the brain handles both. While the power toggle is off
+        // there is no power: nothing reports.
         guard connectionStatus == .connected, !poweredOff, !isPushToTalking else { return }
 
         isPushToTalking = true
+        let pressID = UUID()
+        microphonePressID = pressID
+        microphoneBytes = 0
+        microphonePeak = 0
+        microphoneLevel = 0
+        microphoneStartedAt = Date()
+        microphoneStatus = "Opening microphone…"
         speaker.interrupt()
         voiceError = nil
         send(["type": "ptt", "active": true])
 
         Task {
             guard await MicrophoneCapture.requestAccess() else {
-                guard isPushToTalking else { return }
-                isPushToTalking = false
-                voiceError = "Microphone access is off"
+                guard isPushToTalking, microphonePressID == pressID else { return }
+                stopMicrophone()
+                voiceError = "Allow Gizmo Simulator in System Settings → Privacy & Security → Microphone."
                 send(["type": "ptt", "active": false])
                 return
             }
 
-            guard isPushToTalking else { return }
+            guard isPushToTalking, microphonePressID == pressID else { return }
             do {
                 try microphone.start { [weak self] pcm in
                     Task { @MainActor in
-                        self?.sendAudio(pcm)
+                        guard let self, self.microphonePressID == pressID else { return }
+                        self.sendAudio(pcm)
                     }
                 }
+                microphoneStatus = "Listening — release to send"
             } catch {
-                guard isPushToTalking else { return }
-                isPushToTalking = false
-                voiceError = "Microphone unavailable"
+                guard isPushToTalking, microphonePressID == pressID else { return }
+                stopMicrophone()
+                voiceError = "Microphone unavailable: \(error.localizedDescription)"
                 send(["type": "ptt", "active": false])
                 appendEvent("microphone", error.localizedDescription)
             }
@@ -192,15 +213,36 @@ final class SimulatorModel: ObservableObject {
 
     func endPushToTalk() {
         guard isPushToTalking else { return }
+        let held = Date().timeIntervalSince(microphoneStartedAt ?? Date())
+        let capturedBytes = microphoneBytes
+        let capturedPeak = microphonePeak
+        stopMicrophone()
+        send(["type": "ptt", "active": false])
+        // Diagnostics only: a bump too short to carry speech is not an error.
+        if held >= 0.3 {
+            appendEvent("microphone", "Sent \(capturedBytes) PCM bytes; peak \(capturedPeak).")
+            if capturedBytes == 0 {
+                voiceError = "No microphone audio. Check your Mac's sound input and microphone permission."
+            } else if capturedPeak < 8 {
+                voiceError = "The microphone is silent. Check your Mac's sound input."
+            } else {
+                microphoneStatus = "Sent — waiting for Gizmo"
+            }
+        }
+    }
+
+    private func stopMicrophone() {
         microphone.stop()
         isPushToTalking = false
-        send(["type": "ptt", "active": false])
+        microphonePressID = UUID()
+        microphoneStatus = nil
+        microphoneLevel = 0
     }
 
     func navigate(_ direction: String) {
         guard ["up", "down"].contains(direction) else { return }
         DeviceHaptics.controlTick()
-        guard !poweredOff, deviceState != "asleep" else { return }
+        guard !poweredOff else { return }
         send(["type": "navigate", "direction": direction])
     }
 
@@ -356,6 +398,8 @@ final class SimulatorModel: ObservableObject {
 
     private func markDisconnected(_ detail: String) {
         guard !isShuttingDown else { return }
+        stopMicrophone()
+        sendTask?.cancel()
         speaker.interrupt()
         connectionStatus = .offline
         socket = nil
@@ -412,12 +456,14 @@ final class SimulatorModel: ObservableObject {
         if type == "hello" {
             connectionStatus = .connected
         } else if type == "audio", let pcm = object["pcm"] as? String, let data = Data(base64Encoded: pcm) {
+            guard !poweredOff, screenOn, !isPushToTalking else { return }
             do { try speaker.enqueue(data) }
             catch { appendEvent("speaker error", error.localizedDescription) }
         } else if type == "transcript", object["role"] as? String == "gizmo" {
             spokenLine = object["text"] as? String ?? ""
             appendConversation(role: .gizmo, text: spokenLine)
         } else if type == "transcript", object["role"] as? String == "user" {
+            microphoneStatus = nil
             appendConversation(role: .user, text: object["text"] as? String ?? "")
         } else if type == "interrupted" {
             speaker.interrupt()
@@ -456,7 +502,12 @@ final class SimulatorModel: ObservableObject {
             let data = try JSONSerialization.data(withJSONObject: payload)
             guard let text = String(data: data, encoding: .utf8) else { return }
 
-            Task {
+            // Keep PTT down -> PCM chunks -> PTT up in wire order. Separate
+            // unstructured sends could let the release overtake the audio.
+            let previousSend = sendTask
+            sendTask = Task {
+                await previousSend?.value
+                guard !Task.isCancelled, self.socket === socket else { return }
                 do {
                     try await socket.send(.string(text))
                 } catch {
@@ -471,6 +522,14 @@ final class SimulatorModel: ObservableObject {
 
     private func sendAudio(_ pcm: Data) {
         guard isPushToTalking, !pcm.isEmpty else { return }
+        let peak = pcm.withUnsafeBytes { bytes in
+            stride(from: 0, to: bytes.count - 1, by: 2).reduce(0) { highest, offset in
+                max(highest, abs(Int(Int16(littleEndian: bytes.loadUnaligned(fromByteOffset: offset, as: Int16.self)))))
+            }
+        }
+        microphoneBytes += pcm.count
+        microphonePeak = max(microphonePeak, peak)
+        microphoneLevel = Double(peak) / 32768.0
         send(["type": "audio", "pcm": pcm.base64EncodedString()])
     }
 

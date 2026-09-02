@@ -62,6 +62,9 @@ def live_config(instructions: str, resume_handle: str = "") -> types.LiveConnect
     return types.LiveConnectConfig(
         response_modalities=["AUDIO"],
         system_instruction=instructions,
+        # Live setup does not accept safetySettings (provider returns 1007).
+        # Its built-in filters remain active; custom thresholds apply only
+        # to supported generate-content calls in the reasoning provider.
         tools=[
             types.Tool(google_search=types.GoogleSearch()),
             types.Tool(function_declarations=declarations),
@@ -103,6 +106,8 @@ class GeminiLiveTransport:
         self._output_transcript = ""
         self._suppress_audio = False
         self._audio_active = False
+        self._activity_open = False
+        self._audio_received = False
         self._pending_image: types.Blob | None = None
         self._closed = False
 
@@ -135,36 +140,61 @@ class GeminiLiveTransport:
         await self._queue.put(None)
 
     async def send_text(self, text: str) -> None:
+        if not text.strip():
+            return
+        if self._activity_open:
+            await self._require_session().send_realtime_input(activity_end=types.ActivityEnd())
+            self._activity_open = False
+            self._audio_active = False
         self._suppress_audio = False
+        self._output_transcript = ""
         parts = []
         if self._pending_image is not None:
             parts.append(types.Part(inline_data=self._pending_image))
             self._pending_image = None
         parts.append(types.Part(text=text))
+        # Keep the deployed text/image path: this model/key's manual-PTT
+        # session rejects activity-wrapped realtime text (1007), while this
+        # existing client-content path is verified against the live provider.
         await self._require_session().send_client_content(
             turns=types.Content(role="user", parts=parts),
             turn_complete=True,
         )
 
     async def begin_audio(self) -> None:
-        self._suppress_audio = False
+        self._suppress_audio = True
+        self._output_transcript = ""
+        self._audio_received = False
         self._resampler.reset()
-        await self._require_session().send_realtime_input(activity_start=types.ActivityStart())
         self._audio_active = True
-        if self._pending_image is not None:
-            await self._require_session().send_realtime_input(video=self._pending_image)
-            self._pending_image = None
 
     async def send_audio(self, pcm: bytes) -> None:
+        if not self._audio_active:
+            return
         converted = self._resampler.convert(pcm)
         if converted:
+            # Arm on hold, but only open a provider turn when PCM exists.
+            # An empty start/end pair can provoke speech or a 1007 close.
+            if not self._activity_open:
+                await self._require_session().send_realtime_input(activity_start=types.ActivityStart())
+                self._activity_open = True
+                if self._pending_image is not None:
+                    await self._require_session().send_realtime_input(video=self._pending_image)
+                    self._pending_image = None
             await self._require_session().send_realtime_input(
                 audio=types.Blob(data=converted, mime_type=f"audio/pcm;rate={INPUT_RATE}")
             )
+            self._audio_received = True
 
     async def commit_audio(self) -> None:
-        await self._require_session().send_realtime_input(activity_end=types.ActivityEnd())
+        if not self._audio_active:
+            return
+        # Permission failures / empty holds must not provoke a reply.
+        self._suppress_audio = not self._audio_received
+        if self._activity_open:
+            await self._require_session().send_realtime_input(activity_end=types.ActivityEnd())
         self._audio_active = False
+        self._activity_open = False
         self._resampler.reset()
 
     async def interrupt(self, played_ms: int = 0, item_id: str = "") -> None:
@@ -172,18 +202,15 @@ class GeminiLiveTransport:
         # Gemini interrupts its current output when new activity begins. The
         # controller immediately stops local playback as well.
         self._suppress_audio = True
-        session = self._require_session()
-        await session.send_realtime_input(activity_start=types.ActivityStart())
-        await session.send_realtime_input(activity_end=types.ActivityEnd())
+        self._output_transcript = ""
+        self._audio_received = False
+        self._audio_active = False
+        # Mute locally now. The next *real* input's activity-start interrupts
+        # generation upstream. Sleep/select are not fabricated user turns.
 
     async def request_response(self) -> None:
-        await self._require_session().send_client_content(
-            turns=types.Content(
-                role="user",
-                parts=[types.Part(text="[The Gizmo device just woke. Give the normal brief wake greeting.]")],
-            ),
-            turn_complete=True,
-        )
+        # Compatibility with the transport protocol; waking is not a user turn.
+        return
 
     async def submit_tool_output(self, call_id: str, output: str) -> None:
         try:
@@ -206,7 +233,7 @@ class GeminiLiveTransport:
         image = types.Blob(data=data, mime_type=mime)
         # With manual activity boundaries, a video frame sent outside an
         # active turn may be ignored. Bind snapshots to the next user turn.
-        if self._audio_active:
+        if self._activity_open:
             await self._require_session().send_realtime_input(video=image)
         else:
             self._pending_image = image
@@ -240,7 +267,7 @@ class GeminiLiveTransport:
             events.append(TransportEvent(kind="reconnect_required", raw=raw))
 
         tool_call = message.tool_call
-        if tool_call:
+        if tool_call and not self._suppress_audio:
             for call in tool_call.function_calls or []:
                 call_id = call.id or ""
                 name = call.name or ""
@@ -312,7 +339,6 @@ class GeminiLiveTransport:
                 self._output_transcript = ""
             elif self._suppress_audio:
                 self._output_transcript = ""
-            self._suppress_audio = False
             events.append(TransportEvent(kind="done", raw=raw))
         return events
 

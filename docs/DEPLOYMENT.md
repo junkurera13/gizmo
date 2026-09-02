@@ -18,7 +18,7 @@ The native simulator uses the ignored repository `.env` for `GIZMO_BRAIN_URL` an
 - Gemini Live calls `deep_think`, receives Gemini 3.7's result, and voices the answer.
 - Camera snapshot recognition through the deployed brain.
 - Memobase extraction, retrieval, and recall in a new `GizmoSession` with a separate local transcript directory. Synthetic test identities were removed afterward.
-- Rebuilt native app: cloud greeting, typed conversation, PTT tap sleep/wake, and hard power-off.
+- Rebuilt native app: cloud connection, typed conversation, PTT hold-to-talk, and hard power-off. (PTT tap-to-sleep was removed afterwards; sleep is idle-only.)
 
 ## Operational notes
 

@@ -33,6 +33,8 @@ class GeminiReasoningProvider(ReasoningProvider):
     async def reason(self, question: str, memory_context: str = "") -> str | None:
         from google.genai import types
 
+        from gizmo_friend.safety import KID_SAFETY_SETTINGS
+
         prompt = question.strip()
         if not prompt:
             return None
@@ -48,6 +50,7 @@ class GeminiReasoningProvider(ReasoningProvider):
             contents=prompt,
             config=types.GenerateContentConfig(
                 system_instruction=system,
+                safety_settings=KID_SAFETY_SETTINGS,
                 thinking_config=types.ThinkingConfig(thinking_level="HIGH"),
                 max_output_tokens=2048,
             ),
