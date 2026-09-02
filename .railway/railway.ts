@@ -1,6 +1,6 @@
 import {
   defineRailway,
-  github,
+  empty,
   postgres,
   preserve,
   project,
@@ -20,10 +20,9 @@ export default defineRailway(() => {
   const cache = redis("redis", { region });
 
   const memobase = service("memobase", {
-    source: github("junkurera13/gizmo", {
-      branch: "main",
-      rootDirectory: "deploy/memobase",
-    }),
+    // Deploy with `railway up`; GitHub App repository access is not configured.
+    source: empty(),
+    rootDirectory: "deploy/memobase",
     replicas: { [region]: 1 },
     healthcheck: "/api/v1/healthcheck",
     healthcheckTimeout: 120,
@@ -40,7 +39,7 @@ export default defineRailway(() => {
   });
 
   const brain = service("gizmo-brain", {
-    source: github("junkurera13/gizmo", { branch: "main" }),
+    source: empty(),
     replicas: { [region]: 1 },
     healthcheck: "/health",
     healthcheckTimeout: 30,

@@ -70,6 +70,8 @@ After creating and linking an empty Railway project, provision it with:
 npm install
 npx @railway/cli config plan
 npx @railway/cli config apply
+npx @railway/cli up --service memobase
+npx @railway/cli up --service gizmo-brain
 ```
 
 Set `GEMINI_API_KEY` and a randomly generated `GIZMO_DEVICE_TOKEN` on `gizmo-brain`, and a random `ACCESS_TOKEN` plus the Gemini key as `MEMOBASE_LLM_API_KEY` on `memobase`, using Railway secrets rather than source files. The IaC file marks those values with `preserve()` so future applies retain them. Generate a public Railway domain for `gizmo-brain` after its first healthy deployment; Postgres, Redis, and Memobase remain on Railway's private network. All public device/data routes require the device token; `/health` is the only unauthenticated cloud route.

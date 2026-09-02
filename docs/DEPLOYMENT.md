@@ -6,6 +6,8 @@ Brain health: https://gizmo-brain-production.up.railway.app/health
 
 All four services run in Singapore: `gizmo-brain`, `memobase`, `postgres`, and `redis`. Only the brain has a public domain. Other HTTP routes and the device WebSocket require `Authorization: Bearer <GIZMO_DEVICE_TOKEN>`.
 
+Deploy the committed repository with `npx @railway/cli up --service gizmo-brain` and `npx @railway/cli up --service memobase`. Railway's GitHub App currently lacks access to `junkurera13/gizmo`, so automatic GitHub deployments are not enabled. GitHub source connection must be explicitly configured after repository access is granted.
+
 The native simulator uses the ignored repository `.env` for `GIZMO_BRAIN_URL` and `GIZMO_DEVICE_TOKEN`. API keys are backend credentials, not client configuration. The current local env file is permission mode 600 and is not tracked by Git.
 
 ## Verified on 2026-09-02
