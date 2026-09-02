@@ -26,6 +26,18 @@ INPUT_RATE = 16_000
 DEVICE_RATE = 24_000
 OUTPUT_RATE = 24_000
 
+# Speech gate. With automatic VAD off, activity_end tells Gemini "the user
+# spoke, answer now" — so a held button with nothing said must never open a
+# turn, or the model answers a phrase it hallucinated from room noise.
+# RMS on int16: a quiet room sits around 50-200, speech well above 1000.
+SPEECH_RMS = int(os.environ.get("GIZMO_SPEECH_RMS", "400"))
+# Voiced audio needed before the gate opens: ~160 ms at 16 kHz mono PCM16.
+# A chair creak is one chunk; a word is several.
+SPEECH_OPEN_BYTES = int(0.16 * INPUT_RATE * 2)
+# Everything heard before the gate opens is kept and sent right behind
+# activity_start, so the first syllable is never lost. Bounded for safety.
+PRE_GATE_LIMIT_BYTES = 30 * INPUT_RATE * 2
+
 
 class Pcm16Resampler:
     """Stateful mono PCM16 conversion across device audio chunks."""
@@ -125,6 +137,9 @@ class GeminiLiveTransport:
         self._audio_active = False
         self._activity_open = False
         self._audio_received = False
+        self._pre_gate: list[bytes] = []
+        self._pre_gate_bytes = 0
+        self._voiced_bytes = 0
         self._pending_image: types.Blob | None = None
         self._closed = False
 
@@ -182,6 +197,9 @@ class GeminiLiveTransport:
         self._suppress_audio = True
         self._output_transcript = ""
         self._audio_received = False
+        self._pre_gate.clear()
+        self._pre_gate_bytes = 0
+        self._voiced_bytes = 0
         self._resampler.reset()
         self._audio_active = True
 
@@ -189,29 +207,53 @@ class GeminiLiveTransport:
         if not self._audio_active:
             return
         converted = self._resampler.convert(pcm)
-        if converted:
-            # Arm on hold, but only open a provider turn when PCM exists.
-            # An empty start/end pair can provoke speech or a 1007 close.
-            if not self._activity_open:
-                await self._require_session().send_realtime_input(activity_start=types.ActivityStart())
-                self._activity_open = True
-                if self._pending_image is not None:
-                    await self._require_session().send_realtime_input(video=self._pending_image)
-                    self._pending_image = None
-            await self._require_session().send_realtime_input(
-                audio=types.Blob(data=converted, mime_type=f"audio/pcm;rate={INPUT_RATE}")
-            )
-            self._audio_received = True
+        if not converted:
+            return
+        if self._activity_open:
+            await self._send_pcm(converted)
+            return
+
+        # Gate closed: hold the audio and listen for actual speech.
+        self._pre_gate.append(converted)
+        self._pre_gate_bytes += len(converted)
+        while self._pre_gate and self._pre_gate_bytes > PRE_GATE_LIMIT_BYTES:
+            self._pre_gate_bytes -= len(self._pre_gate.pop(0))
+        if audioop.rms(converted, 2) >= SPEECH_RMS:
+            self._voiced_bytes += len(converted)
+        if self._voiced_bytes < SPEECH_OPEN_BYTES:
+            return
+
+        # Someone is talking. Open the turn and replay what we held.
+        session = self._require_session()
+        await session.send_realtime_input(activity_start=types.ActivityStart())
+        self._activity_open = True
+        self._audio_received = True
+        if self._pending_image is not None:
+            await session.send_realtime_input(video=self._pending_image)
+            self._pending_image = None
+        for chunk in self._pre_gate:
+            await self._send_pcm(chunk)
+        self._pre_gate.clear()
+        self._pre_gate_bytes = 0
+
+    async def _send_pcm(self, converted: bytes) -> None:
+        await self._require_session().send_realtime_input(
+            audio=types.Blob(data=converted, mime_type=f"audio/pcm;rate={INPUT_RATE}")
+        )
 
     async def commit_audio(self) -> None:
         if not self._audio_active:
             return
-        # Permission failures / empty holds must not provoke a reply.
+        # A hold with no speech in it is dropped whole: no activity pair, no
+        # reply. Gizmo stays quiet, which is what a silent press means.
         self._suppress_audio = not self._audio_received
         if self._activity_open:
             await self._require_session().send_realtime_input(activity_end=types.ActivityEnd())
         self._audio_active = False
         self._activity_open = False
+        self._pre_gate.clear()
+        self._pre_gate_bytes = 0
+        self._voiced_bytes = 0
         self._resampler.reset()
 
     async def interrupt(self, played_ms: int = 0, item_id: str = "") -> None:
@@ -222,6 +264,9 @@ class GeminiLiveTransport:
         self._output_transcript = ""
         self._audio_received = False
         self._audio_active = False
+        self._pre_gate.clear()
+        self._pre_gate_bytes = 0
+        self._voiced_bytes = 0
         # Mute locally now. The next *real* input's activity-start interrupts
         # generation upstream. Sleep/select are not fabricated user turns.
 
