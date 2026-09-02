@@ -11,6 +11,8 @@ open "dist/Gizmo Simulator.app"
 
 With no `GIZMO_BRAIN_URL` in `.env`, the app owns its brain: at launch it evicts anything already on port `43147` and starts the repo-local Friend fresh, so a leftover brain on old code is never reachable. With `GIZMO_BRAIN_URL` set it talks to that cloud brain instead. Either way the power switch is the source of truth: a brain that disagrees on connect is told the switch position and follows it.
 
+Each install mints a device id on first launch (kept in user defaults, shown in `simulator.log`) and sends it as `X-Gizmo-Device`, so every install is its own Gizmo with its own memory. Set `GIZMO_DEVICE_ID` in the environment to impersonate a device or start fresh.
+
 Logs land in `data/` (gitignored): `simulator.log` is the app's event trail, `brain.log` is the local brain's output.
 
 ## Change the device render

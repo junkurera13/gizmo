@@ -97,6 +97,7 @@ final class SimulatorModel: ObservableObject {
         guard !hasStarted else { return }
         hasStarted = true
         isShuttingDown = false
+        appendEvent("identity", "This body is \(DeviceIdentity.id)")
 
         Task {
             await ensureBackendAndConnect()

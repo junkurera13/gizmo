@@ -14,7 +14,7 @@ gizmo --cli            # keyboard in the terminal
 
 - `GEMINI_API_KEY` — required. Gemini 3.1 Flash Live plus Gemini 3.7 Flash for `deep_think()`
 - `MEMOBASE_URL` / `MEMOBASE_API_KEY` — self-hosted Memobase on Railway (without them, memory is off)
-- `GIZMO_USER_ID` — stable owner/device identity across sessions
+- `GIZMO_USER_ID` — fallback identity for bodies that send no `X-Gizmo-Device` header (the browser harness); real bodies identify themselves
 - `GIZMO_DATA_DIR` — final transcript JSONL (default `./data`)
 
 Architecture: `docs/FRIEND.md`. Product: `docs/PRODUCT.md`. Craft: `docs/CRAFT.md`.

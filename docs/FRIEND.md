@@ -26,10 +26,12 @@ Power-on and wake are silent: no greeting or response is requested until the use
 
 ## Session controller
 
+The server keeps one `GizmoSession` per device. A body identifies itself with the `X-Gizmo-Device` header on the WebSocket handshake (the simulator mints and keeps one per install; hardware will use its serial). That id keys memory and transcripts, so two devices never share a mind, and a session outlives its socket so a reconnect resumes the same Gizmo. A body that sends no id falls back to `GIZMO_USER_ID`.
+
 `GizmoSession` owns:
 
 - Gemini Live connect, close, interruption, resumption handle, context compression, and go-away reconnect with backoff
-- stable `GIZMO_USER_ID` and a unique ID for each hard-power session
+- the device identity it was created for, and a unique ID for each hard-power session
 - input/output final transcripts
 - camera-frame forwarding over the existing `Frame` event
 - tool validation and execution

@@ -37,7 +37,7 @@ Or: `python -m gizmo_friend` from a venv with this repo installed.
 | Variable | Required | What |
 | --- | --- | --- |
 | `GEMINI_API_KEY` | yes | Gemini 3.1 Flash Live and Gemini 3.7 Flash `deep_think()`. Gizmo has no offline brain; if Gemini is unreachable he reports the outage and retries. |
-| `GIZMO_USER_ID` | recommended | Stable owner/device identity across separate sessions. |
+| `GIZMO_USER_ID` | optional | Fallback identity for a body that sends no `X-Gizmo-Device` header. Each device otherwise gets its own memory. |
 | `MEMOBASE_URL` | for persistent memory | Root URL of the self-hosted Railway Memobase service. |
 | `MEMOBASE_API_KEY` | for persistent memory | Memobase project token. |
 | `GIZMO_DATA_DIR` | no | Final transcript JSONL. Default `./data`. |

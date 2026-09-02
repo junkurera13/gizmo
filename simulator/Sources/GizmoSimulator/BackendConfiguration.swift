@@ -19,8 +19,11 @@ struct BackendConfiguration {
         var request = URLRequest(url: url)
         request.timeoutInterval = 8
         // Never forward the device credential to an unrelated media host.
-        if url.host == baseURL.host, let token, !token.isEmpty {
-            request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
+        if url.host == baseURL.host {
+            if let token, !token.isEmpty {
+                request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
+            }
+            request.setValue(DeviceIdentity.id, forHTTPHeaderField: "X-Gizmo-Device")
         }
         return request
     }

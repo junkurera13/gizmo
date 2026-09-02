@@ -22,13 +22,25 @@ def app_factory(data_dir: Path) -> FastAPI:
     deployed = bool(os.environ.get("RAILWAY_ENVIRONMENT_ID"))
     if deployed and not device_token:
         raise RuntimeError("GIZMO_DEVICE_TOKEN is required for a cloud deployment")
-    friend = GizmoSession(data_dir)
+    # One Gizmo per device. The body identifies itself with X-Gizmo-Device on
+    # the socket handshake; that id keys memory and transcripts, so two
+    # devices never share a mind. Sessions outlive their sockets: a reconnect
+    # picks up the same Gizmo mid-thought.
+    sessions: dict[str, GizmoSession] = {}
+    default_device = os.environ.get("GIZMO_USER_ID", "gizmo-local-user")
+
+    def session_for(device_id: str) -> GizmoSession:
+        friend = sessions.get(device_id)
+        if friend is None:
+            friend = GizmoSession(data_dir / "devices" / device_id, user_id=device_id)
+            sessions[device_id] = friend
+        return friend
 
     @asynccontextmanager
     async def lifespan(app: FastAPI):
-        app.state.friend = friend
+        app.state.sessions = sessions
         yield
-        await friend.close()
+        await asyncio.gather(*(friend.close() for friend in sessions.values()), return_exceptions=True)
 
     app = FastAPI(title="Gizmo Friend", docs_url=None, redoc_url=None, lifespan=lifespan)
 
@@ -55,8 +67,7 @@ def app_factory(data_dir: Path) -> FastAPI:
     async def health() -> dict:
         return {
             "ok": True,
-            "state": friend.state.value,
-            "transport": friend.transport_name,
+            "devices": len(sessions),
             "authentication_required": bool(device_token),
         }
 
@@ -65,6 +76,8 @@ def app_factory(data_dir: Path) -> FastAPI:
         if not authorized(socket):
             await socket.close(code=1008)
             return
+        device_id = _device_id(socket.headers.get("x-gizmo-device", ""), default_device)
+        friend = session_for(device_id)
         await socket.accept()
         queue = friend.subscribe()
         await socket.send_json(
@@ -104,6 +117,12 @@ def app_factory(data_dir: Path) -> FastAPI:
     if STATIC.exists():
         app.mount("/static", StaticFiles(directory=STATIC), name="static")
     return app
+
+
+def _device_id(header: str, default: str) -> str:
+    """A device id is an opaque label, kept filesystem- and URL-safe."""
+    cleaned = "".join(ch for ch in header.strip() if ch.isalnum() or ch in "-_.")[:64]
+    return cleaned or default
 
 
 async def _dispatch(friend: GizmoSession, message: dict) -> None:
