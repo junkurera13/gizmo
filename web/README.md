@@ -1,6 +1,6 @@
 # Web
 
-The public site. Not the device. Not Friend. Not the 240×240 glass.
+The public site. Not the device. Not Friend. Not the glass.
 
 Empty until we design it. Copy and tone still come from `docs/PRODUCT.md`. Do not invent a second personality.
 

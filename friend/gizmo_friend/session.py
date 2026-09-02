@@ -64,7 +64,10 @@ class GizmoSession:
         reasoning_provider: ReasoningProvider | None = None,
         user_id: str | None = None,
         transport_factory: Callable[[str], Transport] | None = None,
-        boot_s: float = 1.6,
+        # The splash is the one moment a kid waits on purpose. ~1.75 s of
+        # blink, then the wordmark holds for the rest. Long enough to read as
+        # a ritual (Game Boy was ~3 s), short enough to never annoy.
+        boot_s: float = 5.0,
         idle_sleep_s: float = 120.0,
     ) -> None:
         self.data_dir = Path(data_dir)
@@ -160,6 +163,7 @@ class GizmoSession:
             await self.on_select()
         elif isinstance(event, Power):
             await self.on_power(event.on)
+            return
         elif isinstance(event, PushToTalk):
             await self.on_push_to_talk(event.active)
         elif isinstance(event, Navigate):
@@ -199,47 +203,51 @@ class GizmoSession:
 
     async def on_power(self, on: bool) -> None:
         if on:
-            if self.machine.state is State.POWERED_OFF:
-                self.session_id = uuid.uuid4().hex
-                self.transcripts = TranscriptStore(self.data_dir / "transcripts")
-                self._memory_context = ""
-                self._memory_loaded = False
-                self._resume_handle = ""
-                self.machine.apply("power_on")
-                await self.emit({"type": "state", "reason": "switch"})
-                self._boot_task = asyncio.create_task(self._boot())
+            if self.machine.state is State.BOOTING:
+                return
+            if self.machine.state is not State.POWERED_OFF:
+                # Rising edge from the body. If we weren't off, we desynced —
+                # cut power first so this is a real cold boot, not a wake.
+                await self._cut_power()
+            self.session_id = uuid.uuid4().hex
+            self.transcripts = TranscriptStore(self.data_dir / "transcripts")
+            self._memory_context = ""
+            self._memory_loaded = False
+            self._resume_handle = ""
+            self.machine.apply("power_on")
+            await self.emit({"type": "state", "reason": "switch"})
+            self._boot_task = asyncio.create_task(self._boot())
             return
+        await self._cut_power()
+
+    async def _cut_power(self) -> None:
+        """Hard off. Not sleep. Sleep is idle-only."""
         if self.machine.state is State.POWERED_OFF:
             return
         if self._boot_task and not self._boot_task.done():
             self._boot_task.cancel()
+            self._boot_task = None
         self._cancel_warm()
         self._reset_ptt()
         self._flush_transcript_turns()
         self._background_memory(self.memory_provider.flush(self.user_id))
         if self.machine.can("power_off"):
             self.machine.apply("power_off")
+        else:
+            self.machine.state = State.POWERED_OFF
         await self.emit({"type": "state", "reason": "switch"})
         # Power-off is a local body transition and must complete even if the
         # cloud voice socket has already gone stale. Cancel cloud output only
-        # after the device is observably asleep; _interrupt itself fails soft.
+        # after the device is observably off; _interrupt itself fails soft.
         await self._interrupt()
         await self._disconnect_transport()
 
     async def _boot(self) -> None:
-        """Boot moment: connect the brain while the glass plays wake-up."""
+        """Fixed splash on the glass. Brain connect runs in parallel and must
+        not stretch or freeze the boot animation."""
         try:
-            loop = asyncio.get_running_loop()
-            started = loop.time()
-            try:
-                await self._ensure_connected()
-            except Exception as error:  # noqa: BLE001 - the body must finish booting regardless
-                # No brain yet is a recoverable state: the next talk-button
-                # hold retries the connection. A stuck BOOTING screen is not.
-                await self.emit({"type": "error", "message": f"brain offline: {error}"})
-            remaining = self.boot_s - (loop.time() - started)
-            if remaining > 0:
-                await asyncio.sleep(remaining)
+            self._warm_connection()
+            await asyncio.sleep(self.boot_s)
         except asyncio.CancelledError:
             return
         if self.machine.state is not State.BOOTING:

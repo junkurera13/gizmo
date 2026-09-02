@@ -55,7 +55,7 @@ One clip becomes a told world. Stories that draw themselves.
 
 The body catches up to the brain.
 
-- ESP32-S3 firmware in `body/`: top power toggle, pink PTT, up/down rocker, Select, mic, speaker, world camera, 240×240 glass
+- ESP32-S3 firmware in `body/`: top power toggle, pink PTT, up/down rocker, Select, mic, speaker, world camera, 69 × 50 mm landscape glass
 - See uses the real camera; boot/home/sleep run on the device
 - Reach lands on an actual parent phone, not a local outbox
 - Battery honesty: auto-sleep tuned for hardware, wake is instant

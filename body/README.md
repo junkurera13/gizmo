@@ -1,6 +1,6 @@
 # Body
 
-ESP32-S3 handheld: top power toggle, pink push-to-talk button, up/down rocker, circular Select button, mic, speaker, 1.54" 240×240 screen, world camera.
+ESP32-S3 handheld: top power toggle, pink push-to-talk button, up/down rocker, circular Select button, mic, speaker, 69 × 50 mm landscape screen (69∶50), world camera.
 
 **Not in v1.** Do not add fake firmware here. Friend runs on a laptop and speaks this protocol in software.
 

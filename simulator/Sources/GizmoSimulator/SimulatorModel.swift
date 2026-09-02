@@ -53,7 +53,24 @@ final class SimulatorModel: ObservableObject {
     @Published private(set) var batteryLevel: Double = 1.0
 
     private var bootSound: NSSound?
+    private var bootSoundTask: Task<Void, Never>?
     private var hasColdBooted = false
+    /// The glass owns the splash. The brain may finish booting in two seconds
+    /// or twenty; the flipbook still plays through and the wordmark still
+    /// holds. Blink is 14 frames at 8 fps (1.75 s); the rest is the hold.
+    static let splashMinimum: Duration = .seconds(5)
+    @Published private(set) var splashHolding = false
+    private var splashTask: Task<Void, Never>?
+
+    /// What the glass shows: the brain's state, except while the splash is
+    /// still holding, when it stays on the boot flipbook.
+    var glassState: String {
+        splashHolding && !poweredOff && deviceState != "powered_off" ? "booting" : deviceState
+    }
+    /// Bumped on every cold boot so the splash flipbook always restarts.
+    @Published private(set) var bootGeneration = 0
+    /// Last switch position we sent. Stale friend events cannot undo it.
+    private var pendingPowerOn: Bool?
 
     // The hardware power toggle: physically cuts power. While off, no
     // other control does anything. Flipping it on is the cold boot.
@@ -111,6 +128,7 @@ final class SimulatorModel: ObservableObject {
         stopMicrophone()
         sendTask?.cancel()
         speaker.shutdown()
+        stopBootSound()
         isPushToTalking = false
         receiveTask?.cancel()
         socket?.cancel(with: .goingAway, reason: nil)
@@ -132,15 +150,52 @@ final class SimulatorModel: ObservableObject {
         send(["type": "select"])
     }
 
-    /// The Game Boy moment: one chime, same every time, synced to the
-    /// boot animation. The sound is Jun's file at glass/sounds/boot.wav.
+    /// Ding lands on the closed-eye frame of the boot blink, not on power-on.
+    /// Frame 04 is index 3; delay is 3 / boot fps. Missing wav = silent boot.
     private func playBootSound() {
+        bootSoundTask?.cancel()
+        bootSound?.stop()
+
         let url = ProjectLocator.repositoryRoot()?
             .appendingPathComponent("glass/sounds/boot.wav")
         guard let url, FileManager.default.fileExists(atPath: url.path) else { return }
+
+        let fps = SpriteStore.shared.animation(for: "boot")?.fps ?? 12
+        let blinkDelay = fps > 0 ? 3.0 / fps : 0
+
+        bootSoundTask = Task { @MainActor [weak self] in
+            if blinkDelay > 0 {
+                try? await Task.sleep(for: .seconds(blinkDelay))
+            }
+            guard let self, !Task.isCancelled, !self.poweredOff, self.deviceState == "booting" else {
+                return
+            }
+            self.bootSound = NSSound(contentsOf: url, byReference: true)
+            self.bootSound?.play()
+        }
+    }
+
+    private func stopBootSound() {
+        bootSoundTask?.cancel()
+        bootSoundTask = nil
         bootSound?.stop()
-        bootSound = NSSound(contentsOf: url, byReference: true)
-        bootSound?.play()
+        bootSound = nil
+    }
+
+    private func beginSplashHold() {
+        splashTask?.cancel()
+        splashHolding = true
+        splashTask = Task { @MainActor [weak self] in
+            try? await Task.sleep(for: Self.splashMinimum)
+            guard let self, !Task.isCancelled else { return }
+            self.splashHolding = false
+        }
+    }
+
+    private func endSplashHold() {
+        splashTask?.cancel()
+        splashTask = nil
+        splashHolding = false
     }
 
     func drainBattery() {
@@ -150,19 +205,32 @@ final class SimulatorModel: ObservableObject {
     func togglePower() {
         if poweredOff {
             // Flipping the toggle on: power arrives, cold boot begins.
-            poweredOff = false
+            applyPowerOff(false)
             hasColdBooted = false
+            bootGeneration += 1
+            pendingPowerOn = true
             send(["type": "power", "on": true])
         } else {
-            // Flipping it off: everything stops, whatever he was doing.
-            speaker.interrupt()
-            if isPushToTalking {
-                endPushToTalk()
-            }
-            poweredOff = true
+            // Hard cut. Not sleep. Sleep is idle-only and any button wakes it.
+            applyPowerOff(true)
+            pendingPowerOn = false
             send(["type": "power", "on": false])
         }
         NSHapticFeedbackManager.defaultPerformer.perform(.alignment, performanceTime: .now)
+    }
+
+    private func applyPowerOff(_ off: Bool) {
+        poweredOff = off
+        if off {
+            speaker.interrupt()
+            stopBootSound()
+            endSplashHold()
+            if isPushToTalking {
+                endPushToTalk()
+            }
+            screenOn = false
+            deviceState = "powered_off"
+        }
     }
 
     func beginPushToTalk() {
@@ -297,9 +365,18 @@ final class SimulatorModel: ObservableObject {
             appendEvent("connection", "Cloud mode requires HTTPS and GIZMO_DEVICE_TOKEN.")
             return
         }
-        if await backendIsHealthy() {
-            connect()
-            return
+        let healthy = await backendIsHealthy()
+        appendEvent("connection", "health=\(healthy) remote=\(backend.isRemote) ownBrain=\(launchedBackend)")
+        if healthy {
+            if backend.isRemote || launchedBackend {
+                connect()
+                return
+            }
+            // Something is already on our port that we did not start: a brain
+            // left over from an earlier app run, possibly on stale code. The
+            // app owns its brain. Evict it and start a fresh one.
+            appendEvent("runtime", "Replacing a leftover Friend on port 43147.")
+            await evictStaleBackend()
         }
 
         if backend.isRemote {
@@ -340,6 +417,36 @@ final class SimulatorModel: ObservableObject {
         }
     }
 
+    /// Terminates whatever is listening on the local brain port and waits
+    /// for it to go away. Used only for processes this app did not start.
+    private func evictStaleBackend() async {
+        let port = backend.baseURL.port ?? 43147
+        let lsof = Process()
+        lsof.executableURL = URL(fileURLWithPath: "/usr/sbin/lsof")
+        lsof.arguments = ["-ti", "tcp:\(port)", "-sTCP:LISTEN"]
+        let pipe = Pipe()
+        lsof.standardOutput = pipe
+        lsof.standardError = FileHandle.nullDevice
+        guard (try? lsof.run()) != nil else { return }
+        let output = pipe.fileHandleForReading.readDataToEndOfFile()
+        lsof.waitUntilExit()
+
+        let pids = String(decoding: output, as: UTF8.self)
+            .split(whereSeparator: \.isNewline)
+            .compactMap { Int32($0.trimmingCharacters(in: .whitespaces)) }
+        for pid in pids where pid != ProcessInfo.processInfo.processIdentifier {
+            kill(pid, SIGTERM)
+        }
+
+        for _ in 0..<40 {
+            if !(await backendIsHealthy()) { return }
+            try? await Task.sleep(for: .milliseconds(125))
+        }
+        for pid in pids where pid != ProcessInfo.processInfo.processIdentifier {
+            kill(pid, SIGKILL)
+        }
+    }
+
     private func launchBackend() throws {
         guard let root = ProjectLocator.repositoryRoot() else {
             throw RuntimeError.repositoryNotFound
@@ -354,13 +461,34 @@ final class SimulatorModel: ObservableObject {
         process.executableURL = executable
         process.arguments = ["--host", "127.0.0.1", "--port", "43147"]
         process.currentDirectoryURL = root
-        process.standardOutput = FileHandle.nullDevice
-        process.standardError = FileHandle.nullDevice
+        // A brain that dies on startup must leave a trace. data/ is gitignored.
+        let log = Self.openBrainLog(in: root)
+        process.standardOutput = log ?? FileHandle.nullDevice
+        process.standardError = log ?? FileHandle.nullDevice
         try process.run()
 
         backendProcess = process
         launchedBackend = true
-        appendEvent("runtime", "Started Friend locally.")
+        appendEvent("runtime", "Started Friend locally. Log: data/brain.log")
+    }
+
+    private static func openBrainLog(in root: URL) -> FileHandle? {
+        openLog(named: "brain.log", in: root)
+    }
+
+    /// The app's own event trail, since the events panel has no UI yet.
+    private static let eventLog: FileHandle? = {
+        guard let root = ProjectLocator.repositoryRoot() else { return nil }
+        return openLog(named: "simulator.log", in: root)
+    }()
+
+    private static func openLog(named name: String, in root: URL) -> FileHandle? {
+        let dir = root.appendingPathComponent("data", isDirectory: true)
+        let url = dir.appendingPathComponent(name)
+        try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+        // Fresh log per launch; the previous run's tail is what you'd want anyway.
+        FileManager.default.createFile(atPath: url.path, contents: nil)
+        return try? FileHandle(forWritingTo: url)
     }
 
     private func connect() {
@@ -426,25 +554,61 @@ final class SimulatorModel: ObservableObject {
         }
 
         let type = object["type"] as? String ?? "event"
-        if let state = object["state"] as? String {
-            let previous = deviceState
+        if type == "hello" {
+            connectionStatus = .connected
+            pendingPowerOn = nil
+            // The switch is truth. A brain that disagrees on connect (left
+            // over from an earlier run, or restarted under a device that is
+            // still on) is told the switch position and follows it.
+            if let brainPower = object["power"] as? Bool, brainPower != !poweredOff {
+                pendingPowerOn = !poweredOff
+                if !poweredOff {
+                    hasColdBooted = false
+                    bootGeneration += 1
+                }
+                send(["type": "power", "on": !poweredOff])
+                appendEvent("power", poweredOff ? "Brain was on; switch is off. Cutting power."
+                                                : "Brain was off; switch is on. Booting.")
+            }
+        }
+
+        if let power = object["power"] as? Bool {
+            if let pending = pendingPowerOn {
+                if power == pending {
+                    pendingPowerOn = nil
+                    if !power { applyPowerOff(true) }
+                    else { poweredOff = false }
+                }
+            } else if type == "hello" {
+                if !power { applyPowerOff(true) }
+                else { poweredOff = false }
+            } else if poweredOff && power {
+                // Stale "still on" after a hard off. Do not turn the glass back on.
+            } else if !power {
+                applyPowerOff(true)
+            } else {
+                poweredOff = false
+            }
+        }
+
+        if poweredOff && type != "hello" {
+            screenOn = false
+            deviceState = "powered_off"
+        } else if let state = object["state"] as? String {
             deviceState = state
             // The chime is for the cold boot only — the once-per-power-up
             // ritual. Waking from sleep is silent, like a phone.
-            if state == "booting", previous == "powered_off", !hasColdBooted {
+            if state == "booting", !hasColdBooted {
                 hasColdBooted = true
                 playBootSound()
+                beginSplashHold()
             }
-        }
-        if let power = object["power"] as? Bool {
-            poweredOff = !power
-            if !power { speaker.interrupt() }
         }
         if let path = object["transport"] as? String {
             transport = path
         }
         if let isOn = object["screen"] as? Bool {
-            screenOn = isOn
+            screenOn = poweredOff ? false : isOn
         }
         if let viewing = object["viewing"] as? Bool {
             viewingStill = viewing
@@ -453,9 +617,7 @@ final class SimulatorModel: ObservableObject {
             }
         }
 
-        if type == "hello" {
-            connectionStatus = .connected
-        } else if type == "audio", let pcm = object["pcm"] as? String, let data = Data(base64Encoded: pcm) {
+        if type == "audio", let pcm = object["pcm"] as? String, let data = Data(base64Encoded: pcm) {
             guard !poweredOff, screenOn, !isPushToTalking else { return }
             do { try speaker.enqueue(data) }
             catch { appendEvent("speaker error", error.localizedDescription) }
@@ -547,6 +709,7 @@ final class SimulatorModel: ObservableObject {
     }
 
     private func appendEvent(_ name: String, _ detail: String) {
+        Self.eventLog?.write(Data("\(Date()) [\(name)] \(detail)\n".utf8))
         events.insert(SimulatorEvent(time: Date(), name: name, detail: detail), at: 0)
         if events.count > 120 {
             events.removeLast(events.count - 120)

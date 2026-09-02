@@ -40,7 +40,7 @@ The emulator protocol and controls are unchanged.
 
 ### Connection lifecycle
 
-- **Boot** connects to Gemini Live while the glass plays wake-up. If the cloud is unreachable, boot still completes so the buttons work; the error is emitted on the bus and the next talk-button hold retries.
+- **Boot** connects to Gemini Live while the glass plays the splash for a fixed beat. If the cloud is unreachable, boot still completes so the buttons work; the error is emitted on the bus and the next talk-button hold retries.
 - **Sleep** (two idle minutes; nothing else) closes the Live socket. Google terminates idle connections after roughly ten minutes anyway; holding one during sleep only produced a dead socket that looked alive. The resumption handle is kept so waking continues the same conversation, and Memobase context is re-read on the next connect.
 - **Wake** (any button) starts the reconnect in the background immediately. Microphone audio captured while the socket is still opening is buffered (up to 10 s) and replayed in order, so a press straight out of sleep loses nothing.
 - **Dead socket while asleep** (go-away, network drop) is forgotten on the spot; the next wake builds a fresh connection.

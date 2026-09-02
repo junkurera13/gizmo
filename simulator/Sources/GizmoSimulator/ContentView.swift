@@ -123,6 +123,7 @@ private struct DeviceView: View {
                 viewfinder
             } else if let spriteName, let animation = spriteStore.animation(for: spriteName) {
                 SpriteAnimationView(animation: animation)
+                    .id("\(spriteName)-\(model.bootGeneration)")
             }
 
             statusBar
@@ -171,7 +172,10 @@ private struct DeviceView: View {
     /// Camera, videos, and kept pages own the whole screen.
     private var statusBarVisible: Bool {
         guard model.screenOn, !model.viewingStill else { return false }
-        return !["asleep", "seeing"].contains(model.deviceState)
+        guard !["asleep", "seeing", "booting", "powered_off"].contains(model.glassState) else {
+            return false
+        }
+        return spriteName != nil
     }
 
     @ViewBuilder
@@ -185,7 +189,7 @@ private struct DeviceView: View {
     /// Scratch mapping: device state → preview folder name.
     /// Not the character system. Missing folders stay black (idle can stand in).
     private var spriteName: String? {
-        switch model.deviceState {
+        switch model.glassState {
         case "booting":
             return "boot"
         case "listening":

@@ -30,6 +30,7 @@ struct SpriteAnimationView: View {
                     )
             }
         }
+        .onAppear { startedAt = Date() }
         .onChange(of: animation.name) { _, _ in
             startedAt = Date()
         }

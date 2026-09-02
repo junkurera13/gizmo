@@ -1,6 +1,6 @@
 # Glass
 
-Jun's. The 240×240 screen. Home is his face. Anything else is conjured for a moment and then leaves.
+Jun's. The 69 × 50 mm landscape screen (69∶50). Home is his face. Anything else is conjured for a moment and then leaves.
 
 **The character is still being designed.** Nothing in this folder, the sprite player, or `set_expression` is the character architecture. After the design lands, we build that together. Do not invent a second face system, do not lock a sheet, do not treat the folder names below as canon.
 
@@ -13,21 +13,31 @@ glass/sprites/
   idle/   01.png  02.png  03.png ...
 ```
 
-Today the emulator looks for folders named after *device states* (`idle`, `listen`, `talk`, `think`, `boot`, …). That mapping is a temporary hook for previews. It is not the animation set. Missing folders stay black, except that some names currently fall back to `idle` if it exists.
+Today the emulator looks for folders named after *device states* (`idle`, `listen`, `talk`, `think`, `boot`, …). That mapping is a temporary hook for previews. It is not the animation set. Missing folders stay black, except that some names currently fall back to `idle` if it exists. `boot` does not fall back — no boot frames means a black splash.
 
 ### Frame rules (for previews)
 
 - PNG with transparency. The glass is black behind it.
-- 240×240, or a clean multiple (480, 960). The player scales down and never smooths.
+- 69∶50 landscape, matching the glass. 1024×742 is the working size (the boot frames use it); the player scales to fit and never smooths, so keep edges crisp at source or expect aliasing when downscaled.
 - Number the frames so they sort: `01.png`, `02.png`, …
 
 Aseprite, Procreate Animation Assist, or Photoshop timeline all export this.
 
 Optional `glass/sprites/sprites.json` can override fps / loop per folder name. Defaults are a preview convenience, not spec.
 
+## Boot
+
+`glass/sprites/boot/` is a one-shot double blink at 8 fps: the eye opens and settles, blinks slowly, opens, then a quick second blink lands on the wordmark, which holds until the body's 5 s splash ends (about 1.75 s of motion, 3.25 s of logo). The body owns that timer (`SimulatorModel.splashMinimum`); the brain finishing early or late never cuts the logo short.
+
+The seven source drawings live in `glass/boot-source/` (open, closing, shut, opening, wordmark). The played sequence is copies of those in the order `01 01 01 02 03 04 05 06 01 01 03 04 05 07`. To change the rhythm, rebuild the copies in a new order; the player plays every numbered frame and holds the last one. The eye is shut on frames 06 and 12.
+
+Drop `glass/sounds/boot.wav` for the ding; the emulator currently fires it at frame index 3 (the first closing frame). Missing wav is a silent boot.
+
+To make the hold feel alive, add frames after the wordmark (a breathing logo, loading dots, a slow shimmer).
+
 ## Sounds
 
-`glass/sounds/boot.wav` is the cold-boot chime until Jun replaces it. Short, mono WAV.
+Cold-boot chime: `glass/sounds/boot.wav`. Short, mono, 24 kHz, 16-bit PCM WAV. Missing file means a silent boot.
 
 ## Stills
 
