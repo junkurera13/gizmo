@@ -35,9 +35,11 @@ Drop `glass/sounds/boot.wav` for the ding; it fires when `14.png` first appears.
 
 To make the hold feel alive, add frames after the wordmark (a breathing logo, loading dots, a slow shimmer).
 
-## Start
+After the splash, home is the full-body drawing in `idle/` (`01.png`, 1024×742). The uncropped original is `glass/character-source/full.png`.
 
-After the splash, the glass sits on a title card until the pink button has been held (a tap is ignored). Cold boot only — wake from sleep skips it. Drop his drawing in `glass/sprites/start/` (`01.png`, looping). Same frame rules as boot (69∶50). The blinking "Hold the pink button to start" line is a stand-in; bake it into the drawing later.
+## Fonts
+
+The home clock is [Outfit](https://fonts.google.com/specimen/Outfit) (SIL OFL), in `glass/fonts/`. Same file is what the body should rasterize later. Missing file falls back to the Mac system face.
 
 ## Sounds
 

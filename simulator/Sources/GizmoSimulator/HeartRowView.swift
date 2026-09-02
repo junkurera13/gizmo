@@ -1,34 +1,43 @@
+import AppKit
 import SwiftUI
 
-/// Phone-style status strip across the top of the glass: time on the
-/// left, Gizmo's energy as five small hearts on the right. Always there
-/// while the face is up; hidden whenever the screen is busy being a
-/// camera, a video, or a kept page.
-struct StatusBarView: View {
+/// Home HUD: hearts and time on one line at the top, centered, sitting
+/// on the same baseline — the original status bar, not split to corners.
+/// She's in the space below.
+struct HomeClusterView: View {
     let art: HeartArt?
     let level: Double
+    let character: SpriteAnimation?
 
     var body: some View {
         GeometryReader { proxy in
-            let heartSide = proxy.size.width * 0.055
+            let w = proxy.size.width
+            let h = proxy.size.height
+            let timeSize = w * 0.05
+            let timeFont = GlassFonts.clock(size: timeSize)
+            let capHeight = timeFont.capHeight
             let halfSteps = max(0, min(10, Int((level * 10).rounded())))
 
-            TimelineView(.everyMinute) { timeline in
-                HStack(alignment: .center, spacing: 0) {
-                    Text(Self.clockText(timeline.date))
-                        .font(.system(size: proxy.size.width * 0.042, weight: .semibold, design: .monospaced))
-                        .foregroundStyle(Color.white)
-
-                    Spacer(minLength: 0)
-
-                    HStack(spacing: heartSide * 0.22) {
-                        ForEach(0..<5, id: \.self) { index in
-                            heart(at: index, halfSteps: halfSteps, side: heartSide)
-                        }
-                    }
+            ZStack {
+                if let character {
+                    SpriteAnimationView(animation: character)
+                        .frame(width: w * 0.48, height: h * 0.68)
+                        .offset(y: h * 0.05)
+                        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .center)
                 }
-                .padding(.horizontal, proxy.size.width * 0.05)
-                .padding(.top, proxy.size.height * 0.045)
+
+                TimelineView(.everyMinute) { timeline in
+                    HStack(alignment: .firstTextBaseline, spacing: capHeight * 0.7) {
+                        Text(Self.clockText(timeline.date))
+                            .font(Font(timeFont))
+                            .foregroundStyle(Color.white)
+
+                        HeartRow(art: art, halfSteps: halfSteps, side: capHeight)
+                            .alignmentGuide(.firstTextBaseline) { $0[.bottom] }
+                    }
+                    .padding(.top, h * 0.045)
+                    .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
+                }
             }
         }
     }
@@ -38,16 +47,33 @@ struct StatusBarView: View {
         formatter.dateFormat = "H:mm"
         return formatter.string(from: date)
     }
+}
+
+private struct HeartRow: View {
+    let art: HeartArt?
+    let halfSteps: Int
+    let side: CGFloat
+
+    var body: some View {
+        HStack(spacing: side * 0.2) {
+            ForEach(0..<5, id: \.self) { index in
+                heart(at: index)
+            }
+        }
+    }
 
     @ViewBuilder
-    private func heart(at index: Int, halfSteps: Int, side: CGFloat) -> some View {
+    private func heart(at index: Int) -> some View {
         let filled = halfSteps - index * 2
-        if let image = image(at: index, halfSteps: halfSteps) {
+        if let image = image(at: index) {
             Image(nsImage: image)
                 .resizable()
                 .interpolation(.none)
                 .aspectRatio(contentMode: .fit)
                 .frame(width: side, height: side)
+                // Heart PNGs are 96×96 with 9px padding; scale so the
+                // glyph itself is `side` (the time's cap height).
+                .scaleEffect(96.0 / 78.0)
         } else {
             Image(systemName: filled > 0 ? "heart.fill" : "heart")
                 .resizable()
@@ -57,7 +83,7 @@ struct StatusBarView: View {
         }
     }
 
-    private func image(at index: Int, halfSteps: Int) -> NSImage? {
+    private func image(at index: Int) -> NSImage? {
         guard let art else { return nil }
         let filled = halfSteps - index * 2
         if filled >= 2 { return art.full }

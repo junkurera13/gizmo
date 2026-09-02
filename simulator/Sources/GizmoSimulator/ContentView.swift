@@ -126,13 +126,9 @@ private struct DeviceView: View {
                     .id("\(spriteName)-\(model.bootGeneration)")
             }
 
-            if model.glassState == "start" {
-                StartPromptView()
-            }
-
             statusBar
-                .frame(width: rect.width, height: rect.height, alignment: .top)
-                .animation(.easeOut(duration: 0.28), value: statusBarVisible)
+                .frame(width: rect.width, height: rect.height)
+                .animation(.easeOut(duration: 0.28), value: homeVisible)
         }
         .frame(width: rect.width, height: rect.height)
         .clipShape(RoundedRectangle(cornerRadius: radius, style: .continuous))
@@ -172,40 +168,34 @@ private struct DeviceView: View {
         }
     }
 
-    /// The status strip shows whenever the glass belongs to the face.
+    /// Home cluster: status, time, and her, stacked in the middle.
     /// Camera, videos, and kept pages own the whole screen.
-    private var statusBarVisible: Bool {
+    private var homeVisible: Bool {
         guard model.screenOn, !model.viewingStill else { return false }
-        guard !["asleep", "seeing", "booting", "powered_off", "start"].contains(model.glassState) else {
+        guard !["asleep", "seeing", "booting", "powered_off"].contains(model.glassState) else {
             return false
         }
-        return spriteName != nil
+        return true
     }
 
     @ViewBuilder
     private var statusBar: some View {
-        if statusBarVisible {
-            StatusBarView(art: spriteStore.hearts, level: model.batteryLevel)
-                .transition(.opacity)
+        if homeVisible {
+            HomeClusterView(
+                art: spriteStore.hearts,
+                level: model.batteryLevel,
+                character: spriteStore.animation(for: "idle")
+            )
+            .transition(.opacity)
         }
     }
 
     /// Scratch mapping: device state → preview folder name.
-    /// Not the character system. Missing folders stay black (idle can stand in).
+    /// Character drawings are parked while the home HUD is being tried.
     private var spriteName: String? {
         switch model.glassState {
         case "booting":
             return "boot"
-        case "start":
-            return "start"
-        case "listening":
-            return model.isPushToTalking ? "listen" : "idle"
-        case "talking":
-            return "talk"
-        case "showing":
-            return "show"
-        case "thinking", "making", "reaching":
-            return "think"
         default:
             return nil
         }
@@ -378,24 +368,6 @@ private struct DeviceView: View {
 
     private var showingPressedSkin: Bool {
         pressedDeviceImage != nil && (model.isPushToTalking || pressedControl == "side")
-    }
-}
-
-/// NES-style prompt on the title card. Temporary type: bake this line
-/// into Jun's drawing later and this overlay goes away.
-private struct StartPromptView: View {
-    var body: some View {
-        TimelineView(.periodic(from: .now, by: 0.7)) { timeline in
-            let on = Int(timeline.date.timeIntervalSinceReferenceDate / 0.7) % 2 == 0
-            Text("Hold the pink button to start")
-                .font(.system(size: 11, weight: .bold, design: .rounded))
-                .foregroundStyle(.white)
-                .multilineTextAlignment(.center)
-                .padding(.horizontal, 12)
-                .padding(.bottom, 14)
-                .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .bottom)
-                .opacity(on ? 1 : 0)
-        }
     }
 }
 

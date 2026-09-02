@@ -2,9 +2,5 @@
   "boot": {
     "fps": 8,
     "loop": false
-  },
-  "start": {
-    "fps": 8,
-    "loop": true
   }
 }

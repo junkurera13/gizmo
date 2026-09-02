@@ -58,11 +58,8 @@ final class SimulatorModel: ObservableObject {
     /// The glass owns the splash. Blink is 14 frames at 8 fps (~1.75 s);
     /// then `14.png` (the wordmark) holds for a beat so it can be read.
     static let splashMinimum: Duration = .milliseconds(3800)
-    /// Finger-down is a tap. The title card only yields after a real hold.
-    static let startHoldMinimum: Duration = .milliseconds(400)
     @Published private(set) var splashHolding = false
     private var splashTask: Task<Void, Never>?
-    private var startHoldTask: Task<Void, Never>?
 
     /// What the glass shows. While the splash is up it stays on the boot
     /// flipbook even if the brain has already moved to listening.
@@ -71,9 +68,6 @@ final class SimulatorModel: ObservableObject {
     @Published private(set) var bootGeneration = 0
     /// Last switch position we sent. Stale friend events cannot undo it.
     private var pendingPowerOn: Bool?
-    /// After a cold-boot splash, sit on the title card until the first
-    /// pink-button hold. Wake from sleep skips this.
-    @Published private(set) var awaitingStart = false
 
     // The hardware power toggle: physically cuts power. While off, no
     // other control does anything. Flipping it on is the cold boot.
@@ -132,7 +126,6 @@ final class SimulatorModel: ObservableObject {
         sendTask?.cancel()
         speaker.shutdown()
         stopBootSound()
-        cancelStartHold()
         isPushToTalking = false
         receiveTask?.cancel()
         socket?.cancel(with: .goingAway, reason: nil)
@@ -191,7 +184,6 @@ final class SimulatorModel: ObservableObject {
     private func beginSplashHold() {
         splashTask?.cancel()
         splashHolding = true
-        awaitingStart = true
         refreshGlassState()
         splashTask = Task { @MainActor [weak self] in
             try? await Task.sleep(for: Self.splashMinimum)
@@ -214,26 +206,12 @@ final class SimulatorModel: ObservableObject {
             next = "powered_off"
         } else if splashHolding {
             next = "booting"
-        } else if awaitingStart, deviceState != "asleep" {
-            next = "start"
         } else {
             next = deviceState
         }
         if glassState != next {
             glassState = next
         }
-    }
-
-    func dismissStartScreen() {
-        guard awaitingStart else { return }
-        cancelStartHold()
-        awaitingStart = false
-        refreshGlassState()
-    }
-
-    private func cancelStartHold() {
-        startHoldTask?.cancel()
-        startHoldTask = nil
     }
 
     func drainBattery() {
@@ -266,14 +244,12 @@ final class SimulatorModel: ObservableObject {
         if off {
             speaker.interrupt()
             stopBootSound()
-            cancelStartHold()
             endSplashHold()
             if isPushToTalking {
                 endPushToTalk()
             }
             screenOn = false
             deviceState = "powered_off"
-            awaitingStart = false
         }
         refreshGlassState()
     }
@@ -283,30 +259,10 @@ final class SimulatorModel: ObservableObject {
         // first; the brain handles both. While the power toggle is off
         // there is no power: nothing reports.
         guard !poweredOff, !isPushToTalking else { return }
-        // Splash owns the glass. A hold during it must not skip the title card.
+        // Splash owns the glass. Talk waits until the wordmark is done.
         guard !splashHolding else { return }
 
-        if awaitingStart {
-            armStartHold()
-            return
-        }
-
         startListening()
-    }
-
-    /// Title card stays up until the pink button has been down long enough.
-    /// Release early and nothing happens. Same hold then becomes talk.
-    private func armStartHold() {
-        guard startHoldTask == nil else { return }
-        startHoldTask = Task { @MainActor [weak self] in
-            try? await Task.sleep(for: Self.startHoldMinimum)
-            guard let self, !Task.isCancelled, !self.poweredOff, self.awaitingStart else {
-                return
-            }
-            self.startHoldTask = nil
-            self.dismissStartScreen()
-            self.startListening()
-        }
     }
 
     private func startListening() {
@@ -353,7 +309,6 @@ final class SimulatorModel: ObservableObject {
     }
 
     func endPushToTalk() {
-        cancelStartHold()
         guard isPushToTalking else { return }
         let held = Date().timeIntervalSince(microphoneStartedAt ?? Date())
         let capturedBytes = microphoneBytes
@@ -392,7 +347,6 @@ final class SimulatorModel: ObservableObject {
         guard !poweredOff else { return }
         let cleaned = text.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !cleaned.isEmpty else { return }
-        dismissStartScreen()
         send(["type": "text", "text": cleaned])
         appendConversation(role: .user, text: cleaned)
         appendEvent("you", cleaned)
