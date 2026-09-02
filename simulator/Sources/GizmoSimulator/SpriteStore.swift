@@ -34,6 +34,7 @@ final class SpriteStore: ObservableObject {
     @Published private(set) var lastLoadNote: String?
 
     private static let fallbacks: [String: [String]] = [
+        "start": ["idle"],
         "listen": ["idle"],
         "talk": ["idle"],
         "think": ["idle"],

@@ -126,6 +126,10 @@ private struct DeviceView: View {
                     .id("\(spriteName)-\(model.bootGeneration)")
             }
 
+            if model.glassState == "start" {
+                StartPromptView()
+            }
+
             statusBar
                 .frame(width: rect.width, height: rect.height, alignment: .top)
                 .animation(.easeOut(duration: 0.28), value: statusBarVisible)
@@ -172,7 +176,7 @@ private struct DeviceView: View {
     /// Camera, videos, and kept pages own the whole screen.
     private var statusBarVisible: Bool {
         guard model.screenOn, !model.viewingStill else { return false }
-        guard !["asleep", "seeing", "booting", "powered_off"].contains(model.glassState) else {
+        guard !["asleep", "seeing", "booting", "powered_off", "start"].contains(model.glassState) else {
             return false
         }
         return spriteName != nil
@@ -192,6 +196,8 @@ private struct DeviceView: View {
         switch model.glassState {
         case "booting":
             return "boot"
+        case "start":
+            return "start"
         case "listening":
             return model.isPushToTalking ? "listen" : "idle"
         case "talking":
@@ -372,6 +378,24 @@ private struct DeviceView: View {
 
     private var showingPressedSkin: Bool {
         pressedDeviceImage != nil && (model.isPushToTalking || pressedControl == "side")
+    }
+}
+
+/// NES-style prompt on the title card. Temporary type: bake this line
+/// into Jun's drawing later and this overlay goes away.
+private struct StartPromptView: View {
+    var body: some View {
+        TimelineView(.periodic(from: .now, by: 0.7)) { timeline in
+            let on = Int(timeline.date.timeIntervalSinceReferenceDate / 0.7) % 2 == 0
+            Text("Hold the pink button to start")
+                .font(.system(size: 11, weight: .bold, design: .rounded))
+                .foregroundStyle(.white)
+                .multilineTextAlignment(.center)
+                .padding(.horizontal, 12)
+                .padding(.bottom, 14)
+                .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .bottom)
+                .opacity(on ? 1 : 0)
+        }
     }
 }
 

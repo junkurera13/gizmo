@@ -35,6 +35,10 @@ Drop `glass/sounds/boot.wav` for the ding; it fires when `14.png` first appears.
 
 To make the hold feel alive, add frames after the wordmark (a breathing logo, loading dots, a slow shimmer).
 
+## Start
+
+After the splash, the glass sits on a title card until the pink button has been held (a tap is ignored). Cold boot only — wake from sleep skips it. Drop his drawing in `glass/sprites/start/` (`01.png`, looping). Same frame rules as boot (69∶50). The blinking "Hold the pink button to start" line is a stand-in; bake it into the drawing later.
+
 ## Sounds
 
 Cold-boot chime: `glass/sounds/boot.wav`. Short, mono, 24 kHz, 16-bit PCM WAV. Missing file means a silent boot.
