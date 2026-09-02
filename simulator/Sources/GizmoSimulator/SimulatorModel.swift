@@ -57,8 +57,8 @@ final class SimulatorModel: ObservableObject {
     // other control does anything. Flipping it on is the cold boot.
     @Published private(set) var poweredOff = true
 
-    private let baseHTTPURL = URL(string: "http://127.0.0.1:43147")!
-    private let webSocketURL = URL(string: "ws://127.0.0.1:43147/ws")!
+    private let backend = BackendConfiguration.load()
+    private var baseHTTPURL: URL { backend.baseURL }
     private let session = URLSession(configuration: .default)
     private var socket: URLSessionWebSocketTask?
     private var receiveTask: Task<Void, Never>?
@@ -68,6 +68,7 @@ final class SimulatorModel: ObservableObject {
     private var hasStarted = false
     private var isShuttingDown = false
     private let microphone = MicrophoneCapture()
+    private let speaker = SpeakerPlayback()
 
     private init() {}
 
@@ -99,6 +100,7 @@ final class SimulatorModel: ObservableObject {
         reconnectTask?.cancel()
         reconnectTask = nil
         microphone.stop()
+        speaker.shutdown()
         isPushToTalking = false
         receiveTask?.cancel()
         socket?.cancel(with: .goingAway, reason: nil)
@@ -141,6 +143,7 @@ final class SimulatorModel: ObservableObject {
             send(["type": "power", "on": true])
         } else {
             // Flipping it off: everything stops, whatever he was doing.
+            speaker.interrupt()
             if isPushToTalking {
                 endPushToTalk()
             }
@@ -157,6 +160,7 @@ final class SimulatorModel: ObservableObject {
         guard connectionStatus == .connected, !poweredOff, !isPushToTalking else { return }
 
         isPushToTalking = true
+        speaker.interrupt()
         voiceError = nil
         send(["type": "ptt", "active": true])
 
@@ -241,8 +245,25 @@ final class SimulatorModel: ObservableObject {
     }
 
     private func ensureBackendAndConnect() async {
+        if let error = backend.error {
+            connectionStatus = .failed
+            appendEvent("connection", error)
+            return
+        }
+        if backend.isRemote && (backend.baseURL.scheme != "https" || backend.token?.isEmpty != false) {
+            connectionStatus = .failed
+            appendEvent("connection", "Cloud mode requires HTTPS and GIZMO_DEVICE_TOKEN.")
+            return
+        }
         if await backendIsHealthy() {
             connect()
+            return
+        }
+
+        if backend.isRemote {
+            connectionStatus = .offline
+            appendEvent("connection", "Cloud brain unavailable. Reconnecting…")
+            scheduleReconnect()
             return
         }
 
@@ -270,7 +291,7 @@ final class SimulatorModel: ObservableObject {
     private func backendIsHealthy() async -> Bool {
         do {
             let url = baseHTTPURL.appendingPathComponent("health")
-            let (_, response) = try await session.data(from: url)
+            let (_, response) = try await session.data(for: backend.request(for: url))
             return (response as? HTTPURLResponse)?.statusCode == 200
         } catch {
             return false
@@ -302,7 +323,7 @@ final class SimulatorModel: ObservableObject {
 
     private func connect() {
         connectionStatus = .connecting
-        let task = session.webSocketTask(with: webSocketURL)
+        let task = session.webSocketTask(with: backend.request(for: backend.webSocketURL))
         socket = task
         task.resume()
 
@@ -335,6 +356,7 @@ final class SimulatorModel: ObservableObject {
 
     private func markDisconnected(_ detail: String) {
         guard !isShuttingDown else { return }
+        speaker.interrupt()
         connectionStatus = .offline
         socket = nil
         appendEvent("connection", detail)
@@ -372,6 +394,7 @@ final class SimulatorModel: ObservableObject {
         }
         if let power = object["power"] as? Bool {
             poweredOff = !power
+            if !power { speaker.interrupt() }
         }
         if let path = object["transport"] as? String {
             transport = path
@@ -388,10 +411,16 @@ final class SimulatorModel: ObservableObject {
 
         if type == "hello" {
             connectionStatus = .connected
+        } else if type == "audio", let pcm = object["pcm"] as? String, let data = Data(base64Encoded: pcm) {
+            do { try speaker.enqueue(data) }
+            catch { appendEvent("speaker error", error.localizedDescription) }
         } else if type == "transcript", object["role"] as? String == "gizmo" {
             spokenLine = object["text"] as? String ?? ""
             appendConversation(role: .gizmo, text: spokenLine)
+        } else if type == "transcript", object["role"] as? String == "user" {
+            appendConversation(role: .user, text: object["text"] as? String ?? "")
         } else if type == "interrupted" {
+            speaker.interrupt()
             spokenLine = ""
         } else if type == "glass", let still = object["still"] as? String {
             loadScreenImage(path: still)
@@ -407,7 +436,7 @@ final class SimulatorModel: ObservableObject {
 
         Task {
             do {
-                let (data, _) = try await session.data(from: url)
+                let (data, _) = try await session.data(for: backend.request(for: url))
                 if let image = NSImage(data: data) {
                     screenImage = image
                 }

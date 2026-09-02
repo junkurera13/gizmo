@@ -1,8 +1,10 @@
 # Secrets and provider URLs override these fields through MEMOBASE_* Railway
 # variables. This file only defines Gizmo's memory behavior.
 llm_api_key: overridden-by-environment
-best_llm_model: gpt-4o-mini
-embedding_model: text-embedding-3-small
+llm_base_url: https://generativelanguage.googleapis.com/v1beta/openai/
+best_llm_model: gemini-3.1-flash-lite
+thinking_llm_model: gemini-3.1-flash-lite
+embedding_model: gemini-embedding-2
 embedding_dim: 1536
 enable_event_embedding: true
 

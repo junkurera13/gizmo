@@ -1,7 +1,7 @@
 import {
-  database,
   defineRailway,
   github,
+  postgres,
   preserve,
   project,
   redis,
@@ -14,12 +14,8 @@ const region = "asia-southeast1-eqsg3a";
 export default defineRailway(() => {
   const brainData = volume("gizmo-brain-data", { region, sizeMB: 1024 });
 
-  const postgres = database("postgres", "postgres", {
-    image: "pgvector/pgvector:pg17",
-    output: "DATABASE_URL",
-    defaultMountPath: "/var/lib/postgresql/data",
-    region,
-  });
+  // Railway's managed Postgres 18 image includes the vector extension.
+  const db = postgres("postgres", { region });
 
   const cache = redis("redis", { region });
 
@@ -30,9 +26,10 @@ export default defineRailway(() => {
     }),
     replicas: { [region]: 1 },
     healthcheck: "/api/v1/healthcheck",
-    healthcheckTimeout: 30,
+    healthcheckTimeout: 120,
     env: {
-      DATABASE_URL: postgres.env.DATABASE_URL,
+      PORT: "8000",
+      DATABASE_URL: db.env.DATABASE_URL,
       REDIS_URL: cache.env.REDIS_URL,
       ACCESS_TOKEN: preserve(),
       PROJECT_ID: "gizmo",
@@ -49,6 +46,7 @@ export default defineRailway(() => {
     healthcheckTimeout: 30,
     env: {
       GEMINI_API_KEY: preserve(),
+      GIZMO_DEVICE_TOKEN: preserve(),
       GIZMO_USER_ID: "gizmo-owner",
       GIZMO_DATA_DIR: "/data",
       MEMOBASE_URL: memobase.env.MEMOBASE_INTERNAL_URL,
@@ -58,6 +56,6 @@ export default defineRailway(() => {
   });
 
   return project("gizmo", {
-    resources: [postgres, cache, memobase, brain],
+    resources: [db, cache, memobase, brain],
   });
 });

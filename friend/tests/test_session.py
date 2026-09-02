@@ -458,6 +458,36 @@ def test_classify_does_not_require_pinecone() -> None:
 
 
 @pytest.mark.asyncio
+async def test_memory_flush_cannot_overtake_insert(tmp_path: Path) -> None:
+    friend = GizmoSession(tmp_path)
+    events = []
+
+    async def insert():
+        await asyncio.sleep(0.02)
+        events.append("insert")
+
+    async def flush():
+        events.append("flush")
+
+    friend._background_memory(insert())
+    friend._background_memory(flush())
+    assert events == []
+    await asyncio.gather(*tuple(friend._memory_tasks))
+    assert events == ["insert", "flush"]
+    await friend.close()
+
+
+@pytest.mark.asyncio
+async def test_live_agent_does_not_inject_legacy_sqlite_memory(tmp_path: Path) -> None:
+    friend = GizmoSession(tmp_path, gemini_key="test-key")
+    friend.memory.remember_from_utterance("My name is LegacyUser")
+    friend._memory_context = "The user's name is Nova."
+    assert "LegacyUser" not in friend.instructions()
+    assert "Nova" in friend.instructions()
+    await friend.close()
+
+
+@pytest.mark.asyncio
 async def test_existing_device_protocol_forwards_camera_and_ptt_preroll(tmp_path: Path) -> None:
     holder: dict[str, FakeTransport] = {}
 

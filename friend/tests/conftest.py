@@ -9,6 +9,8 @@ def _no_cloud_keys(monkeypatch: pytest.MonkeyPatch) -> None:
         "OPENAI_API_KEY",
         "OPENROUTER_API_KEY",
         "GEMINI_API_KEY",
+        "GIZMO_DEVICE_TOKEN",
+        "RAILWAY_ENVIRONMENT_ID",
         "MEMOBASE_API_KEY",
         "MEMOBASE_URL",
         "FAL_KEY",

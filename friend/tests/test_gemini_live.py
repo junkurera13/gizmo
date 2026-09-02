@@ -113,3 +113,34 @@ async def test_tool_result_returns_to_same_live_session() -> None:
     assert response.id == "call-7"
     assert response.name == "deep_think"
     assert response.response["answer"] == "careful private result"
+
+
+@pytest.mark.asyncio
+async def test_camera_snapshot_is_bound_to_text_or_ptt_turn() -> None:
+    class StubSession:
+        def __init__(self):
+            self.realtime = []
+            self.turns = []
+
+        async def send_realtime_input(self, **kwargs):
+            self.realtime.append(kwargs)
+
+        async def send_client_content(self, **kwargs):
+            self.turns.append(kwargs)
+
+    transport = GeminiLiveTransport(api_key="test-key")
+    session = StubSession()
+    transport._session = session
+    image = "data:image/png;base64,iVBORw0KGgo="
+    await transport.send_image(image)
+    assert session.realtime == []
+    await transport.send_text("What do you see?")
+    assert session.turns[0]["turns"].parts[0].inline_data.mime_type == "image/png"
+    await transport.send_image(image)
+    transport._suppress_audio = True
+    await transport.begin_audio()
+    assert "activity_start" in session.realtime[0]
+    assert "video" in session.realtime[1]
+    assert transport._suppress_audio is False
+    await transport.commit_audio()
+    assert transport._audio_active is False

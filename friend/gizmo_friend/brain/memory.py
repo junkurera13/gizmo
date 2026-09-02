@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import asyncio
 import os
+import uuid
 from abc import ABC, abstractmethod
 from collections.abc import Sequence
 from dataclasses import dataclass
@@ -29,6 +30,14 @@ class MemoryProvider(ABC):
 
     async def close(self) -> None:
         return
+
+
+def memobase_user_id(user_id: str) -> str:
+    """Memobase requires UUIDs; Gizmo permits stable owner/device labels."""
+    try:
+        return str(uuid.UUID(user_id))
+    except ValueError:
+        return str(uuid.uuid5(uuid.NAMESPACE_URL, f"gizmo:user:{user_id}"))
 
 
 class NullMemoryProvider(MemoryProvider):
@@ -65,7 +74,7 @@ class MemobaseMemoryProvider(MemoryProvider):
         async with self._user_lock:
             cached = self._users.get(user_id)
             if cached is None:
-                cached = await self._client.get_or_create_user(user_id)
+                cached = await self._client.get_or_create_user(memobase_user_id(user_id))
                 self._users[user_id] = cached
         return cached
 

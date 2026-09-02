@@ -2,11 +2,13 @@ from __future__ import annotations
 
 import asyncio
 import base64
+import hmac
+import os
 from contextlib import asynccontextmanager
 from pathlib import Path
 
-from fastapi import FastAPI, HTTPException, WebSocket, WebSocketDisconnect
-from fastapi.responses import FileResponse
+from fastapi import FastAPI, HTTPException, Request, WebSocket, WebSocketDisconnect
+from fastapi.responses import FileResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 
 from gizmo_friend.body_protocol import Frame, MicChunk, Navigate, Power, PushToTalk, Select, TextLine
@@ -16,6 +18,10 @@ STATIC = Path(__file__).parent / "static"
 
 
 def app_factory(data_dir: Path) -> FastAPI:
+    device_token = os.environ.get("GIZMO_DEVICE_TOKEN", "").strip()
+    deployed = bool(os.environ.get("RAILWAY_ENVIRONMENT_ID"))
+    if deployed and not device_token:
+        raise RuntimeError("GIZMO_DEVICE_TOKEN is required for a cloud deployment")
     friend = GizmoSession(data_dir)
 
     @asynccontextmanager
@@ -25,6 +31,22 @@ def app_factory(data_dir: Path) -> FastAPI:
         await friend.close()
 
     app = FastAPI(title="Gizmo Friend", docs_url=None, redoc_url=None, lifespan=lifespan)
+
+    def authorized(connection: Request | WebSocket) -> bool:
+        # Preserve the local browser harness; cloud connections always need a token.
+        if not deployed and connection.client and connection.client.host in {"127.0.0.1", "::1"}:
+            return True
+        if not device_token:
+            return True
+        scheme, _, credential = connection.headers.get("authorization", "").partition(" ")
+        return scheme.lower() == "bearer" and hmac.compare_digest(credential.encode(), device_token.encode())
+
+    @app.middleware("http")
+    async def require_device_token(request: Request, call_next):
+        if request.url.path != "/health" and not authorized(request):
+            return JSONResponse({"detail": "unauthorized"}, status_code=401)
+        return await call_next(request)
+
     media = data_dir / "media"
     media.mkdir(parents=True, exist_ok=True)
 
@@ -38,7 +60,7 @@ def app_factory(data_dir: Path) -> FastAPI:
             "ok": True,
             "state": friend.state.value,
             "transport": friend.transport_name,
-            "name": friend.memory.get_name(),
+            "authentication_required": bool(device_token),
         }
 
     @app.get("/api/outbox")
@@ -74,6 +96,9 @@ def app_factory(data_dir: Path) -> FastAPI:
 
     @app.websocket("/ws")
     async def ws(socket: WebSocket) -> None:
+        if not authorized(socket):
+            await socket.close(code=1008)
+            return
         await socket.accept()
         queue = friend.subscribe()
         await socket.send_json(

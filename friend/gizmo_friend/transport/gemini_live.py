@@ -102,6 +102,8 @@ class GeminiLiveTransport:
         self._input_transcript = ""
         self._output_transcript = ""
         self._suppress_audio = False
+        self._audio_active = False
+        self._pending_image: types.Blob | None = None
         self._closed = False
 
     async def connect(self, instructions: str) -> None:
@@ -127,17 +129,31 @@ class GeminiLiveTransport:
                 await self._connection.__aexit__(None, None, None)
             except Exception:  # noqa: BLE001 - closing a dead socket is best-effort
                 pass
+        if self._client is not None:
+            await self._client.aio.aclose()
+            self._client.close()
         await self._queue.put(None)
 
     async def send_text(self, text: str) -> None:
+        self._suppress_audio = False
+        parts = []
+        if self._pending_image is not None:
+            parts.append(types.Part(inline_data=self._pending_image))
+            self._pending_image = None
+        parts.append(types.Part(text=text))
         await self._require_session().send_client_content(
-            turns=types.Content(role="user", parts=[types.Part(text=text)]),
+            turns=types.Content(role="user", parts=parts),
             turn_complete=True,
         )
 
     async def begin_audio(self) -> None:
+        self._suppress_audio = False
         self._resampler.reset()
         await self._require_session().send_realtime_input(activity_start=types.ActivityStart())
+        self._audio_active = True
+        if self._pending_image is not None:
+            await self._require_session().send_realtime_input(video=self._pending_image)
+            self._pending_image = None
 
     async def send_audio(self, pcm: bytes) -> None:
         converted = self._resampler.convert(pcm)
@@ -148,6 +164,7 @@ class GeminiLiveTransport:
 
     async def commit_audio(self) -> None:
         await self._require_session().send_realtime_input(activity_end=types.ActivityEnd())
+        self._audio_active = False
         self._resampler.reset()
 
     async def interrupt(self, played_ms: int = 0, item_id: str = "") -> None:
@@ -186,9 +203,13 @@ class GeminiLiveTransport:
 
     async def send_image(self, data_url: str) -> None:
         mime, data = _decode_data_url(data_url)
-        await self._require_session().send_realtime_input(
-            video=types.Blob(data=data, mime_type=mime)
-        )
+        image = types.Blob(data=data, mime_type=mime)
+        # With manual activity boundaries, a video frame sent outside an
+        # active turn may be ignored. Bind snapshots to the next user turn.
+        if self._audio_active:
+            await self._require_session().send_realtime_input(video=image)
+        else:
+            self._pending_image = image
 
     def _require_session(self):
         if self._session is None:
@@ -274,7 +295,9 @@ class GeminiLiveTransport:
                     events.append(TransportEvent(kind="transcript_delta", text=part.text, raw=raw))
 
         if content.grounding_metadata:
-            events.append(TransportEvent(kind="grounding", raw=raw))
+            events.append(
+                TransportEvent(kind="grounding", raw=content.grounding_metadata.model_dump(mode="json", exclude_none=True))
+            )
 
         if content.turn_complete:
             if self._input_transcript.strip():

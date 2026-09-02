@@ -104,6 +104,7 @@ class GizmoSession:
         self.transcripts = TranscriptStore(self.data_dir / "transcripts")
         self._memory_context = ""
         self._memory_tasks: set[asyncio.Task[Any]] = set()
+        self._memory_write_lock = asyncio.Lock()
         self._memory_loaded = False
         self._transport_factory = transport_factory
         self._resume_handle = ""
@@ -147,7 +148,9 @@ class GizmoSession:
             self._listeners.remove(queue)
 
     def instructions(self) -> str:
-        prefix = assemble_prefix(self.memory.prefix_memory())
+        # Semantic memory for the live agent belongs exclusively to Memobase.
+        # The legacy SQLite prefix remains only for the offline simulator.
+        prefix = FROZEN_PROMPT if self.gemini_key else assemble_prefix(self.memory.prefix_memory())
         if not prefix.startswith(FROZEN_PROMPT):
             raise RuntimeError("prefix lost the frozen prompt")
         if self._memory_context.strip():
@@ -332,7 +335,8 @@ class GizmoSession:
             return
         if not self._ready_for_input():
             return
-        self.memory.remember_from_utterance(cleaned)
+        if not self.gemini_key:
+            self.memory.remember_from_utterance(cleaned)
         self._record_transcript("user", cleaned)
         await self._ensure_connected()
         if self._transport:
@@ -485,11 +489,19 @@ class GizmoSession:
 
     def _background_memory(self, operation: Any) -> None:
         async def guarded() -> None:
+            started = False
             try:
-                await operation
+                # Flush must not overtake the transcript insert it belongs to.
+                # The lock orders background writes without blocking voice.
+                async with self._memory_write_lock:
+                    started = True
+                    await operation
             except Exception as error:  # noqa: BLE001 - memory is explicitly fail-soft
                 if not self._closing:
                     await self.emit({"type": "error", "message": f"memory write failed: {error}"})
+            finally:
+                if not started:
+                    operation.close()
 
         task = asyncio.create_task(guarded())
         self._memory_tasks.add(task)
@@ -632,7 +644,8 @@ class GizmoSession:
             await self.emit({"type": "transcript", "role": "gizmo", "text": event.text})
             return
         if kind == "user_transcript":
-            self.memory.remember_from_utterance(event.text)
+            if not self.gemini_key:
+                self.memory.remember_from_utterance(event.text)
             self._record_transcript("user", event.text)
             await self.emit({"type": "transcript", "role": "user", "text": event.text})
             return

@@ -42,7 +42,7 @@ PTT uses explicit activity-start/activity-end events with Gemini automatic activ
 
 At session start, the controller retrieves compact Memobase context once with a strict timeout and adds it after the stable Gizmo prompt. A Memobase outage cannot block later realtime turns. Final transcript entries are always appended to `data/transcripts/<session-id>.jsonl`; completed user/assistant turns are submitted to Memobase in tracked background tasks. Sleep, power-off, and process shutdown request a Memobase buffer flush.
 
-The existing SQLite file remains only for transitional device data and compatibility. New semantic memory behavior belongs in the provider, not in a second custom memory system.
+The existing SQLite file remains only for transitional device data and offline compatibility. Live Gemini sessions neither write semantic facts to it nor inject its old prefix. New semantic memory behavior belongs in the provider, not in a second custom memory system. Memobase processing is asynchronous and eventually consistent: newly learned facts become available after its background extraction finishes, rather than blocking the conversation.
 
 ## Tools and search
 
@@ -67,14 +67,18 @@ Railway
 └── redis
 ```
 
-The definition provisions all four services in Singapore. Railway owns the Postgres and Redis credentials and persistent storage; Postgres uses `pgvector/pgvector:pg17`. Memobase is pinned through the wrapper image in `deploy/memobase/`, and only private Railway references connect the services.
+The definition provisions all four services in Singapore. Railway owns the Postgres and Redis credentials and persistent storage; its managed Postgres 18 image includes the vector extension. Memobase is pinned through the wrapper image in `deploy/memobase/`, and only private Railway references connect the services. The wrapper removes upstream startup logging of API keys and database URLs.
 
-Bootstrap an empty, linked Railway project with `npm install`, `npx railway config plan`, and `npx railway config apply`. Then set these secrets directly in Railway:
+Bootstrap an empty, linked Railway project with `npm install`, `npx @railway/cli config plan`, and `npx @railway/cli config apply`. Then set these secrets directly in Railway:
 
-- `gizmo-brain`: `GEMINI_API_KEY`
-- `memobase`: `ACCESS_TOKEN`, `MEMOBASE_LLM_API_KEY`
+- `gizmo-brain`: `GEMINI_API_KEY`, `GIZMO_DEVICE_TOKEN`
+- `memobase`: `ACCESS_TOKEN`, `MEMOBASE_LLM_API_KEY` (the Gemini key)
 
 The non-secret `GIZMO_USER_ID`, memory URLs, project ID, and data path are already declared. `preserve()` prevents later infrastructure applies from reading or overwriting the secret values. Generate a public domain only for `gizmo-brain`; Memobase, Postgres, and Redis stay private.
+
+Memobase's extraction model is `gemini-3.1-flash-lite`; embeddings use `gemini-embedding-2` at 1536 dimensions. Both use Google's OpenAI-compatible endpoint through Memobase's existing adapter. Stable Gizmo identity labels are mapped deterministically to Memobase UUIDs. Transcript inserts and flush requests are ordered in a background queue so a flush cannot overtake an insert.
+
+The native emulator reads `GIZMO_BRAIN_URL` and `GIZMO_DEVICE_TOKEN` from the ignored `.env` (process environment overrides it). HTTPS/WSS is required for remote mode, and the token travels in the Authorization header, never the URL. The public health route exposes no user identity. Without a cloud URL, local startup remains unchanged.
 
 ## Deliberate V1 exclusions
 

@@ -46,6 +46,8 @@ Or: `python -m gizmo_friend` from a venv with this repo installed.
 
 **Native emulator:** launch `Gizmo Simulator.app`. **Power on** cold-boots Gizmo. Tap **PTT** to sleep or wake; hold it while talking. Use **Up**, **Down**, and **Select** for device UI. Camera frames and 24 kHz PCM travel over the existing body WebSocket; the backend resamples mic audio to Gemini's 16 kHz input.
 
+For cloud mode, set `GIZMO_BRAIN_URL` to the Railway HTTPS domain and `GIZMO_DEVICE_TOKEN` to the matching service secret in the ignored `.env`. The native emulator reads only those two connection settings, uses an authenticated WSS connection, and plays the returned 24 kHz audio. It never needs the Gemini key in the client. Omit `GIZMO_BRAIN_URL` to retain the existing local-launch workflow.
+
 **Terminal:** `gizmo --cli`
 
 ```
@@ -60,17 +62,17 @@ Or: `python -m gizmo_friend` from a venv with this repo installed.
 
 Self-hosted Memobase is behind a `MemoryProvider` interface. `GizmoSession` fetches compact context once at session start and appends it after the stable system prompt. Final user/Gizmo transcripts are saved to `$GIZMO_DATA_DIR/transcripts/<session>.jsonl`; completed turns are sent to Memobase in background tasks and flushed on sleep or shutdown.
 
-Railway contains four services: `gizmo-brain`, `memobase`, `postgres`, and `redis`. The complete Singapore-region project is declared in `.railway/railway.ts`. Railway manages the database credentials and volumes; the Postgres resource uses the pgvector image required by Memobase. `gizmo-brain` has its own persistent `/data` volume for transcripts.
+Railway contains four services: `gizmo-brain`, `memobase`, `postgres`, and `redis`. The complete Singapore-region project is declared in `.railway/railway.ts`. Railway manages the database credentials and volumes; its Postgres 18 image includes pgvector. `gizmo-brain` has its own persistent `/data` volume for transcripts. Memobase uses Gemini 3.1 Flash-Lite and Gemini Embedding 2 through Google's OpenAI-compatible endpoint; an OpenAI account is not required.
 
 After creating and linking an empty Railway project, provision it with:
 
 ```bash
 npm install
-npx railway config plan
-npx railway config apply
+npx @railway/cli config plan
+npx @railway/cli config apply
 ```
 
-Set `GEMINI_API_KEY` on `gizmo-brain`, and `ACCESS_TOKEN` plus `MEMOBASE_LLM_API_KEY` on `memobase`, using Railway secrets rather than source files. The IaC file marks those values with `preserve()` so future applies retain them. Generate a public Railway domain for `gizmo-brain` after its first healthy deployment; Postgres, Redis, and Memobase remain on Railway's private network.
+Set `GEMINI_API_KEY` and a randomly generated `GIZMO_DEVICE_TOKEN` on `gizmo-brain`, and a random `ACCESS_TOKEN` plus the Gemini key as `MEMOBASE_LLM_API_KEY` on `memobase`, using Railway secrets rather than source files. The IaC file marks those values with `preserve()` so future applies retain them. Generate a public Railway domain for `gizmo-brain` after its first healthy deployment; Postgres, Redis, and Memobase remain on Railway's private network. All public device/data routes require the device token; `/health` is the only unauthenticated cloud route.
 
 ## Tools
 

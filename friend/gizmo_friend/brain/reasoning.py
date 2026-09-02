@@ -55,6 +55,10 @@ class GeminiReasoningProvider(ReasoningProvider):
         text = (response.text or "").strip()
         return text or None
 
+    async def close(self) -> None:
+        await self._client.aio.aclose()
+        self._client.close()
+
 
 def reasoning_provider_from_env(api_key: str | None = None) -> ReasoningProvider:
     key = (api_key or os.environ.get("GEMINI_API_KEY") or "").strip()
