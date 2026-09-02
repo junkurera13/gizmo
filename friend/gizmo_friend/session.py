@@ -36,6 +36,7 @@ from gizmo_friend.transport.gemini_live import GeminiLiveTransport
 Listener = Callable[[dict[str, Any]], Any]
 
 EXPRESSIONS = {"idle", "curious", "thinking", "happy", "concerned", "surprised"}
+# Placeholder vocabulary for set_expression. Not the character. Glass ignores it.
 
 
 def _today() -> str:

@@ -1,9 +1,8 @@
 import SwiftUI
 
-/// Plays one sprite animation on the glass: steps through PNG frames at the
-/// animation's fps, pixel-crisp (no smoothing). Looping animations cycle,
-/// one-shot animations hold their last frame. Animations flagged `wander`
-/// (the camera-mode floating head) drift slowly around the glass.
+/// Plays one sprite flipbook on the glass: numbered PNGs, pixel-crisp, no
+/// smoothing. Looping cycles; one-shots hold the last frame. `wander` is a
+/// leftover preview flag, not character spec.
 struct SpriteAnimationView: View {
     let animation: SpriteAnimation
 

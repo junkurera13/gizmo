@@ -4,9 +4,9 @@ from __future__ import annotations
 # an application function. These are the only functions Gizmo itself executes.
 ALLOWED_TOOLS = ("deep_think", "set_expression")
 
-# Fire-and-forget side effects. Declared NON_BLOCKING so the model keeps
-# speaking instead of pausing for the result, and answered with SILENT
-# scheduling so a face change never provokes a follow-up turn.
+# Placeholder bus only — not the character architecture. Jun is still
+# designing the face. Declared NON_BLOCKING / SILENT so a stray call
+# cannot pause speech or provoke a follow-up turn.
 NON_BLOCKING_TOOLS = frozenset({"set_expression"})
 
 TOOL_SCHEMAS: list[dict] = [
@@ -34,8 +34,7 @@ TOOL_SCHEMAS: list[dict] = [
         "type": "function",
         "name": "set_expression",
         "description": (
-            "Set Gizmo's face expression when a visible emotional beat helps. "
-            "Do not call it for every reply."
+            "Placeholder. Character animation is not designed yet. Do not call this."
         ),
         "parameters": {
             "type": "object",

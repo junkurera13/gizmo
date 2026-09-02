@@ -1,76 +1,34 @@
 # Glass
 
-1.54" 240×240. The glass shows the wizard when Gizmo is awake, a print-look still during **show** and on a kept page, and nothing when asleep.
+Jun's. The 240×240 screen. Home is his face. Anything else is conjured for a moment and then leaves.
 
-Jun draws the wizard. Do not drop stock art in here.
+**The character is still being designed.** Nothing in this folder, the sprite player, or `set_expression` is the character architecture. After the design lands, we build that together. Do not invent a second face system, do not lock a sheet, do not treat the folder names below as canon.
 
-## Sprites
+## Scratch player
 
-The wizard is a set of short flipbooks — one folder per animation, numbered PNG frames inside. Drop a folder in `glass/sprites/` and the simulator plays it. No folder yet? The procedural face fills in, so animations can land one at a time.
+The simulator can preview numbered PNG flipbooks so Jun can try drawings on the device. Drop a folder in `glass/sprites/` and hit **Device → Reload Sprites** (⌘R). No rebuild. Empty glass is black — there is no stand-in character.
 
 ```
 glass/sprites/
   idle/   01.png  02.png  03.png ...
-  talk/   01.png  02.png ...
-  sprites.json        (optional, see below)
 ```
 
-### Frame rules
+Today the emulator looks for folders named after *device states* (`idle`, `listen`, `talk`, `think`, `boot`, …). That mapping is a temporary hook for previews. It is not the animation set. Missing folders stay black, except that some names currently fall back to `idle` if it exists.
 
-- **Format**: PNG with transparency. Background stays empty — the glass paints it black.
-- **Canvas**: 240×240 pixels, every frame the same size. Draw bigger if you like (480×480, 960×960) as long as all frames in one animation match; the glass scales down. Pixel art should be authored at 240×240 or a clean multiple so it stays crisp — the renderer never smooths.
-- **Names**: number them so they sort — `01.png`, `02.png`, … Nothing else matters about the name.
-- **Frame counts**: idle can live on 4–8 frames (blink, sway). Big moments (boot, think) earn more. Cuphead runs on 24; Game Boy characters on 2–4. Land where it feels right.
+### Frame rules (for previews)
 
-### The animation set
+- PNG with transparency. The glass is black behind it.
+- 240×240, or a clean multiple (480, 960). The player scales down and never smooths.
+- Number the frames so they sort: `01.png`, `02.png`, …
 
-One folder per state the brain broadcasts. Build in this order — each one shows up as soon as its folder exists:
+Aseprite, Procreate Animation Assist, or Photoshop timeline all export this.
 
-| Folder    | When it plays                        | Notes                                        |
-| --------- | ------------------------------------ | -------------------------------------------- |
-| `idle`    | awake, waiting                       | **Start here.** Loops. Falls in for everything missing. |
-| `talk`    | speaking                             | Loops while he talks.                        |
-| `think`   | deep thinking / making / reaching    | Loops. The "gone inward" pose.               |
-| `listen`  | talk button held                     | Loops. Ears up, eyes on you.                 |
-| `boot`    | waking up                            | Plays **once**, then idle takes over.        |
-| `see`     | camera on                            | **The floating head.** Draw only the head — the glass drifts it around by itself. Loops. |
-| `show`    | a still is being made                | Loops until the picture lands.               |
-| `sleep`   | powering down                        | Plays **once**. (Wired up later.)            |
-
-### sprites.json (optional)
-
-Defaults: 10 frames per second, everything loops except `boot` and `sleep`, only `see` drifts. Override per animation if a scene needs it:
-
-```json
-{
-  "idle": { "fps": 6 },
-  "boot": { "fps": 12, "loop": false },
-  "see":  { "fps": 8, "wander": true }
-}
-```
-
-### Iterating
-
-Draw, export the PNGs into the folder, then in the simulator hit **Device → Reload Sprites** (⌘R). No rebuild, no restart.
-
-Tools that export numbered PNG sequences: Aseprite (built for exactly this), Procreate (Animation Assist → export PNG frames), Photoshop timeline. Any of them works.
+Optional `glass/sprites/sprites.json` can override fps / loop per folder name. Defaults are a preview convenience, not spec.
 
 ## Sounds
 
-`glass/sounds/` holds Gizmo's few fixed noises. WAV files, short, mono.
-
-| File       | When it plays        | Notes                                        |
-| ---------- | -------------------- | -------------------------------------------- |
-| `boot.wav` | the moment he wakes  | The Game Boy ding. Under 2 seconds. Design the boot flipbook so its landing beat matches. |
-
-A placeholder chime lives there until Jun replaces it. jsfxr (browser, free) makes exactly this kind of 8-bit sound.
+`glass/sounds/boot.wav` is the cold-boot chime until Jun replaces it. Short, mono WAV.
 
 ## Stills
 
-Friend already blits:
-
-- print-look stills (local SVG, 240×240) during `show` and on a kept page
-- up to two short clips after the still (skipped if `FAL_KEY` is missing)
-- then off
-
-Friend should keep treating glass as a small page, not a UI toolkit.
+Show / Make stills are not wired. Do not put generated media in this tree.

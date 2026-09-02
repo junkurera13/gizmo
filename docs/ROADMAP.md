@@ -11,10 +11,10 @@ the screen serves the moment and then gets out of the way.
 
 He has a lifecycle, not just a socket.
 
-- Power on → boot moment → home: his face on the glass, blinking, wandering
-- Face reacts: attentive on push-to-talk, bouncing while talking, squinting during tools
+- Power on → boot moment → home: the glass is his face (Jun's art, when it lands)
+- Face reacts to listen / talk / think once the character architecture exists
 - Auto-sleep after 2 idle minutes, like a phone
-- Conversation, see / show / make / reach, memory that survives restart
+- Conversation, see, memory that survives restart. Show / make / reach are next, not done.
 
 ## 1 — Feels like a someone
 
@@ -22,7 +22,7 @@ Close the gap between "demo" and "friend." Mostly polish, highest leverage.
 
 - Real voice by default (`.env` key loads everywhere, including the Dock app)
 - Judgment that holds in live talk: easy questions from the hip, hard ones through think, visual ones through show
-- Jun's hand-drawn face replaces the procedural eyes (`glass/`)
+- Jun's hand-drawn face on the glass. Character animation architecture is after the design, not before.
 - One button, one meaning: PTT only ever means talk; sleep is idle-only; the top toggle is for cold boot and hard shutdown
 - Interrupt is instant; silence is comfortable; he never repeats his greeting
 - Memory that carries days: "remember the pinecone" actually lands

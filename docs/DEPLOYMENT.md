@@ -28,4 +28,4 @@ Memory processing is asynchronous. A fact becomes available to a later session a
 
 Native Google Search is enabled according to the Live API tool contract. Current-fact questions returned spoken answers, but the provider did not return grounding/citation metadata in the smoke tests. Source-attributed Search is therefore not yet verified. No custom search service was added.
 
-`set_expression` emits validated device expression events. The character artwork and future media interfaces are unchanged; no image/video generation or Adaptive Media was added.
+`set_expression` is a placeholder bus. It is not the character. No image/video generation or Adaptive Media was added.

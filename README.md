@@ -80,7 +80,7 @@ Set `GEMINI_API_KEY` and a randomly generated `GIZMO_DEVICE_TOKEN` on `gizmo-bra
 
 ## Tools
 
-The model-facing V1 functions are `deep_think(question)` and `set_expression(expression)`. Google Search is Gemini's native grounding tool, not a custom search function. No media generation pipeline exists yet.
+The model-facing V1 functions are `deep_think(question)` and a placeholder `set_expression()` bus (not the character). Google Search is Gemini's native grounding tool, not a custom search function. No media generation pipeline exists yet.
 
 ## Who owns what
 

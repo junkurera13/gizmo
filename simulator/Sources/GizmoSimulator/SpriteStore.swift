@@ -20,16 +20,11 @@ struct SpriteAnimation: Equatable {
     }
 }
 
-/// Loads Jun's hand-drawn wizard animations from glass/sprites/.
+/// Scratch preview player for Jun's drawings in glass/sprites/.
 ///
-/// Layout on disk — one folder per animation, numbered PNG frames inside:
-///
-///     glass/sprites/idle/01.png, 02.png, ...
-///     glass/sprites/talk/01.png, ...
-///
-/// An optional glass/sprites/sprites.json can override speed and looping.
-/// Any animation that has no folder yet falls back to a simpler one, and
-/// finally to the procedural face, so art can land one animation at a time.
+/// Not the character architecture. Folder names follow today's device
+/// states as a temporary hook so a sheet can be tried on the glass.
+/// After the design lands, this mapping gets rebuilt. Empty glass is black.
 @MainActor
 final class SpriteStore: ObservableObject {
     static let shared = SpriteStore()
@@ -76,7 +71,7 @@ final class SpriteStore: ObservableObject {
             options: [.skipsHiddenFiles]
         ) else {
             animations = [:]
-            lastLoadNote = "No glass/sprites folder yet — using the procedural face."
+            lastLoadNote = "No glass/sprites folder yet — glass stays black."
             return
         }
 
@@ -117,7 +112,7 @@ final class SpriteStore: ObservableObject {
         animations = loaded
         hearts = loadedHearts
         lastLoadNote = loaded.isEmpty
-            ? "glass/sprites is empty — using the procedural face."
+            ? "glass/sprites is empty — glass stays black."
             : "Loaded \(loaded.count) animation(s): \(loaded.keys.sorted().joined(separator: ", "))."
     }
 

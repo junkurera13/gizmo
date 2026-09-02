@@ -145,8 +145,7 @@ private struct DeviceView: View {
         }
     }
 
-    /// Camera mode: the live feed fills the glass, and the wizard's
-    /// floating head drifts on top of it, watching along.
+    /// Leftover viewfinder. See is supposed to keep his face on the glass.
     @ViewBuilder
     private var viewfinder: some View {
         ZStack {
@@ -183,9 +182,8 @@ private struct DeviceView: View {
         }
     }
 
-    /// Which of Jun's animations to play for the current device state.
-    /// Missing animations fall back inside SpriteStore, then to the
-    /// procedural face below, so art can land one folder at a time.
+    /// Scratch mapping: device state → preview folder name.
+    /// Not the character system. Missing folders stay black (idle can stand in).
     private var spriteName: String? {
         switch model.deviceState {
         case "booting":

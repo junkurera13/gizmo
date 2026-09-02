@@ -2,12 +2,10 @@ import AVFoundation
 import CoreImage
 import Foundation
 
-/// Live Mac-camera frames for the simulated viewfinder.
+/// Live Mac-camera frames for the simulated world camera.
 ///
-/// Emulates the device's world camera: when Gizmo is in the `seeing` state
-/// the glass shows this feed with the wizard's floating head drifting on
-/// top. Throttled to ~12 fps, about what the real camera-to-screen path
-/// on the ESP32 will manage — the slightly dreamy frame rate is on-brand.
+/// The `seeing` viewfinder path is leftover. Product: See keeps his face
+/// on the glass. Don't treat this feed-on-glass as the character.
 final class CameraFeed: NSObject, ObservableObject, @unchecked Sendable {
     static let shared = CameraFeed()
 

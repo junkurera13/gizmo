@@ -66,7 +66,7 @@ Only two custom functions are model-facing in V1:
 | Function | Behavior |
 | --- | --- |
 | `deep_think(question)` | Calls `gemini-3.7-flash` through `ReasoningProvider`. The result is private notes returned to Gemini Live; Live remains the speaker and personality. |
-| `set_expression(expression)` | Emits one validated face-expression event for the existing device renderer. |
+| `set_expression(expression)` | Placeholder bus only. Not the character architecture — Jun is still designing the face. The glass does not play these events. Do not treat the enum as canon. |
 
 Google Search is configured as Gemini's native tool beside these functions. There is no custom search service or model router.
 
