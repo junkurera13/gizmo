@@ -64,10 +64,8 @@ class GizmoSession:
         reasoning_provider: ReasoningProvider | None = None,
         user_id: str | None = None,
         transport_factory: Callable[[str], Transport] | None = None,
-        # The splash is the one moment a kid waits on purpose. ~1.75 s of
-        # blink, then the wordmark holds for the rest. Long enough to read as
-        # a ritual (Game Boy was ~3 s), short enough to never annoy.
-        boot_s: float = 5.0,
+        # Matches the glass splash: ~1.75 s blink, then the wordmark holds.
+        boot_s: float = 3.8,
         idle_sleep_s: float = 120.0,
     ) -> None:
         self.data_dir = Path(data_dir)

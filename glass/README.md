@@ -27,11 +27,11 @@ Optional `glass/sprites/sprites.json` can override fps / loop per folder name. D
 
 ## Boot
 
-`glass/sprites/boot/` is a one-shot double blink at 8 fps: the eye opens and settles, blinks slowly, opens, then a quick second blink lands on the wordmark, which holds until the body's 5 s splash ends (about 1.75 s of motion, 3.25 s of logo). The body owns that timer (`SimulatorModel.splashMinimum`); the brain finishing early or late never cuts the logo short.
+`glass/sprites/boot/` is a one-shot double blink at 8 fps: the eye opens and settles, blinks slowly, opens, then a quick second blink lands on the wordmark (`14.png`). That last frame holds until the body's 3.8 s splash ends (about 1.75 s of motion, ~2 s of logo). The body owns that timer (`SimulatorModel.splashMinimum`); the brain finishing early or late never cuts the logo short.
 
 The seven source drawings live in `glass/boot-source/` (open, closing, shut, opening, wordmark). The played sequence is copies of those in the order `01 01 01 02 03 04 05 06 01 01 03 04 05 07`. To change the rhythm, rebuild the copies in a new order; the player plays every numbered frame and holds the last one. The eye is shut on frames 06 and 12.
 
-Drop `glass/sounds/boot.wav` for the ding; the emulator currently fires it at frame index 3 (the first closing frame). Missing wav is a silent boot.
+Drop `glass/sounds/boot.wav` for the ding; it fires when `14.png` first appears. Missing wav is a silent boot.
 
 To make the hold feel alive, add frames after the wordmark (a breathing logo, loading dots, a slow shimmer).
 

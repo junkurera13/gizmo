@@ -55,18 +55,15 @@ final class SimulatorModel: ObservableObject {
     private var bootSound: NSSound?
     private var bootSoundTask: Task<Void, Never>?
     private var hasColdBooted = false
-    /// The glass owns the splash. The brain may finish booting in two seconds
-    /// or twenty; the flipbook still plays through and the wordmark still
-    /// holds. Blink is 14 frames at 8 fps (1.75 s); the rest is the hold.
-    static let splashMinimum: Duration = .seconds(5)
+    /// The glass owns the splash. Blink is 14 frames at 8 fps (~1.75 s);
+    /// then `14.png` (the wordmark) holds for a beat so it can be read.
+    static let splashMinimum: Duration = .milliseconds(3800)
     @Published private(set) var splashHolding = false
     private var splashTask: Task<Void, Never>?
 
-    /// What the glass shows: the brain's state, except while the splash is
-    /// still holding, when it stays on the boot flipbook.
-    var glassState: String {
-        splashHolding && !poweredOff && deviceState != "powered_off" ? "booting" : deviceState
-    }
+    /// What the glass shows. While the splash is up it stays on the boot
+    /// flipbook even if the brain has already moved to listening.
+    @Published private(set) var glassState = "powered_off"
     /// Bumped on every cold boot so the splash flipbook always restarts.
     @Published private(set) var bootGeneration = 0
     /// Last switch position we sent. Stale friend events cannot undo it.
@@ -150,8 +147,8 @@ final class SimulatorModel: ObservableObject {
         send(["type": "select"])
     }
 
-    /// Ding lands on the closed-eye frame of the boot blink, not on power-on.
-    /// Frame 04 is index 3; delay is 3 / boot fps. Missing wav = silent boot.
+    /// Ding lands when `14.png` (the wordmark) first appears, not on power-on.
+    /// That's the last flipbook frame: delay is (frameCount - 1) / fps.
     private func playBootSound() {
         bootSoundTask?.cancel()
         bootSound?.stop()
@@ -160,14 +157,16 @@ final class SimulatorModel: ObservableObject {
             .appendingPathComponent("glass/sounds/boot.wav")
         guard let url, FileManager.default.fileExists(atPath: url.path) else { return }
 
-        let fps = SpriteStore.shared.animation(for: "boot")?.fps ?? 12
-        let blinkDelay = fps > 0 ? 3.0 / fps : 0
+        let boot = SpriteStore.shared.animation(for: "boot")
+        let fps = boot?.fps ?? 8
+        let lastIndex = max((boot?.frames.count ?? 1) - 1, 0)
+        let wordmarkDelay = fps > 0 ? Double(lastIndex) / fps : 0
 
         bootSoundTask = Task { @MainActor [weak self] in
-            if blinkDelay > 0 {
-                try? await Task.sleep(for: .seconds(blinkDelay))
+            if wordmarkDelay > 0 {
+                try? await Task.sleep(for: .seconds(wordmarkDelay))
             }
-            guard let self, !Task.isCancelled, !self.poweredOff, self.deviceState == "booting" else {
+            guard let self, !Task.isCancelled, !self.poweredOff, self.splashHolding else {
                 return
             }
             self.bootSound = NSSound(contentsOf: url, byReference: true)
@@ -185,10 +184,12 @@ final class SimulatorModel: ObservableObject {
     private func beginSplashHold() {
         splashTask?.cancel()
         splashHolding = true
+        refreshGlassState()
         splashTask = Task { @MainActor [weak self] in
             try? await Task.sleep(for: Self.splashMinimum)
             guard let self, !Task.isCancelled else { return }
             self.splashHolding = false
+            self.refreshGlassState()
         }
     }
 
@@ -196,6 +197,14 @@ final class SimulatorModel: ObservableObject {
         splashTask?.cancel()
         splashTask = nil
         splashHolding = false
+        refreshGlassState()
+    }
+
+    private func refreshGlassState() {
+        let next = splashHolding && !poweredOff ? "booting" : deviceState
+        if glassState != next {
+            glassState = next
+        }
     }
 
     func drainBattery() {
@@ -206,9 +215,13 @@ final class SimulatorModel: ObservableObject {
         if poweredOff {
             // Flipping the toggle on: power arrives, cold boot begins.
             applyPowerOff(false)
-            hasColdBooted = false
+            hasColdBooted = true
             bootGeneration += 1
             pendingPowerOn = true
+            deviceState = "booting"
+            screenOn = true
+            beginSplashHold()
+            playBootSound()
             send(["type": "power", "on": true])
         } else {
             // Hard cut. Not sleep. Sleep is idle-only and any button wakes it.
@@ -231,6 +244,7 @@ final class SimulatorModel: ObservableObject {
             screenOn = false
             deviceState = "powered_off"
         }
+        refreshGlassState()
     }
 
     func beginPushToTalk() {
@@ -594,14 +608,16 @@ final class SimulatorModel: ObservableObject {
         if poweredOff && type != "hello" {
             screenOn = false
             deviceState = "powered_off"
+            refreshGlassState()
         } else if let state = object["state"] as? String {
             deviceState = state
             // The chime is for the cold boot only — the once-per-power-up
             // ritual. Waking from sleep is silent, like a phone.
+            refreshGlassState()
             if state == "booting", !hasColdBooted {
                 hasColdBooted = true
-                playBootSound()
                 beginSplashHold()
+                playBootSound()
             }
         }
         if let path = object["transport"] as? String {
