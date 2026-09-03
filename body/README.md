@@ -15,6 +15,14 @@ Connect to `wss://<brain-host>/ws` with `Authorization: Bearer <device-token>` a
 Local development uses `ws://127.0.0.1:43147/ws`. The body needs the device token,
 not any provider API key.
 
+The current wire version is **1**. Before opening the socket, read `/health` and
+require `body_protocol.version == 1`. That response also publishes the canonical
+events, audio format, camera ceiling, and Show-frame route limits. It intentionally
+does not claim a panel size: no screen has been selected. Send
+`X-Gizmo-Protocol: 1` on the WebSocket handshake. An explicit unsupported version
+is closed with WebSocket code `1002`; clients from before this version header was
+introduced may temporarily omit it.
+
 | Wire event | Body input | Friend |
 | --- | --- | --- |
 | `power` | Top toggle on / off | Cold boot / hard shutdown |
@@ -93,7 +101,9 @@ events and accompanying event fields. Show uses `glass` with `still`, then
 the output event. The `frames` URL serves the finite JPEG sequence described in
 `docs/SHOW.md`. Media fetches use the same authorization and device-id headers.
 
-The broader firmware handoff still needs its reference client and protocol-version
-negotiation. Those are not implemented by this microphone-contract correction.
+The basic protocol-v1 laptop client is in `body/reference/`. Checkpoint 1 covers
+health/hello compatibility, authenticated connection, identity and physical
+control messages. Its real microphone, camera, speaker, glass-media and reconnect
+adapters remain checkpoint 2; it is not firmware.
 
 No character art in this tree. No second brain. Body is a body.

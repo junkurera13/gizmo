@@ -36,6 +36,17 @@ from enum import Enum
 from typing import Union
 
 
+# Wire-level constants shared by Friend's health/hello responses. Firmware can
+# reject an incompatible brain before it reports a physical input.
+BODY_PROTOCOL_VERSION = 1
+BODY_AUDIO_SAMPLE_RATE_HZ = 24_000
+BODY_AUDIO_CHANNELS = 1
+BODY_AUDIO_SAMPLE_FORMAT = "pcm_s16le"
+BODY_CAMERA_MAX_WIDTH = 640
+BODY_CAMERA_MAX_HEIGHT = 480
+BODY_CAMERA_MAX_BYTES = 128 * 1024
+
+
 class BodyEventType(str, Enum):
     SELECT = "select"
     POWER = "power"

@@ -20,9 +20,32 @@ both the WebSocket and native app. H2's microphone wire mismatch is now fixed an
 verified at the WebSocket boundary. H3 now captures a real Mac-camera JPEG on PTT
 and sends it through the shared brain. Native verification reached the Gemini
 adapter's SDK boundary with a local receiver; no cloud vision result is claimed.
-Stopped at the camera checkpoint for Jun's review.
-H4–H8 and the broader firmware reference client/version handoff remain open.
+H3's camera checkpoint was reviewed, and body handoff checkpoint 1 now passes.
+H4–H8, the reference client's real-I/O checkpoint 2, and firmware remain open.
 No deployment has been made.
+
+**Body handoff checkpoint 1, September 4:** protocol v1 is now explicit in
+`/health`, `hello`, and the `X-Gizmo-Protocol` request header. Health advertises
+canonical input/output events, 24 kHz PCM16 mono audio, the camera ceiling, and
+Show MJPEG route limits. It does not publish a made-up panel size. An explicit
+incompatible version is accepted only long enough to close with WebSocket code
+`1002`; old clients that omit the new header remain compatible during rollout.
+
+The executable [reference client](/Users/jun/gizmo/body/reference/gizmo_body.py:1)
+checks health before connecting, requires protocol v1 again in `hello`, sends a
+stable device identity and optional bearer token, disables WebSocket compression,
+and exposes power, PTT, rocker and Select edges plus diagnostic text. It summarizes
+incoming audio rather than printing PCM. Remote plaintext and missing remote tokens
+are rejected locally. This checkpoint intentionally does not implement real
+microphone, camera, speaker, glass-media or reconnect buffering adapters.
+
+One focused local run used actual HTTP and WebSocket connections with authentication
+enabled. It confirmed health and hello v1, the initial glass snapshot, cold boot,
+up/down/Select acknowledgements, hard power-off, and protocol-v2 rejection with
+code `1002`. The first rejection attempt exposed a pre-accept HTTP 403; the handshake
+was corrected and the same checkpoint passed. Null providers prevented model and
+media calls. No test suite or test file was added. Evidence:
+[checkpoint-1 result](/Users/jun/gizmo/data/hardware-audit/2026-09-04/reference-client/checkpoint-1.json).
 
 The PTT fix tracks the connection owning a hold, rejects audio/releases from
 other connections, and clears an abandoned hold on owner disconnect. It closes
@@ -161,8 +184,8 @@ SwiftUI/AppKit themselves are Mac adapters, not libraries expected to run on the
 ESP32. The desktop conversation panel and local backend launcher are development
 tools and need no counterpart on the device.
 
-Remaining order before further emulator polish: review H3, then
-H4/H5/H6 shared assets and constrained media
+Remaining order before further emulator polish: review body reference checkpoint 1,
+finish its real-I/O/reconnect checkpoint 2, then H4/H5/H6 shared assets and constrained media
 preview. Prepare those with configurable profiles while the screen remains open.
 Finalize H7/H8 with the actual board, power circuit and panel. Stop for review at
 each agreed implementation checkpoint; this audit does not advance SHOW.md.

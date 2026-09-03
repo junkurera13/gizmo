@@ -11,7 +11,22 @@ from fastapi import FastAPI, HTTPException, Query, Request, WebSocket, WebSocket
 from fastapi.responses import FileResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 
-from gizmo_friend.body_protocol import Frame, MicChunk, Navigate, Power, PushToTalk, Select, TextLine
+from gizmo_friend.body_protocol import (
+    BODY_AUDIO_CHANNELS,
+    BODY_AUDIO_SAMPLE_FORMAT,
+    BODY_AUDIO_SAMPLE_RATE_HZ,
+    BODY_CAMERA_MAX_BYTES,
+    BODY_CAMERA_MAX_HEIGHT,
+    BODY_CAMERA_MAX_WIDTH,
+    BODY_PROTOCOL_VERSION,
+    Frame,
+    MicChunk,
+    Navigate,
+    Power,
+    PushToTalk,
+    Select,
+    TextLine,
+)
 from gizmo_friend.brain.shows import MAX_IMAGE_DIMENSION, ShowStore, valid_device_id
 from gizmo_friend.brain.show_media import MAX_FRAME_DIMENSION, MAX_FRAME_FPS, MediaError
 from gizmo_friend.brain.show_budget import MotionBudget, ShowBudget
@@ -77,6 +92,35 @@ def app_factory(data_dir: Path) -> FastAPI:
             "ok": True,
             "devices": len(sessions),
             "authentication_required": bool(device_token),
+            "body_protocol": {
+                "version": BODY_PROTOCOL_VERSION,
+                "websocket_path": "/ws",
+                "input_events": ["power", "ptt", "navigate", "select", "frame", "audio"],
+                "output_events": [
+                    "hello", "state", "glass", "audio", "ptt", "navigate",
+                    "select", "frame", "transcript", "interrupted", "error",
+                ],
+                "audio": {
+                    "sample_rate_hz": BODY_AUDIO_SAMPLE_RATE_HZ,
+                    "channels": BODY_AUDIO_CHANNELS,
+                    "sample_format": BODY_AUDIO_SAMPLE_FORMAT,
+                    "encoding": "base64",
+                },
+                "camera": {
+                    "format": "jpeg",
+                    "max_width": BODY_CAMERA_MAX_WIDTH,
+                    "max_height": BODY_CAMERA_MAX_HEIGHT,
+                    "max_bytes": BODY_CAMERA_MAX_BYTES,
+                },
+                "show_frames": {
+                    "format": "mjpeg",
+                    "default_width": 320,
+                    "default_height": 240,
+                    "default_fps": 12,
+                    "max_dimension": MAX_FRAME_DIMENSION,
+                    "max_fps": MAX_FRAME_FPS,
+                },
+            },
         }
 
     def show_store(request: Request, device_id: str) -> ShowStore:
@@ -152,6 +196,11 @@ def app_factory(data_dir: Path) -> FastAPI:
         if not authorized(socket):
             await socket.close(code=1008)
             return
+        requested_protocol = socket.headers.get("x-gizmo-protocol", "").strip()
+        if requested_protocol and requested_protocol != str(BODY_PROTOCOL_VERSION):
+            await socket.accept()
+            await socket.close(code=1002, reason="unsupported body protocol")
+            return
         device_id = _device_id(socket.headers.get("x-gizmo-device", ""), default_device)
         friend = session_for(device_id)
         await socket.accept()
@@ -159,6 +208,7 @@ def app_factory(data_dir: Path) -> FastAPI:
         await socket.send_json(
             {
                 "type": "hello",
+                "protocol_version": BODY_PROTOCOL_VERSION,
                 "state": friend.state.value,
                 "power": friend.machine.powered(),
                 "screen": friend.machine.awake(),
@@ -241,14 +291,14 @@ async def _dispatch(friend: GizmoSession, message: dict, *, source: object | Non
         if image_b64 is not None:
             if not isinstance(image_b64, str):
                 raise ValueError("frame.image must be a base64 string")
-            if len(image_b64) > 4 * ((128 * 1024 + 2) // 3):
-                raise ValueError("frame.image must be at most 128 KiB decoded")
+            if len(image_b64) > 4 * ((BODY_CAMERA_MAX_BYTES + 2) // 3):
+                raise ValueError(f"frame.image must be at most {BODY_CAMERA_MAX_BYTES // 1024} KiB decoded")
             try:
                 image = base64.b64decode(image_b64, validate=True)
             except ValueError:
                 raise ValueError("frame.image must be valid base64") from None
-            if len(image) > 128 * 1024:
-                raise ValueError("frame.image must be at most 128 KiB decoded")
+            if len(image) > BODY_CAMERA_MAX_BYTES:
+                raise ValueError(f"frame.image must be at most {BODY_CAMERA_MAX_BYTES // 1024} KiB decoded")
         event = Frame(image=image, hint=hint if isinstance(hint, str) else None)
     if event is not None:
         if source is None:

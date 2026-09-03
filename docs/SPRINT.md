@@ -39,11 +39,13 @@ images. Firmware should never have to decode a 1024×742 PNG or resize anything.
   budget. Requests include the same device authorization and `X-Gizmo-Device`
   headers as the socket. No panel setting on the server; the simulator uses the
   same show IDs and plays the audio-free MP4, which supports byte ranges.
-- **Reference client.** A ~150-line Python body client in `body/reference/` that runs on
-  a laptop and exercises every event end to end. Firmware is ported from it, and it's how
-  we prove a bug is on our side before blaming the board.
-- **One health page.** `/health` already exists; add the panel size and protocol version
-  to it so the board can assert what it's talking to.
+- **Reference client.** Checkpoint 1 now provides the Python protocol-v1 client in
+  `body/reference/`: authenticated health/hello compatibility, stable identity and
+  every physical control edge. Checkpoint 2 still owes microphone, camera, speaker,
+  glass-media and reconnect adapters before it exercises every event end to end.
+- **One health page.** `/health` now publishes protocol v1, canonical events and media
+  limits so the body can assert what it is talking to. It does not publish a panel
+  size while no panel has been selected.
 
 Anything not in this list, the body owner decides.
 
@@ -54,7 +56,7 @@ Anything not in this list, the body owner decides.
 | Brain | Done and deployed. Live voice, PTT, deep_think, camera, per-device memory, sleep/wake, Railway. Verified Sep 2. | Real engineering. Good. |
 | Glass | Boot splash, start card, home = one static frame + clock + hearts. Face does not react to listen / talk / think. | A voice chatbot with a picture. |
 | Show / Make | Not wired. Prompt tells him he can't make media. | The pitch ("Infinite Disney in a pocket") is not in the demo. |
-| Body | A README. No firmware, no board, no shell. | **Not a hardware company.** This is the gap that gets us rejected. |
+| Body | Wire contract plus checkpoint-1 laptop reference client. No firmware, board, or shell. | The software handoff is concrete; the physical body is still the gap. |
 | Web | Hero + "Register Interest" linking to nothing. Not deployed. | No motion, no waitlist. |
 | Kids | `data/transcripts/` is empty. No kid has used him. | No evidence anyone wants this. |
 

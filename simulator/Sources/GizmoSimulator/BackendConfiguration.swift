@@ -1,6 +1,8 @@
 import Foundation
 
 struct BackendConfiguration {
+    static let bodyProtocolVersion = 1
+
     let baseURL: URL
     let token: String?
     var error: String? = nil
@@ -18,6 +20,7 @@ struct BackendConfiguration {
     func request(for url: URL) -> URLRequest {
         var request = URLRequest(url: url)
         request.timeoutInterval = 8
+        request.setValue(String(Self.bodyProtocolVersion), forHTTPHeaderField: "X-Gizmo-Protocol")
         // Never forward the device credential to an unrelated media host.
         if url.host == baseURL.host {
             if let token, !token.isEmpty {
