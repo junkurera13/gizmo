@@ -18,6 +18,8 @@ dependencies = [
   "python-dotenv>=1.0",
   "certifi>=2024.0.0",
   "google-genai==2.21.0",
+  "Pillow>=11.0",
+  "imageio-ffmpeg>=0.6.0",
   "memobase==0.0.27",
   "audioop-lts>=0.2.2; python_version >= '3.13'",
 ]

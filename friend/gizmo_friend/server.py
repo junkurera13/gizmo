@@ -7,11 +7,14 @@ import os
 from contextlib import asynccontextmanager
 from pathlib import Path
 
-from fastapi import FastAPI, Request, WebSocket, WebSocketDisconnect
+from fastapi import FastAPI, HTTPException, Query, Request, WebSocket, WebSocketDisconnect
 from fastapi.responses import FileResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 
 from gizmo_friend.body_protocol import Frame, MicChunk, Navigate, Power, PushToTalk, Select, TextLine
+from gizmo_friend.brain.shows import MAX_IMAGE_DIMENSION, ShowStore, valid_device_id
+from gizmo_friend.brain.show_media import MAX_FRAME_DIMENSION, MAX_FRAME_FPS, MediaError
+from gizmo_friend.brain.show_budget import MotionBudget, ShowBudget
 from gizmo_friend.session import GizmoSession
 
 STATIC = Path(__file__).parent / "static"
@@ -27,12 +30,17 @@ def app_factory(data_dir: Path) -> FastAPI:
     # devices never share a mind. Sessions outlive their sockets: a reconnect
     # picks up the same Gizmo mid-thought.
     sessions: dict[str, GizmoSession] = {}
-    default_device = os.environ.get("GIZMO_USER_ID", "gizmo-local-user")
+    default_device = _device_id(os.environ.get("GIZMO_USER_ID", ""), "gizmo-local-user")
+    show_budget = ShowBudget(data_dir)
+    motion_budget = MotionBudget(data_dir)
 
     def session_for(device_id: str) -> GizmoSession:
         friend = sessions.get(device_id)
         if friend is None:
-            friend = GizmoSession(data_dir / "devices" / device_id, user_id=device_id)
+            friend = GizmoSession(
+                data_dir / "devices" / device_id, user_id=device_id,
+                show_budget=show_budget, motion_budget=motion_budget,
+            )
             sessions[device_id] = friend
         return friend
 
@@ -71,6 +79,74 @@ def app_factory(data_dir: Path) -> FastAPI:
             "authentication_required": bool(device_token),
         }
 
+    def show_store(request: Request, device_id: str) -> ShowStore:
+        requesting_device = _device_id(request.headers.get("x-gizmo-device", ""), default_device)
+        if not valid_device_id(device_id) or device_id != requesting_device:
+            # Avoid disclosing whether another device has this show.
+            raise HTTPException(status_code=404, detail="show not found")
+        return ShowStore(data_dir / "devices" / device_id, device_id=device_id)
+
+    media_headers = {
+        "Cache-Control": "private, max-age=86400, immutable",
+        "Vary": "Authorization, X-Gizmo-Device",
+        "X-Content-Type-Options": "nosniff",
+    }
+
+    @app.get("/shows/{device_id}/{show_id}.jpg")
+    def show_still(
+        request: Request,
+        device_id: str,
+        show_id: str,
+        w: int | None = Query(default=None, ge=1, le=MAX_IMAGE_DIMENSION),
+        h: int | None = Query(default=None, ge=1, le=MAX_IMAGE_DIMENSION),
+    ) -> FileResponse:
+        store = show_store(request, device_id)
+        try:
+            path = store.still_path(show_id, width=w, height=h)
+        except FileNotFoundError:
+            raise HTTPException(status_code=404, detail="show not found") from None
+        except ValueError as error:
+            raise HTTPException(status_code=422, detail=str(error)) from None
+        return FileResponse(
+            path,
+            media_type="image/jpeg",
+            headers=media_headers,
+        )
+
+    @app.get("/shows/{device_id}/{show_id}.mp4")
+    def show_clip(request: Request, device_id: str, show_id: str) -> FileResponse:
+        store = show_store(request, device_id)
+        try:
+            path = store.clip_path(show_id)
+        except FileNotFoundError:
+            raise HTTPException(status_code=404, detail="clip not found") from None
+        return FileResponse(path, media_type="video/mp4", headers=media_headers)
+
+    @app.get("/shows/{device_id}/{show_id}.mjpeg")
+    def show_frames(
+        request: Request, device_id: str, show_id: str,
+        w: int = Query(default=320, ge=1, le=MAX_FRAME_DIMENSION),
+        h: int = Query(default=240, ge=1, le=MAX_FRAME_DIMENSION),
+        fps: int = Query(default=12, ge=1, le=MAX_FRAME_FPS),
+    ) -> FileResponse:
+        store = show_store(request, device_id)
+        try:
+            frames = store.mjpeg(show_id, width=w, height=h, fps=fps)
+        except FileNotFoundError:
+            raise HTTPException(status_code=404, detail="clip not found") from None
+        except MediaError:
+            raise HTTPException(status_code=503, detail="video processing unavailable") from None
+        return FileResponse(
+            frames.path, media_type="video/x-motion-jpeg",
+            headers={
+                **media_headers,
+                "X-Gizmo-Frame-Count": str(frames.frame_count),
+                "X-Gizmo-Frame-Rate": str(frames.fps),
+                "X-Gizmo-Frame-Width": str(frames.width),
+                "X-Gizmo-Frame-Height": str(frames.height),
+            },
+        )
+
     @app.websocket("/ws")
     async def ws(socket: WebSocket) -> None:
         if not authorized(socket):
@@ -89,6 +165,7 @@ def app_factory(data_dir: Path) -> FastAPI:
                 "transport": friend.transport_name,
             }
         )
+        await socket.send_json(friend.show_event() or {"type": "glass", "viewing": False})
 
         async def pump() -> None:
             while True:
@@ -122,7 +199,9 @@ def app_factory(data_dir: Path) -> FastAPI:
 def _device_id(header: str, default: str) -> str:
     """A device id is an opaque label, kept filesystem- and URL-safe."""
     cleaned = "".join(ch for ch in header.strip() if ch.isalnum() or ch in "-_.")[:64]
-    return cleaned or default
+    if valid_device_id(cleaned):
+        return cleaned
+    return default if valid_device_id(default) else "gizmo-local-user"
 
 
 async def _dispatch(friend: GizmoSession, message: dict) -> None:

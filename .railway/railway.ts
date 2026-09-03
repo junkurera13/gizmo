@@ -45,6 +45,7 @@ export default defineRailway(() => {
     healthcheckTimeout: 30,
     env: {
       GEMINI_API_KEY: preserve(),
+      FAL_KEY: preserve(),
       GIZMO_DEVICE_TOKEN: preserve(),
       GIZMO_USER_ID: "gizmo-owner",
       GIZMO_DATA_DIR: "/data",

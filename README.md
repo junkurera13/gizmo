@@ -13,6 +13,9 @@ docs/PRODUCT.md   product principles
 docs/FRIEND.md    current brain architecture and runtime contract
 docs/V1.md        what v1 is and is not
 docs/ROADMAP.md   from held prototype to magic
+docs/SPRINT.md    the next eleven days: Blueprint II application, due Sep 14
+docs/SHOW.md      Show: design and build plan
+docs/DEMO.md      the 90-second film: script, staging, what's real
 friend/           GizmoSession, providers, Gemini transport, and server
 body/             ESP32-S3 firmware later (README only)
 glass/            device renderer assets

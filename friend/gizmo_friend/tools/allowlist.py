@@ -2,14 +2,59 @@ from __future__ import annotations
 
 # Google Search is a native Gemini tool and is deliberately not represented as
 # an application function. These are the only functions Gizmo itself executes.
-ALLOWED_TOOLS = ("deep_think", "set_expression")
+ALLOWED_TOOLS = ("deep_think", "set_expression", "show", "animate")
 
-# Placeholder bus only — not the character architecture. Jun is still
-# designing the face. Declared NON_BLOCKING / SILENT so a stray call
-# cannot pause speech or provoke a follow-up turn.
-NON_BLOCKING_TOOLS = frozenset({"set_expression"})
+# Visual work never pauses speech or provokes a follow-up model turn.
+# set_expression remains a placeholder while Jun designs the face.
+NON_BLOCKING_TOOLS = frozenset({"set_expression", "show", "animate"})
 
 TOOL_SCHEMAS: list[dict] = [
+    {
+        "type": "function",
+        "name": "show",
+        "description": (
+            "Put an original illustration of a subject on the glass. Returns immediately; "
+            "the picture arrives in the background while you continue answering. "
+            "The visual style is fixed by the device. Optional motion describes what the "
+            "subject does; the first frame is displayed even when motion is unavailable."
+        ),
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "subject": {
+                    "type": "string",
+                    "description": "A concrete noun phrase with the one detail to depict, without style instructions.",
+                },
+                "motion": {
+                    "type": "string",
+                    "description": "Optional short phrase of quiet motion, with no new objects or camera movement.",
+                },
+            },
+            "required": ["subject"],
+            "additionalProperties": False,
+        },
+    },
+    {
+        "type": "function",
+        "name": "animate",
+        "description": (
+            "Make the illustration already on the glass move, using its exact saved first frame. "
+            "Use when the user says 'make it move'. Do not call show again or introduce a new "
+            "subject. Returns immediately; continue answering without announcing the visual. "
+            "If nothing is on the glass, no visual is created."
+        ),
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "motion": {
+                    "type": "string",
+                    "description": "One short phrase of quiet motion for the existing subject, without new objects or camera movement.",
+                },
+            },
+            "required": ["motion"],
+            "additionalProperties": False,
+        },
+    },
     {
         "type": "function",
         "name": "deep_think",

@@ -7,6 +7,9 @@ video, tell a story that draws itself, eventually make a game on the spot.
 Rules that never change: one face, one voice, voice switches everything,
 the screen serves the moment and then gets out of the way.
 
+The current sprint (Blueprint II application, Sep 14) is `docs/SPRINT.md`. It pulls
+the first slice of 2 and the first slice of 4 forward; the order below is otherwise unchanged.
+
 ## 0 — Alive (done)
 
 He has a lifecycle, not just a socket.

@@ -41,6 +41,7 @@ final class SimulatorModel: ObservableObject {
     @Published private(set) var viewingStill = false
     @Published private(set) var spokenLine = ""
     @Published private(set) var screenImage: NSImage?
+    @Published private(set) var screenImageID: String?
     @Published private(set) var cameraSource = "No frame"
     @Published private(set) var events: [SimulatorEvent] = []
     @Published private(set) var conversation: [ConversationMessage] = []
@@ -76,6 +77,10 @@ final class SimulatorModel: ObservableObject {
     private let backend = BackendConfiguration.load()
     private var baseHTTPURL: URL { backend.baseURL }
     private let session = URLSession(configuration: .default)
+    private var screenImageTask: Task<Void, Never>?
+    private var screenImageRequest = UUID()
+    private var requestedStillPath: String?
+    private var screenPixelSize = CGSize(width: 320, height: 240)
     private var socket: URLSessionWebSocketTask?
     private var receiveTask: Task<Void, Never>?
     private var sendTask: Task<Void, Never>?
@@ -121,6 +126,7 @@ final class SimulatorModel: ObservableObject {
 
     func shutdown() {
         isShuttingDown = true
+        clearShow()
         reconnectTask?.cancel()
         reconnectTask = nil
         stopMicrophone()
@@ -145,6 +151,7 @@ final class SimulatorModel: ObservableObject {
         // The body reports every press; the brain decides what it means
         // (while asleep, any button simply wakes him).
         guard !poweredOff else { return }
+        if viewingStill { clearShow() }
         send(["type": "select"])
     }
 
@@ -243,6 +250,7 @@ final class SimulatorModel: ObservableObject {
     private func applyPowerOff(_ off: Bool) {
         poweredOff = off
         if off {
+            clearShow()
             speaker.interrupt()
             stopBootSound()
             endSplashHold()
@@ -642,11 +650,9 @@ final class SimulatorModel: ObservableObject {
         if let isOn = object["screen"] as? Bool {
             screenOn = poweredOff ? false : isOn
         }
-        if let viewing = object["viewing"] as? Bool {
-            viewingStill = viewing
-            if !viewing {
-                screenImage = nil
-            }
+        if poweredOff || !screenOn || deviceState == "asleep" || deviceState == "booting"
+            || object["viewing"] as? Bool == false {
+            clearShow()
         }
 
         if type == "audio", let pcm = object["pcm"] as? String, let data = Data(base64Encoded: pcm) {
@@ -672,18 +678,62 @@ final class SimulatorModel: ObservableObject {
     }
 
     private func loadScreenImage(path: String) {
-        guard let url = URL(string: path, relativeTo: baseHTTPURL)?.absoluteURL else { return }
+        guard !poweredOff, screenOn, deviceState != "asleep", deviceState != "booting",
+              let url = URL(string: path, relativeTo: baseHTTPURL)?.absoluteURL,
+              var parts = URLComponents(url: url, resolvingAgainstBaseURL: false) else { return }
+        if requestedStillPath == path, screenImageTask != nil || screenImageID == path { return }
+        requestedStillPath = path
+        screenImageTask?.cancel()
+        let requestID = UUID()
+        screenImageRequest = requestID
+        parts.queryItems = (parts.queryItems ?? []).filter { !["w", "h"].contains($0.name) } + [
+            URLQueryItem(name: "w", value: String(Int(screenPixelSize.width))),
+            URLQueryItem(name: "h", value: String(Int(screenPixelSize.height))),
+        ]
+        guard let sizedURL = parts.url else { return }
 
-        Task {
+        screenImageTask = Task {
+            defer {
+                if screenImageRequest == requestID { screenImageTask = nil }
+            }
             do {
-                let (data, _) = try await session.data(for: backend.request(for: url))
-                if let image = NSImage(data: data) {
-                    screenImage = image
-                }
+                let (data, response) = try await session.data(for: backend.request(for: sizedURL))
+                guard !Task.isCancelled, screenImageRequest == requestID,
+                      requestedStillPath == path, !poweredOff, screenOn,
+                      (response as? HTTPURLResponse)?.statusCode == 200,
+                      let image = NSImage(data: data) else { return }
+                screenImage = image
+                screenImageID = path
+                viewingStill = true
+                appendEvent("show displayed", "\(path) at \(Int(screenPixelSize.width))×\(Int(screenPixelSize.height)); state=\(deviceState)")
             } catch {
-                appendEvent("screen error", error.localizedDescription)
+                if !Task.isCancelled { appendEvent("screen error", error.localizedDescription) }
             }
         }
+    }
+
+    func updateScreenSize(_ size: CGSize, scale: CGFloat) {
+        let pixels = CGSize(
+            width: min(2048, max(1, (size.width * scale).rounded())),
+            height: min(2048, max(1, (size.height * scale).rounded()))
+        )
+        guard screenPixelSize != pixels else { return }
+        screenPixelSize = pixels
+        if let path = requestedStillPath {
+            // Keep the visible image while its new cover crop is fetched.
+            requestedStillPath = nil
+            loadScreenImage(path: path)
+        }
+    }
+
+    private func clearShow() {
+        screenImageRequest = UUID()
+        screenImageTask?.cancel()
+        screenImageTask = nil
+        requestedStillPath = nil
+        viewingStill = false
+        screenImage = nil
+        screenImageID = nil
     }
 
     private func send(_ payload: [String: Any]) {

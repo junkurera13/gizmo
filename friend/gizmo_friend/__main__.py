@@ -2,11 +2,14 @@ from __future__ import annotations
 
 import argparse
 import asyncio
+import json
 import os
 from pathlib import Path
 
 from gizmo_friend import default_data_dir
 from gizmo_friend.body_protocol import Frame, Navigate, Power, Select, TextLine
+from gizmo_friend.brain.show_budget import MotionBudget, ShowBudget
+from gizmo_friend.server import _device_id
 from gizmo_friend.session import GizmoSession
 
 
@@ -38,7 +41,11 @@ def main() -> None:
 
 
 async def _cli(data_dir: Path) -> None:
-    friend = GizmoSession(data_dir)
+    device_id = _device_id(os.environ.get("GIZMO_USER_ID", ""), "gizmo-local-user")
+    friend = GizmoSession(
+        data_dir / "devices" / device_id, user_id=device_id,
+        show_budget=ShowBudget(data_dir), motion_budget=MotionBudget(data_dir),
+    )
     queue = friend.subscribe()
 
     async def printer() -> None:
@@ -51,6 +58,8 @@ async def _cli(data_dir: Path) -> None:
                 print(f"error: {event.get('message')}")
             elif kind in {"state", "interrupted"}:
                 print(f"[{event.get('state')}]")
+            elif kind in {"glass", "tool"}:
+                print(json.dumps(event, ensure_ascii=False))
 
     task = asyncio.create_task(printer())
     print("Gizmo. Type a line. /power on  /power off  /select  /up  /down  /look <hint>  /quit")

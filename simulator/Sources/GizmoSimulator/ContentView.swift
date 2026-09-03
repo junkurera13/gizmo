@@ -69,6 +69,7 @@ private struct DeviceStageView: View {
 }
 
 private struct DeviceView: View {
+    @Environment(\.displayScale) private var displayScale
     @ObservedObject var model: SimulatorModel
     @ObservedObject private var spriteStore = SpriteStore.shared
     @ObservedObject private var cameraFeed = CameraFeed.shared
@@ -116,27 +117,32 @@ private struct DeviceView: View {
             if let screenImage = model.screenImage, model.viewingStill {
                 Image(nsImage: screenImage)
                     .resizable()
-                    .interpolation(.none)
-                    .aspectRatio(contentMode: skin.screen.contentMode == "fill" ? .fill : .fit)
-                    .padding(10)
+                    .scaledToFill()
+                    .frame(width: rect.width, height: rect.height)
+                    .id(model.screenImageID)
             } else if model.deviceState == "seeing" {
                 viewfinder
             } else if let spriteName, let animation = spriteStore.animation(for: spriteName) {
                 SpriteAnimationView(animation: animation)
                     .id("\(spriteName)-\(model.bootGeneration)")
+            } else if homeVisible {
+                HomeClusterView(
+                    art: spriteStore.hearts,
+                    level: model.batteryLevel,
+                    character: spriteStore.animation(for: "idle")
+                )
             }
-
-            statusBar
-                .frame(width: rect.width, height: rect.height)
-                .animation(.easeOut(duration: 0.28), value: homeVisible)
         }
         .frame(width: rect.width, height: rect.height)
         .clipShape(RoundedRectangle(cornerRadius: radius, style: .continuous))
         .position(x: rect.midX, y: rect.midY)
         .opacity(model.screenOn ? 1 : 0)
-        .animation(.easeOut(duration: 0.16), value: model.screenOn)
+        .transaction { $0.animation = nil }
         .allowsHitTesting(false)
         .accessibilityHidden(true)
+        .onAppear { model.updateScreenSize(rect.size, scale: displayScale) }
+        .onChange(of: rect.size) { _, value in model.updateScreenSize(value, scale: displayScale) }
+        .onChange(of: displayScale) { _, value in model.updateScreenSize(rect.size, scale: value) }
         .onChange(of: model.deviceState) { _, state in
             if state == "seeing" {
                 CameraFeed.shared.start()
@@ -168,26 +174,10 @@ private struct DeviceView: View {
         }
     }
 
-    /// Home cluster: status, time, and her, stacked in the middle.
-    /// Camera, videos, and kept pages own the whole screen.
+    /// Time, battery and the character belong only to home.
     private var homeVisible: Bool {
         guard model.screenOn, !model.viewingStill else { return false }
-        guard !["asleep", "seeing", "booting", "powered_off"].contains(model.glassState) else {
-            return false
-        }
-        return true
-    }
-
-    @ViewBuilder
-    private var statusBar: some View {
-        if homeVisible {
-            HomeClusterView(
-                art: spriteStore.hearts,
-                level: model.batteryLevel,
-                character: spriteStore.animation(for: "idle")
-            )
-            .transition(.opacity)
-        }
+        return ["listening", "talking", "thinking"].contains(model.glassState)
     }
 
     /// Scratch mapping: device state → preview folder name.
