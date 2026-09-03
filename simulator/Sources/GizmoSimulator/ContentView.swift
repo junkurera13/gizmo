@@ -72,7 +72,6 @@ private struct DeviceView: View {
     @Environment(\.displayScale) private var displayScale
     @ObservedObject var model: SimulatorModel
     @ObservedObject private var spriteStore = SpriteStore.shared
-    @ObservedObject private var cameraFeed = CameraFeed.shared
     let skin: DeviceSkin
     let deviceImage: NSImage
     let pressedDeviceImage: NSImage?
@@ -120,8 +119,13 @@ private struct DeviceView: View {
                     .scaledToFill()
                     .frame(width: rect.width, height: rect.height)
                     .id(model.screenImageID)
-            } else if model.deviceState == "seeing" {
-                viewfinder
+                if let clip = model.screenClip, clip.stillPath == model.screenImageID {
+                    LoopingClipView(url: clip.localURL) { event in
+                        model.clipPlaybackEvent(event, path: clip.id)
+                    }
+                    .id(clip.id)
+                    .frame(width: rect.width, height: rect.height)
+                }
             } else if let spriteName, let animation = spriteStore.animation(for: spriteName) {
                 SpriteAnimationView(animation: animation)
                     .id("\(spriteName)-\(model.bootGeneration)")
@@ -143,35 +147,6 @@ private struct DeviceView: View {
         .onAppear { model.updateScreenSize(rect.size, scale: displayScale) }
         .onChange(of: rect.size) { _, value in model.updateScreenSize(value, scale: displayScale) }
         .onChange(of: displayScale) { _, value in model.updateScreenSize(rect.size, scale: value) }
-        .onChange(of: model.deviceState) { _, state in
-            if state == "seeing" {
-                CameraFeed.shared.start()
-            } else {
-                CameraFeed.shared.stop()
-            }
-        }
-    }
-
-    /// Leftover viewfinder. See is supposed to keep his face on the glass.
-    @ViewBuilder
-    private var viewfinder: some View {
-        ZStack {
-            if let frame = cameraFeed.frame {
-                Image(decorative: frame, scale: 1)
-                    .resizable()
-                    .aspectRatio(contentMode: .fill)
-            } else if cameraFeed.unavailable {
-                VStack(spacing: 6) {
-                    Image(systemName: "video.slash")
-                        .font(.system(size: 22, weight: .light))
-                    Text("No camera")
-                        .font(.system(size: 11))
-                }
-                .foregroundStyle(Color.white.opacity(0.4))
-            } else {
-                Color.black
-            }
-        }
     }
 
     /// Time, battery and the character belong only to home.
@@ -391,6 +366,13 @@ private struct ConversationPanel: View {
                     .accessibilityValue("Microphone input level \(Int(model.microphoneLevel * 100)) percent")
                     .padding(.horizontal, 14)
                     .padding(.vertical, 8)
+            }
+            if let status = model.cameraStatus {
+                Text(status)
+                    .font(.system(size: 12))
+                    .foregroundStyle(.secondary)
+                    .padding(.horizontal, 14)
+                    .padding(.bottom, 8)
             }
             composer
         }

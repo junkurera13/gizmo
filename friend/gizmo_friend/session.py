@@ -141,6 +141,8 @@ class GizmoSession:
         self._ptt_active = False
         self._ptt_audio_ready = False
         self._ptt_open_task: asyncio.Task[None] | None = None
+        self._ptt_owner: object | None = None
+        self._body_input_lock = asyncio.Lock()
         # Mic audio that arrives before the cloud turn is open is buffered and
         # replayed in order. Generous, because a reconnect after a nap must
         # never eat the start of a sentence.
@@ -162,6 +164,44 @@ class GizmoSession:
     def unsubscribe(self, queue: asyncio.Queue[dict[str, Any]]) -> None:
         if queue in self._listeners:
             self._listeners.remove(queue)
+
+    async def handle_body(self, event: BodyEvent, source: object) -> None:
+        """Only the socket that pressed PTT can stream or release that hold."""
+        if not isinstance(event, (PushToTalk, MicChunk, Frame)):
+            await self.handle(event)
+            return
+        async with self._body_input_lock:
+            if isinstance(event, PushToTalk) and event.active:
+                if self._ptt_owner is not None and self._ptt_owner is not source:
+                    return
+                await self.handle(event)
+                if self._ptt_pressed:
+                    self._ptt_owner = source
+            elif self._ptt_owner is source:
+                try:
+                    await self.handle(event)
+                finally:
+                    if not self._ptt_pressed:
+                        self._ptt_owner = None
+
+    async def body_disconnected(self, source: object) -> None:
+        """Drop abandoned input without committing it or forgetting the session."""
+        async with self._body_input_lock:
+            if self._ptt_owner is not source:
+                return
+            self._reset_ptt()
+            self._cancel_warm()
+            if self._reconnect_task:
+                self._reconnect_task.cancel()
+                self._reconnect_task = None
+            self.mouth.cancel()
+            if self.machine.state is State.TALKING:
+                self.machine.apply("select")
+            # An unfinished Live activity must not leak into the next hold.
+            # Close instead of sending activity_end (which would request a reply).
+            # Existing resumption/memory state is retained for the next connection.
+            await self._disconnect_transport()
+            await self.emit({"type": "ptt", "active": False, "reason": "body_disconnected"})
 
     def instructions(self) -> str:
         # The date lets him read the memory block's episode dates as "last
@@ -205,7 +245,7 @@ class GizmoSession:
         elif isinstance(event, Frame):
             self.camera.inject(image=event.image, hint=event.hint, mime=event.mime)
             self._camera_dirty = bool(event.image)
-            await self.emit({"type": "frame", "hint": event.hint})
+            await self.emit({"type": "frame", "hint": event.hint, "bytes": len(event.image or b"")})
             if self._ready_for_input() and self._camera_dirty:
                 await self._ensure_connected()
                 await self._send_camera_frame()
@@ -327,6 +367,8 @@ class GizmoSession:
         if self._ptt_open_task:
             await asyncio.wait({self._ptt_open_task})
             self._ptt_open_task = None
+        self._camera_dirty = False
+        self.camera.inject()
         if not self._ptt_active:
             return
         self._ptt_active = False
@@ -342,6 +384,9 @@ class GizmoSession:
         self._ptt_pressed = False
         self._ptt_active = False
         self._ptt_audio_ready = False
+        self._ptt_owner = None
+        self._camera_dirty = False
+        self.camera.inject()
         self._clear_mic_preroll()
 
     async def _open_mic(self) -> None:

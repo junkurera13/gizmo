@@ -22,6 +22,11 @@ simulator and real hardware behave identically.
       While asleep, any button wakes him and does nothing else.
   camera frame               -> Frame  (image and/or hint)
   mic audio while holding    -> MicChunk (pcm16, 24kHz mono)
+
+These are Python controller events, not serialized WebSocket messages.
+On /ws, microphone input and speaker output both use type="audio" with
+base64 PCM in "pcm". Input type="mic" is a compatibility alias only.
+See body/README.md for the JSON wire contract and PTT ordering.
 """
 
 from __future__ import annotations
@@ -37,7 +42,7 @@ class BodyEventType(str, Enum):
     PUSH_TO_TALK = "ptt"
     NAVIGATE = "navigate"
     FRAME = "frame"
-    MIC = "mic"
+    MIC = "mic"  # Internal event name; canonical /ws message type is "audio".
     TEXT = "text"  # laptop keyboard stand-in for a spoken line
 
 
@@ -89,7 +94,7 @@ BodyEvent = Union[Select, Power, PushToTalk, Navigate, Frame, MicChunk, TextLine
 
 @dataclass
 class WorldCamera:
-    """Outward frame. Inject from the laptop until the ESP32 camera exists."""
+    """Latest body-camera snapshot, held only until the current PTT turn ends."""
 
     _frame: Frame = field(default_factory=Frame)
 

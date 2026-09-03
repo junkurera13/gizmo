@@ -177,7 +177,7 @@ def app_factory(data_dir: Path) -> FastAPI:
             while True:
                 message = await socket.receive_json()
                 try:
-                    await _dispatch(friend, message)
+                    await _dispatch(friend, message, source=socket)
                 except Exception as error:  # noqa: BLE001 - one bad action must not drop the body
                     await friend.emit(
                         {
@@ -190,6 +190,7 @@ def app_factory(data_dir: Path) -> FastAPI:
         finally:
             task.cancel()
             friend.unsubscribe(queue)
+            await friend.body_disconnected(socket)
 
     if STATIC.exists():
         app.mount("/static", StaticFiles(directory=STATIC), name="static")
@@ -204,27 +205,53 @@ def _device_id(header: str, default: str) -> str:
     return default if valid_device_id(default) else "gizmo-local-user"
 
 
-async def _dispatch(friend: GizmoSession, message: dict) -> None:
+async def _dispatch(friend: GizmoSession, message: dict, *, source: object | None = None) -> None:
     kind = message.get("type")
+    event = None
     if kind == "select":
-        await friend.handle(Select())
+        event = Select()
     elif kind == "power":
-        await friend.handle(Power(on=bool(message.get("on", True))))
+        event = Power(on=bool(message.get("on", True)))
     elif kind == "ptt":
-        await friend.handle(PushToTalk(active=bool(message.get("active", False))))
+        event = PushToTalk(active=bool(message.get("active", False)))
     elif kind == "navigate":
         direction = str(message.get("direction") or "").lower()
         if direction in {"up", "down"}:
-            await friend.handle(Navigate(direction=direction))
+            event = Navigate(direction=direction)
     elif kind == "text":
-        await friend.handle(TextLine(text=str(message.get("text") or "")))
-    elif kind == "audio":
-        raw = str(message.get("pcm") or "")
-        pcm = base64.b64decode(raw) if raw else b""
+        event = TextLine(text=str(message.get("text") or ""))
+    elif kind in {"audio", "mic"}:
+        # `audio` is the wire name used by the native body. Keep `mic` as
+        # an alias for firmware based on the earlier body handoff notes.
+        raw = message.get("pcm", "")
+        if not isinstance(raw, str):
+            raise ValueError("audio.pcm must be a base64 string")
+        try:
+            pcm = base64.b64decode(raw, validate=True)
+        except ValueError:
+            raise ValueError("audio.pcm must be valid base64") from None
+        if len(pcm) % 2:
+            raise ValueError("audio.pcm must contain complete 16-bit samples")
         if pcm:
-            await friend.handle(MicChunk(pcm=pcm))
+            event = MicChunk(pcm=pcm)
     elif kind == "frame":
         hint = message.get("hint")
         image_b64 = message.get("image")
-        image = base64.b64decode(image_b64) if image_b64 else None
-        await friend.handle(Frame(image=image, hint=hint if isinstance(hint, str) else None))
+        image = None
+        if image_b64 is not None:
+            if not isinstance(image_b64, str):
+                raise ValueError("frame.image must be a base64 string")
+            if len(image_b64) > 4 * ((128 * 1024 + 2) // 3):
+                raise ValueError("frame.image must be at most 128 KiB decoded")
+            try:
+                image = base64.b64decode(image_b64, validate=True)
+            except ValueError:
+                raise ValueError("frame.image must be valid base64") from None
+            if len(image) > 128 * 1024:
+                raise ValueError("frame.image must be at most 128 KiB decoded")
+        event = Frame(image=image, hint=hint if isinstance(hint, str) else None)
+    if event is not None:
+        if source is None:
+            await friend.handle(event)
+        else:
+            await friend.handle_body(event, source)

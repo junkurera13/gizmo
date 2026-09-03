@@ -1,7 +1,6 @@
 import AppKit
 import Combine
 import Foundation
-import UniformTypeIdentifiers
 
 enum ConnectionStatus: String {
     case offline
@@ -30,6 +29,12 @@ struct ConversationMessage: Identifiable {
     let time: Date
 }
 
+struct ScreenClip: Identifiable {
+    let id: String
+    let stillPath: String
+    let localURL: URL
+}
+
 @MainActor
 final class SimulatorModel: ObservableObject {
     static let shared = SimulatorModel()
@@ -42,7 +47,8 @@ final class SimulatorModel: ObservableObject {
     @Published private(set) var spokenLine = ""
     @Published private(set) var screenImage: NSImage?
     @Published private(set) var screenImageID: String?
-    @Published private(set) var cameraSource = "No frame"
+    @Published private(set) var screenClip: ScreenClip?
+    @Published private(set) var cameraStatus: String?
     @Published private(set) var events: [SimulatorEvent] = []
     @Published private(set) var conversation: [ConversationMessage] = []
     @Published private(set) var isPushToTalking = false
@@ -81,10 +87,17 @@ final class SimulatorModel: ObservableObject {
     private var screenImageRequest = UUID()
     private var requestedStillPath: String?
     private var screenPixelSize = CGSize(width: 320, height: 240)
+    private var screenClipTask: Task<Void, Never>?
+    private var screenClipRequest = UUID()
+    private var requestedClipPath: String?
+    private var clipStillPath: String?
+    private let clipDirectory = FileManager.default.temporaryDirectory
+        .appendingPathComponent("gizmo-clips-\(UUID().uuidString)", isDirectory: true)
     private var socket: URLSessionWebSocketTask?
     private var receiveTask: Task<Void, Never>?
     private var sendTask: Task<Void, Never>?
     private var microphonePressID = UUID()
+    private var cameraCapturePending = false
     private var microphoneBytes = 0
     private var microphonePeak = 0
     private var microphoneStartedAt: Date?
@@ -94,6 +107,7 @@ final class SimulatorModel: ObservableObject {
     private var hasStarted = false
     private var isShuttingDown = false
     private let microphone = MicrophoneCapture()
+    private let camera = CameraFeed()
     private let speaker = SpeakerPlayback()
 
     private init() {}
@@ -127,6 +141,7 @@ final class SimulatorModel: ObservableObject {
     func shutdown() {
         isShuttingDown = true
         clearShow()
+        try? FileManager.default.removeItem(at: clipDirectory)
         reconnectTask?.cancel()
         reconnectTask = nil
         stopMicrophone()
@@ -288,6 +303,23 @@ final class SimulatorModel: ObservableObject {
         speaker.interrupt()
         voiceError = nil
         send(["type": "ptt", "active": true])
+        cameraCapturePending = true
+        cameraStatus = "Opening camera…"
+        camera.capture(id: pressID) { [weak self] result in
+            Task { @MainActor in
+                guard let self, self.isPushToTalking, self.microphonePressID == pressID else { return }
+                self.cameraCapturePending = false
+                switch result {
+                case .success(let snapshot):
+                    self.send(["type": "frame", "image": snapshot.jpeg.base64EncodedString()])
+                    self.cameraStatus = "Sending camera snapshot…"
+                    self.appendEvent("camera", "Sent \(snapshot.width) × \(snapshot.height) JPEG, \(snapshot.jpeg.count) bytes.")
+                case .failure(let error):
+                    self.cameraStatus = error.message
+                    self.appendEvent("camera", error.message)
+                }
+            }
+        }
 
         Task {
             guard await MicrophoneCapture.requestAccess() else {
@@ -341,6 +373,9 @@ final class SimulatorModel: ObservableObject {
         microphone.stop()
         isPushToTalking = false
         microphonePressID = UUID()
+        camera.cancel()
+        if cameraCapturePending { cameraStatus = "Stopped before camera was ready — no snapshot sent" }
+        cameraCapturePending = false
         microphoneStatus = nil
         microphoneLevel = 0
     }
@@ -359,37 +394,6 @@ final class SimulatorModel: ObservableObject {
         send(["type": "text", "text": cleaned])
         appendConversation(role: .user, text: cleaned)
         appendEvent("you", cleaned)
-    }
-
-    func point(hint: String) {
-        let cleaned = hint.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !cleaned.isEmpty else { return }
-        cameraSource = cleaned
-        send(["type": "frame", "hint": cleaned])
-    }
-
-    func chooseCameraFrame() {
-        let panel = NSOpenPanel()
-        panel.title = "Choose a world-camera frame"
-        panel.prompt = "Point Gizmo"
-        panel.allowedContentTypes = [.image]
-        panel.canChooseFiles = true
-        panel.canChooseDirectories = false
-        panel.allowsMultipleSelection = false
-
-        guard panel.runModal() == .OK, let url = panel.url else { return }
-
-        do {
-            let data = try Data(contentsOf: url)
-            cameraSource = url.lastPathComponent
-            send([
-                "type": "frame",
-                "image": data.base64EncodedString(),
-                "hint": url.deletingPathExtension().lastPathComponent,
-            ])
-        } catch {
-            appendEvent("camera error", error.localizedDescription)
-        }
     }
 
     private func ensureBackendAndConnect() async {
@@ -635,6 +639,9 @@ final class SimulatorModel: ObservableObject {
             refreshGlassState()
         } else if let state = object["state"] as? String {
             deviceState = state
+            if isPushToTalking, ["asleep", "booting"].contains(state) {
+                stopMicrophone()
+            }
             // The chime is for the cold boot only — the once-per-power-up
             // ritual. Waking from sleep is silent, like a phone.
             refreshGlassState()
@@ -668,8 +675,12 @@ final class SimulatorModel: ObservableObject {
         } else if type == "interrupted" {
             speaker.interrupt()
             spokenLine = ""
-        } else if type == "glass", let still = object["still"] as? String {
-            loadScreenImage(path: still)
+        } else if type == "glass" {
+            // Reconnect snapshots can contain both URLs in the same event.
+            if let still = object["still"] as? String { loadScreenImage(path: still) }
+            if let clip = object["clip"] as? String { loadScreenClip(path: clip) }
+        } else if type == "frame", cameraStatus == "Sending camera snapshot…" {
+            cameraStatus = "Camera snapshot received"
         } else if type == "error" {
             appendEvent("error", object["message"] as? String ?? "Unknown error")
         }
@@ -702,6 +713,7 @@ final class SimulatorModel: ObservableObject {
                       requestedStillPath == path, !poweredOff, screenOn,
                       (response as? HTTPURLResponse)?.statusCode == 200,
                       let image = NSImage(data: data) else { return }
+                if clipStillPath != path { clearClip() }
                 screenImage = image
                 screenImageID = path
                 viewingStill = true
@@ -727,6 +739,7 @@ final class SimulatorModel: ObservableObject {
     }
 
     private func clearShow() {
+        clearClip()
         screenImageRequest = UUID()
         screenImageTask?.cancel()
         screenImageTask = nil
@@ -734,6 +747,60 @@ final class SimulatorModel: ObservableObject {
         viewingStill = false
         screenImage = nil
         screenImageID = nil
+    }
+
+    private func loadScreenClip(path: String) {
+        guard !poweredOff, screenOn, deviceState != "asleep", deviceState != "booting",
+              let url = URL(string: path, relativeTo: baseHTTPURL)?.absoluteURL,
+              url.scheme == baseHTTPURL.scheme, url.host == baseHTTPURL.host,
+              url.port == baseHTTPURL.port, url.pathExtension == "mp4" else { return }
+        let stillPath = url.deletingPathExtension().appendingPathExtension("jpg").path
+        guard screenImageID == stillPath || requestedStillPath == stillPath else { return }
+        if requestedClipPath == path, screenClipTask != nil || screenClip?.id == path { return }
+        clearClip()
+        requestedClipPath = path
+        clipStillPath = stillPath
+        let requestID = UUID()
+        screenClipRequest = requestID
+        screenClipTask = Task {
+            defer {
+                if screenClipRequest == requestID { screenClipTask = nil }
+            }
+            do {
+                // Use the same authenticated device request as stills. AVPlayer
+                // reads the local file, so no token needs to enter an asset URL.
+                let (temporaryURL, response) = try await session.download(for: backend.request(for: url))
+                guard !Task.isCancelled, screenClipRequest == requestID,
+                      !poweredOff, screenOn,
+                      screenImageID == stillPath || requestedStillPath == stillPath,
+                      (response as? HTTPURLResponse)?.statusCode == 200 else { return }
+                try FileManager.default.createDirectory(
+                    at: clipDirectory, withIntermediateDirectories: true,
+                    attributes: [.posixPermissions: 0o700]
+                )
+                let localURL = clipDirectory.appendingPathComponent("\(UUID().uuidString).mp4")
+                try FileManager.default.moveItem(at: temporaryURL, to: localURL)
+                screenClip = ScreenClip(id: path, stillPath: stillPath, localURL: localURL)
+            } catch {
+                if !Task.isCancelled { appendEvent("clip error", error.localizedDescription) }
+            }
+        }
+    }
+
+    func clipPlaybackEvent(_ event: String, path: String) {
+        appendEvent("clip \(event)", path)
+    }
+
+    private func clearClip() {
+        screenClipRequest = UUID()
+        screenClipTask?.cancel()
+        screenClipTask = nil
+        requestedClipPath = nil
+        clipStillPath = nil
+        if let clip = screenClip {
+            screenClip = nil
+            try? FileManager.default.removeItem(at: clip.localURL)
+        }
     }
 
     private func send(_ payload: [String: Any]) {

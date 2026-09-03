@@ -309,6 +309,9 @@ an `animate` is ~$0.32. (75% off on fal until Sep 7; plan on list.)
 
 ### Glass rendering (simulator)
 
+- The physical device is the priority. Simulator APIs are display adapters;
+  user-visible behavior must also be implementable on the board. No simulator-only
+  effects, and a successful Mac preview does not establish hardware performance.
 - Full-bleed, cover-cropped, no padding. Default interpolation, not `.none` — this is a
   picture, not pixel art.
 - Still arrival and departure: direct frame swap, with no transition or sound.
@@ -333,8 +336,28 @@ before the next. Steps 1–7 are the still and are tonight's work; 8–12 are mo
 Friday's. Show is not done until step 11: without motion he has two ways to answer, not
 three.
 
-Current execution status: **checkpoint 5 native still display is implemented and
-visually verified; stopped for review before native video playback.** The rebuilt
+Current execution status: **checkpoint 11 native playback passes with the saved
+rocket clip; stopped for review.** The rebuilt simulator displayed the still,
+downloaded its matching MP4 through the authenticated device request, played it
+muted over that still, looped, and stopped on Select. Home's time/battery never
+overlaid the video. There are no transitions or player controls. The native layer
+stays transparent until its first frame is ready; stale clip downloads cannot
+attach to another still. Reconnect snapshots handle both URLs in one event.
+
+The actual Gemini Live session chose `show` with motion from a voiced sample sent
+through the device audio connection. Media providers replayed the existing rocket
+still/clip; zero new image or fal generations, and no new automated tests. The native
+log recorded still display, muted playback, a completed loop, and player teardown.
+A 7.48-second recording shows the actual app. This verifies native playback, not
+new generation speed, human microphone input, or physical-board playback.
+The board's existing route remains the same clip as a JPEG frame sequence; its
+default 12 fps and resource use still need verification on the board. The Mac
+plays the 24 fps master. Checkpoint 4, measurements 6/12 and optional grounding 7
+remain pending. No deployment was made.
+Evidence: `data/show-checkpoints/2026-09-04-checkpoint-11/REVIEW.md`.
+
+Checkpoint 5 native still display was implemented and
+visually verified, then stopped for review before native video playback. The rebuilt
 app requests its actual screen size, fills the glass without padding, keeps home
 visible until the image is decoded, and returns to home on Select. Time and battery
 are part of home only. Jun removed the planned fade: frame swaps are direct until
@@ -344,8 +367,8 @@ device audio WebSocket after the Mac's mic did not understand its own playback.
 The native app displayed the image after the reply, in `listening`, not mid-speech;
 generation took 9.89 seconds. Generation time remains a V1 measurement, not a gate.
 The complete human-microphone-to-image check and physical-board rendering are still
-unverified. Checkpoint 4, measurements 6/12, optional grounding 7, and native video
-11 remain pending. No deployment was made.
+unverified. Native video was subsequently completed in checkpoint 11 above.
+No deployment was made.
 Evidence: `data/show-checkpoints/2026-09-03-checkpoint-5/REVIEW.md`.
 
 Checkpoint 10 passed local wiring checks with replayed media. The actual CLI and real Gemini

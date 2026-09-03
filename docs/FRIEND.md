@@ -22,6 +22,12 @@ The active Live model is `gemini-3.1-flash-live-preview`. It receives mono PCM16
 
 PTT uses explicit activity-start/activity-end events with Gemini automatic activity detection disabled. The button has one meaning: down, he listens; up, he answers. There is no tap gesture and no sleep button.
 
+The JSON wire contract is in `body/README.md`: microphone input and speaker output
+both use `type:"audio"` with base64 PCM in `pcm`; input `mic` is accepted only as a
+compatibility alias. The socket that presses PTT owns that hold's audio and
+release. If it disconnects, the hold is cancelled without committing it; an
+unrelated observer disconnect does not interrupt capture.
+
 Power-on and wake are silent: no greeting or response is requested until the user speaks or types. A PTT press while asleep wakes him and the same press keeps listening; Select and the rocker also wake him and do nothing else on that press. PCM captured before the cloud turn is open is buffered (up to 10 s) and replayed in order, and release waits for that opening before committing. Empty presses and local interruptions never send fabricated user turns to Gemini. The native emulator serializes PTT/audio messages and shows microphone capture or permission errors next to the conversation.
 
 ## Session controller
@@ -33,7 +39,8 @@ The server keeps one `GizmoSession` per device. A body identifies itself with th
 - Gemini Live connect, close, interruption, resumption handle, context compression, and go-away reconnect with backoff
 - the device identity it was created for, and a unique ID for each hard-power session
 - input/output final transcripts
-- camera-frame forwarding over the existing `Frame` event
+- one real native camera snapshot per PTT hold, forwarded over the existing
+  `Frame` event; voice does not wait for camera access or capture
 - tool validation and execution
 - startup memory context and background memory ingestion
 - device state transitions and idle sleep

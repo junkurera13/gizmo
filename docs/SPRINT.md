@@ -22,9 +22,12 @@ that section; the rest of this file is the software lane and the application.
 The body needs nothing from the brain that doesn't already exist, except panel-sized
 images. Firmware should never have to decode a 1024×742 PNG or resize anything.
 
-- **Protocol as-is.** WebSocket `/ws`, JSON events per `friend/gizmo_friend/body_protocol.py`:
-  `power` / `ptt` / `navigate` / `select` / `frame` / `mic` in; `audio` / `state` /
-  `show` / `error` out. PCM16 mono 24 kHz base64 both ways. `Authorization: Bearer
+- **Protocol as-is.** WebSocket `/ws`, JSON wire contract in `body/README.md`:
+  `power` / `ptt` / `navigate` / `select` / `frame` / `audio` in; `audio` / `state` /
+  `glass` / `error` out, plus `hello` and control/transcript events. `mic` is an
+  input compatibility alias; new firmware should use `audio`. PCM16 little-endian
+  mono 24 kHz base64 both ways, without a WAV header. PTT down, PCM, and PTT up
+  must use the same socket in that order. `Authorization: Bearer
   $GIZMO_DEVICE_TOKEN` and `X-Gizmo-Device: <chip id>` on the handshake.
 - **Glass stream.** Everything that appears on the glass — state frames and Show — is
   announced as a `glass` event carrying a URL, and the body fetches it at its own size

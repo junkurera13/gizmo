@@ -1,6 +1,6 @@
 # Gizmo Simulator
 
-Native macOS device simulator. The supplied product render is the device: tap its pink side button to sleep or wake, hold it to talk through the Mac microphone, use the right-side arrow pill to move up and down, and press the circular button to select. The glass is live, the top hardware toggle is represented by the power control in the conversation header, and the conversation panel shows the same Friend session beside it.
+Native macOS device simulator. The supplied product render is the device: hold its pink side button to talk through the Mac microphone, use the right-side arrow pill to move up and down, and press the circular button to select. Sleep is idle-only; a PTT press while asleep wakes and captures on that same press. The glass is live, the top hardware toggle is represented by the power control in the conversation header, and the conversation panel shows the same Friend session beside it. The JSON body wire contract is in `body/README.md`.
 
 ## Build
 
@@ -12,6 +12,16 @@ open "dist/Gizmo Simulator.app"
 With no `GIZMO_BRAIN_URL` in `.env`, the app owns its brain: at launch it evicts anything already on port `43147` and starts the repo-local Friend fresh, so a leftover brain on old code is never reachable. With `GIZMO_BRAIN_URL` set it talks to that cloud brain instead. Either way the power switch is the source of truth: a brain that disagrees on connect is told the switch position and follows it.
 
 Each install mints a device id on first launch (kept in user defaults, shown in `simulator.log`) and sends it as `X-Gizmo-Device`, so every install is its own Gizmo with its own memory. Set `GIZMO_DEVICE_ID` in the environment to impersonate a device or start fresh.
+
+PTT also requests one real Mac-camera snapshot for visual context. Aim before
+pressing. The capture keeps its full aspect, fits within 640 × 480, and sends a
+JPEG of at most 128 KiB on the same socket while the button is held. Capture stops
+after that frame or on release/disconnect/power-off; a late permission response or
+frame cannot attach to another hold. A missing/denied camera leaves voice usable.
+Camera status appears in the desktop conversation panel, while the face stays
+on the device. Allow Gizmo Simulator's Camera and Microphone permissions when
+macOS asks. Launch the `.app` with `open` so macOS attributes those permissions
+to Gizmo rather than the parent terminal application.
 
 Logs land in `data/` (gitignored): `simulator.log` is the app's event trail, `brain.log` is the local brain's output.
 
@@ -27,4 +37,7 @@ device-reference-ptt-pressed.png
 
 `skin.json` uses normalized coordinates from `0` to `1`, so the source render can be any resolution or aspect ratio. It defines the active screen rectangle, its pixel dimensions/content mode, every clickable hardware region, and the optional pressed PTT render. Replace the images in `DeviceSkins/current`, adjust the manifest, and rebuild the app. No agent, protocol, or firmware code changes are required, and there is no skin-management UI in the product simulator.
 
-The hardware glass is 69 × 50 mm landscape (69∶50, about 1.38∶1). The included skin's screen rectangle is drawn at roughly 1.2∶1 to match the reference render's bezel, so 69∶50 art is fitted with thin black bars until the skin render is redrawn to the real panel.
+The glass design target is 69 × 50 mm landscape (69∶50, about 1.38∶1); no panel
+has been selected. The included skin's screen rectangle is roughly 1.2∶1 to
+match the reference render's bezel. Actual device resolution, crop and timing
+remain unverified until the panel/profile is chosen.
