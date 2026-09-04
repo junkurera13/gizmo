@@ -55,14 +55,26 @@ export function SiteHeader() {
             About
           </Link>
         )}
-        <Link className="nav-link" href="/#careers">
+        <a className="nav-link" href="mailto:parkjundk@gmail.com?subject=Careers">
           Careers
-        </Link>
+        </a>
         <div className="socials">
-          <a className="nav-icon" href="#x" aria-label="X">
+          <a
+            className="nav-icon"
+            href="https://x.com/oddwarelab"
+            aria-label="X"
+            target="_blank"
+            rel="noopener noreferrer"
+          >
             <XLogo />
           </a>
-          <a className="nav-icon" href="#instagram" aria-label="Instagram">
+          <a
+            className="nav-icon"
+            href="https://www.instagram.com/oddwarelab/"
+            aria-label="Instagram"
+            target="_blank"
+            rel="noopener noreferrer"
+          >
             <InstagramLogo />
           </a>
         </div>
