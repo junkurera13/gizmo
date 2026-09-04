@@ -376,12 +376,18 @@ The final direct-director matrix scored 20/20 at 1.042 s median, including five 
 five repeated Silk Road still-map choices and the existing-still `animate` route.
 A real Gemini Live integration with a replayed trilobite still confirmed the picture
 arrived while Live spoke and bare “Make it move” emitted no transcript or audio.
-No still or clip generations ran during either evaluation. Checkpoint 4 is cleared
-for the silent-director architecture. Measurements 6/12 and
+The subsequent eight-turn golden conversation passed still selection, grounded
+follow-up, existing-still motion, silent animate, and same/new-setting story routing.
+Its first delayed-media race exposed an old still landing after the kid changed topics;
+new typed turns and PTT presses now cancel only an unfinished still, while an installed
+Show and its clip remain intact. The exact race passed on retry. No still or clip
+generations ran during these evaluations. Checkpoint 4 is cleared for the
+silent-director architecture. Measurements 6/12 and
 optional grounding 7 remain pending. No deployment was made. Evidence:
 `data/hardware-audit/2026-09-04/show-24fps/results.json` and
 `data/show-checkpoints/2026-09-04-checkpoint-11/REVIEW.md`, plus ignored local
-evidence in `data/show-checkpoints/2026-09-05-checkpoint-4/`.
+evidence in `data/show-checkpoints/2026-09-05-checkpoint-4/` and
+`data/show-checkpoints/2026-09-05-multiturn/`.
 
 Checkpoint 5 native still display was implemented and
 visually verified, then stopped for review before native video playback. The rebuilt

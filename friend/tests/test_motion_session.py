@@ -15,7 +15,7 @@ from unittest.mock import AsyncMock
 import imageio_ffmpeg
 from PIL import Image
 
-from gizmo_friend.body_protocol import Select, TextLine
+from gizmo_friend.body_protocol import PushToTalk, Select, TextLine
 from gizmo_friend.brain.clips import ClipProvider, ConjuredClip, NullClipProvider
 from gizmo_friend.brain.images import ConjuredStill, ImageProvider
 from gizmo_friend.brain.memory import NullMemoryProvider
@@ -255,6 +255,43 @@ class MotionSessionTests(ShowSessionFixture):
         await asyncio.wait_for(asyncio.shield(self.friend._director_task), 1)
         await self.images.wait_for_calls(1)
         self.assertEqual(self.images.calls[0][0], "Silk Road map")
+
+    async def test_new_ask_cancels_an_unfinished_still_before_it_reaches_glass(self):
+        await self.ask_show("castle at dusk")
+        pending = self.friend._show_task
+        self.assertIsNotNone(pending)
+        await self.friend.handle(TextLine(text="Tell me a joke about socks."))
+        await asyncio.gather(pending, return_exceptions=True)
+
+        self.assertTrue(pending.cancelled())
+        self.assertTrue(self.images.calls[0][1].cancelled())
+        self.assertIsNone(self.friend.current_show)
+        self.assertFalse(
+            any(
+                event.get("type") == "glass" and event.get("viewing")
+                for event in self.events()
+            )
+        )
+
+    async def test_ptt_press_also_cancels_an_unfinished_still(self):
+        await self.ask_show("castle at dusk")
+        pending = self.friend._show_task
+        self.assertIsNotNone(pending)
+        await self.friend.handle(PushToTalk(active=True))
+        await asyncio.gather(pending, return_exceptions=True)
+        if self.friend._ptt_open_task:
+            await self.friend._ptt_open_task
+        await self.friend.handle(PushToTalk(active=False))
+
+        self.assertTrue(pending.cancelled())
+        self.assertTrue(self.images.calls[0][1].cancelled())
+        self.assertIsNone(self.friend.current_show)
+        self.assertFalse(
+            any(
+                event.get("type") == "glass" and event.get("viewing")
+                for event in self.events()
+            )
+        )
 
     async def test_final_voice_transcript_schedules_the_same_director(self):
         director = FixedDirector(VisualDecision(route="still", subject="heart diagram"))

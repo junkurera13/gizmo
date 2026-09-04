@@ -367,6 +367,7 @@ class GizmoSession:
             if not self._ready_for_input():
                 return
             self._cancel_visual_direction()
+            self._cancel_pending_show()
             self._suppress_live_output = False
             self._ask_revision += 1
             self._ptt_pressed = True
@@ -438,6 +439,7 @@ class GizmoSession:
             return
         if not self._ready_for_input():
             return
+        self._cancel_pending_show()
         self._ask_revision += 1
         self._suppress_live_output = is_bare_animate_request(cleaned)
         self._schedule_visual_direction(cleaned, self._ask_revision)
@@ -851,6 +853,16 @@ class GizmoSession:
             self._director_task.cancel()
         self._director_task = None
 
+    def _cancel_pending_show(self) -> None:
+        """A new turn supersedes a still that has not reached the glass yet."""
+        task = self._show_task
+        if task is None:
+            return
+        if not task.done():
+            self._show_revision += 1
+            task.cancel()
+        self._show_task = None
+
     def _schedule_visual_direction(self, utterance: str, ask_revision: int) -> None:
         cleaned = utterance.strip()
         if (
@@ -972,6 +984,10 @@ class GizmoSession:
             )
             if not current():
                 return
+            # Commit pending -> installed without an await in the middle. Once
+            # this task stops being pending, a later turn keeps the Show.
+            if self._show_task is asyncio.current_task():
+                self._show_task = None
             self.current_show = stored
             self.current_show_subject = subject
             self._current_clip_id = None
@@ -991,6 +1007,9 @@ class GizmoSession:
             # Additive: failures are operator diagnostics, never a kid-facing
             # error or another model turn about the missing picture.
             logger.warning("Show failed: error=%s", type(error).__name__)
+        finally:
+            if self._show_task is asyncio.current_task():
+                self._show_task = None
 
     async def _show(self, arguments: dict[str, Any]) -> dict[str, Any]:
         subject = arguments.get("subject")
