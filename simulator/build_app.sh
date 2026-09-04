@@ -12,6 +12,7 @@ mkdir -p "$APP_PATH/Contents/MacOS"
 mkdir -p "$APP_PATH/Contents/Resources"
 install -m 755 "$BIN_DIR/GizmoSimulator" "$APP_PATH/Contents/MacOS/GizmoSimulator"
 install -m 644 "$SCRIPT_DIR/Info.plist" "$APP_PATH/Contents/Info.plist"
+install -m 644 "$SCRIPT_DIR/hardware-preview.json" "$APP_PATH/Contents/Resources/hardware-preview.json"
 
 ICON_SOURCE="$SCRIPT_DIR/AppIcon.png"
 ICON_DESTINATION="$APP_PATH/Contents/Resources/AppIcon.icns"

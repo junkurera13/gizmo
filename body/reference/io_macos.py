@@ -253,7 +253,7 @@ class GlassMediaFetcher:
         width: int,
         height: int,
         fps: int,
-        max_bytes: int = 2 * 1024 * 1024,
+        max_bytes: int = 4 * 1024 * 1024,
     ) -> None:
         self.base_url = base_url.rstrip("/")
         self.device_id = device_id

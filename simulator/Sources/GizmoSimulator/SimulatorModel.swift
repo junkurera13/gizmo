@@ -32,7 +32,11 @@ struct ConversationMessage: Identifiable {
 struct ScreenClip: Identifiable {
     let id: String
     let stillPath: String
-    let localURL: URL
+    let frames: [Data]
+    let fps: Int
+    let width: Int
+    let height: Int
+    let encodedBytes: Int
 }
 
 @MainActor
@@ -81,18 +85,16 @@ final class SimulatorModel: ObservableObject {
     @Published private(set) var poweredOff = true
 
     private let backend = BackendConfiguration.load()
+    private let hardwareProfile = HardwarePlaybackProfile.load()
     private var baseHTTPURL: URL { backend.baseURL }
     private let session = URLSession(configuration: .default)
     private var screenImageTask: Task<Void, Never>?
     private var screenImageRequest = UUID()
     private var requestedStillPath: String?
-    private var screenPixelSize = CGSize(width: 320, height: 240)
     private var screenClipTask: Task<Void, Never>?
     private var screenClipRequest = UUID()
     private var requestedClipPath: String?
     private var clipStillPath: String?
-    private let clipDirectory = FileManager.default.temporaryDirectory
-        .appendingPathComponent("gizmo-clips-\(UUID().uuidString)", isDirectory: true)
     private var socket: URLSessionWebSocketTask?
     private var receiveTask: Task<Void, Never>?
     private var sendTask: Task<Void, Never>?
@@ -117,6 +119,11 @@ final class SimulatorModel: ObservableObject {
         hasStarted = true
         isShuttingDown = false
         appendEvent("identity", "This body is \(DeviceIdentity.id)")
+        appendEvent(
+            "glass profile",
+            "\(hardwareProfile.width)×\(hardwareProfile.height) at \(hardwareProfile.fps) fps; "
+                + "\(hardwareProfile.maxEncodedBytes)-byte encoded cap; provisional=\(hardwareProfile.provisional)"
+        )
 
         Task {
             await ensureBackendAndConnect()
@@ -141,7 +148,6 @@ final class SimulatorModel: ObservableObject {
     func shutdown() {
         isShuttingDown = true
         clearShow()
-        try? FileManager.default.removeItem(at: clipDirectory)
         reconnectTask?.cancel()
         reconnectTask = nil
         stopMicrophone()
@@ -678,7 +684,7 @@ final class SimulatorModel: ObservableObject {
         } else if type == "glass" {
             // Reconnect snapshots can contain both URLs in the same event.
             if let still = object["still"] as? String { loadScreenImage(path: still) }
-            if let clip = object["clip"] as? String { loadScreenClip(path: clip) }
+            if let frames = object["frames"] as? String { loadScreenFrames(path: frames) }
         } else if type == "frame", cameraStatus == "Sending camera snapshot…" {
             cameraStatus = "Camera snapshot received"
         } else if type == "error" {
@@ -698,8 +704,8 @@ final class SimulatorModel: ObservableObject {
         let requestID = UUID()
         screenImageRequest = requestID
         parts.queryItems = (parts.queryItems ?? []).filter { !["w", "h"].contains($0.name) } + [
-            URLQueryItem(name: "w", value: String(Int(screenPixelSize.width))),
-            URLQueryItem(name: "h", value: String(Int(screenPixelSize.height))),
+            URLQueryItem(name: "w", value: String(hardwareProfile.width)),
+            URLQueryItem(name: "h", value: String(hardwareProfile.height)),
         ]
         guard let sizedURL = parts.url else { return }
 
@@ -717,24 +723,13 @@ final class SimulatorModel: ObservableObject {
                 screenImage = image
                 screenImageID = path
                 viewingStill = true
-                appendEvent("show displayed", "\(path) at \(Int(screenPixelSize.width))×\(Int(screenPixelSize.height)); state=\(deviceState)")
+                appendEvent(
+                    "show displayed",
+                    "\(path) at \(hardwareProfile.width)×\(hardwareProfile.height); state=\(deviceState)"
+                )
             } catch {
                 if !Task.isCancelled { appendEvent("screen error", error.localizedDescription) }
             }
-        }
-    }
-
-    func updateScreenSize(_ size: CGSize, scale: CGFloat) {
-        let pixels = CGSize(
-            width: min(2048, max(1, (size.width * scale).rounded())),
-            height: min(2048, max(1, (size.height * scale).rounded()))
-        )
-        guard screenPixelSize != pixels else { return }
-        screenPixelSize = pixels
-        if let path = requestedStillPath {
-            // Keep the visible image while its new cover crop is fetched.
-            requestedStillPath = nil
-            loadScreenImage(path: path)
         }
     }
 
@@ -749,17 +744,24 @@ final class SimulatorModel: ObservableObject {
         screenImageID = nil
     }
 
-    private func loadScreenClip(path: String) {
+    private func loadScreenFrames(path: String) {
         guard !poweredOff, screenOn, deviceState != "asleep", deviceState != "booting",
               let url = URL(string: path, relativeTo: baseHTTPURL)?.absoluteURL,
               url.scheme == baseHTTPURL.scheme, url.host == baseHTTPURL.host,
-              url.port == baseHTTPURL.port, url.pathExtension == "mp4" else { return }
-        let stillPath = url.deletingPathExtension().appendingPathExtension("jpg").path
+              url.port == baseHTTPURL.port, url.pathExtension == "mjpeg",
+              let stillPath = stillPath(forFramesPath: path),
+              var parts = URLComponents(url: url, resolvingAgainstBaseURL: false) else { return }
         guard screenImageID == stillPath || requestedStillPath == stillPath else { return }
         if requestedClipPath == path, screenClipTask != nil || screenClip?.id == path { return }
         clearClip()
         requestedClipPath = path
         clipStillPath = stillPath
+        parts.queryItems = (parts.queryItems ?? []).filter { !["w", "h", "fps"].contains($0.name) } + [
+            URLQueryItem(name: "w", value: String(hardwareProfile.width)),
+            URLQueryItem(name: "h", value: String(hardwareProfile.height)),
+            URLQueryItem(name: "fps", value: String(hardwareProfile.fps)),
+        ]
+        guard let framesURL = parts.url else { return }
         let requestID = UUID()
         screenClipRequest = requestID
         screenClipTask = Task {
@@ -767,24 +769,51 @@ final class SimulatorModel: ObservableObject {
                 if screenClipRequest == requestID { screenClipTask = nil }
             }
             do {
-                // Use the same authenticated device request as stills. AVPlayer
-                // reads the local file, so no token needs to enter an asset URL.
-                let (temporaryURL, response) = try await session.download(for: backend.request(for: url))
+                var request = backend.request(for: framesURL)
+                request.timeoutInterval = 35
+                let (data, response) = try await downloadBoundedFrames(
+                    session: session,
+                    request: request,
+                    maximumBytes: hardwareProfile.maxEncodedBytes
+                )
                 guard !Task.isCancelled, screenClipRequest == requestID,
                       !poweredOff, screenOn,
-                      screenImageID == stillPath || requestedStillPath == stillPath,
-                      (response as? HTTPURLResponse)?.statusCode == 200 else { return }
-                try FileManager.default.createDirectory(
-                    at: clipDirectory, withIntermediateDirectories: true,
-                    attributes: [.posixPermissions: 0o700]
+                      screenImageID == stillPath || requestedStillPath == stillPath else { return }
+                let sequence = try MotionJPEGSequence(
+                    data: data,
+                    response: response,
+                    profile: hardwareProfile
                 )
-                let localURL = clipDirectory.appendingPathComponent("\(UUID().uuidString).mp4")
-                try FileManager.default.moveItem(at: temporaryURL, to: localURL)
-                screenClip = ScreenClip(id: path, stillPath: stillPath, localURL: localURL)
+                guard !Task.isCancelled, screenClipRequest == requestID,
+                      screenImageID == stillPath || requestedStillPath == stillPath else { return }
+                screenClip = ScreenClip(
+                    id: path,
+                    stillPath: stillPath,
+                    frames: sequence.frames,
+                    fps: sequence.fps,
+                    width: sequence.width,
+                    height: sequence.height,
+                    encodedBytes: sequence.encodedBytes
+                )
+                appendEvent(
+                    "clip loaded",
+                    "\(sequence.frames.count) JPEGs; \(sequence.width)×\(sequence.height) at "
+                        + "\(sequence.fps) fps; \(sequence.encodedBytes) encoded bytes"
+                )
             } catch {
                 if !Task.isCancelled { appendEvent("clip error", error.localizedDescription) }
             }
         }
+    }
+
+    private func stillPath(forFramesPath path: String) -> String? {
+        guard var parts = URLComponents(string: path), parts.url?.pathExtension == "mjpeg" else {
+            return nil
+        }
+        parts.path = (parts.path as NSString).deletingPathExtension + ".jpg"
+        parts.query = nil
+        parts.fragment = nil
+        return parts.string
     }
 
     func clipPlaybackEvent(_ event: String, path: String) {
@@ -797,10 +826,7 @@ final class SimulatorModel: ObservableObject {
         screenClipTask = nil
         requestedClipPath = nil
         clipStillPath = nil
-        if let clip = screenClip {
-            screenClip = nil
-            try? FileManager.default.removeItem(at: clip.localURL)
-        }
+        screenClip = nil
     }
 
     private func send(_ payload: [String: Any]) {

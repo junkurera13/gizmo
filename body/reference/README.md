@@ -13,7 +13,7 @@ From the repository's installed virtual environment:
 .venv/bin/python body/reference/gizmo_body.py \
   --url https://brain.example.com \
   --device-id gizmo-board-001 \
-  --panel-width 320 --panel-height 240 --panel-fps 12
+  --panel-width 320 --panel-height 240 --panel-fps 24
 ```
 
 The client reads `GIZMO_DEVICE_TOKEN` from the environment; prefer that over a
@@ -52,7 +52,8 @@ The laptop implementation makes the hardware constraints visible:
 - Camera capture warms briefly, stops after one frame or five seconds, and emits
   at most 640 × 480 / 128 KiB.
 - Authenticated still or MJPEG downloads use a private temporary cache capped at
-  2 MiB by default. The body must receive and decode independently in firmware.
+  4 MiB by default. Both fps and the cap are command-line inputs for the physical
+  limit sweep. The body must receive and decode independently in firmware.
 
 This is a laptop reference, not firmware. AVFoundation, AudioToolbox, Pillow and
 temporary disk storage are adapters for exercising the contract; they are not

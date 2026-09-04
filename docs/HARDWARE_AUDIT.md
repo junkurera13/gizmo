@@ -21,7 +21,8 @@ and sends it through the shared brain. Native verification reached the Gemini
 adapter's SDK boundary with a local receiver; no cloud vision result is claimed.
 H3's camera checkpoint was reviewed, body handoff checkpoints 1 and 2 pass, and
 H4 now has a verified offline asset export/loader plus the Oddity boot entrance.
-H5–H8 still require physical integration or selected hardware, and firmware
+H5 now has a hardware-shaped native Show preview at the route's 24 fps maximum.
+H6–H8 still require physical integration or selected hardware, and firmware
 remains open. No deployment has been made.
 
 **Body handoff checkpoint 1, September 4:** protocol v1 is now explicit in
@@ -60,9 +61,10 @@ it never sends a cold-boot power event on reconnect.
 Glass-media fetching is same-origin and repeats the bearer token, device id and
 protocol version. It requests explicit panel dimensions and fps, validates the
 returned JPEG or finite MJPEG metadata/frame count, and writes only to a private
-temporary cache capped at 2 MiB by default. Width and height default to zero, so
-media fetching remains disabled until a provisional profile is supplied; 320 ×
-240 at 12 fps was used only for this checkpoint and is not a selected screen.
+temporary cache. Checkpoint 2 used the then-default 2 MiB cap and 320 × 240 at
+12 fps; H5 subsequently raised the configurable starting cap to 4 MiB and the
+default fps to 24. Width and height still default to zero, so media fetching
+remains disabled until a provisional profile is supplied. None is a selected screen.
 
 One focused run used a local authenticated stub brain and deliberately closed the
 first WebSocket during a real hold. The reference opened a second authenticated
@@ -128,10 +130,33 @@ build uses ten slots at 8 fps, so the descent lasts 1.25 seconds. The unchanged
 sequence now lands the wordmark at 2,875 ms, and the splash minimum is 5,050 ms
 to preserve its hold. The rebuilt provisional bundle contains 24 timing slots,
 15 unique boot JPEGs and 161,479 total asset bytes. The native app was rebuilt;
-Jun asked to perform the feel check himself, so no new runtime, timed-loader or
-speaker test was run for this revision. Current artifacts:
+Jun performed and accepted the feel check. At his request, no new automated,
+timed-loader or speaker test was run for this revision. Current artifacts:
 [provisional manifest](/Users/jun/gizmo/data/hardware-audit/2026-09-04/boot-drop/320x240/manifest.json)
 and [frame sheet](/Users/jun/gizmo/data/hardware-audit/2026-09-04/boot-drop/contact-sheet.png).
+
+**Hardware-shaped Show checkpoint H5, September 4:** the native device screen no
+longer uses AVPlayer or the 24 fps MP4. It now consumes the same authenticated,
+finite MJPEG URL sent to the body. An explicit packaged profile starts at the
+route's maximum: provisional 320 × 240, 24 fps and a 4 MiB encoded-sequence cap.
+The still remains visible until the bounded sequence is complete and validated
+against its content type plus `X-Gizmo-Frame-*` headers. Playback retains the
+compressed JPEG frames and decodes one display frame at a time; no transition,
+audio, controls, time or battery are layered over Show.
+
+The saved rocket produced 124 frames and 2,502,648 encoded bytes at 24 fps. The
+rebuilt native app fetched `/shows/...mjpeg?w=320&h=240&fps=24`, displayed visibly
+different frames 250 ms apart, and completed its first loop in 5,168 ms against
+the 5,167 ms media target. Select stopped the loop and restored home. The same
+media would have exceeded the old 2 MiB reference cache, so the configurable
+starting cap is now 4 MiB. A local transport and saved providers made zero model,
+image or fal calls; no automated tests were added or run. This validates the
+software path and pacing on the Mac. It does not establish the physical limit;
+the selected board and panel must repeat a 24 → 20 → 18 → 15 → 12 fps sweep under
+simultaneous Wi-Fi, audio and button load. Evidence:
+[checkpoint result](/Users/jun/gizmo/data/hardware-audit/2026-09-04/show-24fps/results.json),
+[native log](/Users/jun/gizmo/data/hardware-audit/2026-09-04/show-24fps/simulator.log),
+and [fixture metadata](/Users/jun/gizmo/data/hardware-audit/2026-09-04/show-24fps/fixture.json).
 
 The PTT fix tracks the connection owning a hold, rejects audio/releases from
 other connections, and clears an abandoned hold on owner disconnect. It closes
@@ -219,9 +244,9 @@ and [native checkpoint preview](/Users/jun/gizmo/data/hardware-audit/2026-09-04/
 | **H1 — fixed locally: dropped connections left PTT down** | Before the fix, closing the socket left `pressed`, `active`, and `audio_ready` true and blocked a fresh press. [WebSocket cleanup](/Users/jun/gizmo/friend/gizmo_friend/server.py:190) now invokes [owner-specific teardown](/Users/jun/gizmo/friend/gizmo_friend/session.py:187). The local socket and native checks above passed. | Deploy after review; verify a real board disconnect/power cut when available. A silent network loss is handled once the WebSocket detects it; this does not promise instantaneous physical power-cut detection. |
 | **H2 — microphone mismatch fixed locally** | Before the fix, the notes said `mic` while the server silently ignored it. [The server](/Users/jun/gizmo/friend/gizmo_friend/server.py:223) now accepts canonical `audio` and compatible `mic`, with PCM validation. [The body wire contract](/Users/jun/gizmo/body/README.md:9) distinguishes actual JSON messages from Python controller names. Exact-byte and ownership checks passed for both input names. | Deploy after review. The planned general reference client and protocol-version handoff remain separate unfinished work before firmware integration; this correction does not claim those are complete. |
 | **H3 — fixed locally: real PTT camera capture** | [CameraFeed](/Users/jun/gizmo/simulator/Sources/GizmoSimulator/CameraFeed.swift:37) captures a bounded JPEG and stops. [The native PTT flow](/Users/jun/gizmo/simulator/Sources/GizmoSimulator/SimulatorModel.swift:307) sends it on the hold's socket. The unused viewfinder and file-picker paths were removed. Real camera bytes reached the Gemini adapter's local SDK receiver; ownership and stale-frame checks passed. | Deploy the shared backend after review. Verify a lit book and actual vision response, then implement/measure capture with the selected sensor and board. VGA needs PSRAM; a lower capture resolution may be necessary. No physical-camera firmware or text-readability result is claimed. |
-| **H4 — fixed at the software handoff: offline boot/home assets** | The configurable [exporter](/Users/jun/gizmo/body/assets/export_bundle.py:1) packages panel-sized boot/home assets, timing, chime, home-only status resources and integrity metadata. The [boot builder](/Users/jun/gizmo/glass/build_boot.py:1) adds the current 1.25-second top entry as full-screen frames before the preserved blink. The [reference loader](/Users/jun/gizmo/body/reference/offline_assets.py:1) completed the prior 4.8-second variant with no brain and a largest resident encoded frame of 11,237 bytes; the current 5.05-second timing awaits Jun's feel check. Existing source drawings remain the authoring assets. | Re-export for the selected panel, put the bundle in device-local flash/storage, and connect the manifest callbacks to the real JPEG/display/audio drivers. The checkpoint proves delivery and local timing, not board decode time or the final character/screen. |
-| **H5 — P2: Show preview is not constrained to hardware pixels or timing** | [Still request sizing](/Users/jun/gizmo/simulator/Sources/GizmoSimulator/SimulatorModel.swift:732) uses the window size times the Mac display scale, up to 2048 pixels. The offline boot/home exporter now accepts an explicit profile and produced a 320 × 240 visual checkpoint, but native Show still uses the 24 fps MP4 and a large window while the board route serves finite MJPEG. | Apply the explicit provisional profile to a hardware-oriented Show preview, including the MJPEG path and its actual frame pacing. Re-run it for the selected panel and check generated labels at those pixels; the large Mac preview cannot establish readability or matching crop. |
-| **H6 — reference bounds exist; board memory and playback remain unverified** | [Native video](/Users/jun/gizmo/simulator/Sources/GizmoSimulator/LoopingClipView.swift:34) still relies on AVPlayer and a downloaded local MP4. The checkpoint-2 [reference adapter](/Users/jun/gizmo/body/reference/io_macos.py:1) now caps speaker PCM at 96,000 bytes and authenticated still/MJPEG cache storage at 2 MiB. Its AudioToolbox and temporary-disk paths prove the protocol flow, not ESP32 memory or decode timing. Server subscriber queues remain unbounded. | Implement measured PCM pacing/backpressure, JPEG decode and finite-loop storage on the selected board. Keep network reception and button handling independent of decode/display. Size the profile from actual PSRAM/storage and do not copy the Mac adapters into firmware. |
+| **H4 — fixed at the software handoff: offline boot/home assets** | The configurable [exporter](/Users/jun/gizmo/body/assets/export_bundle.py:1) packages panel-sized boot/home assets, timing, chime, home-only status resources and integrity metadata. The [boot builder](/Users/jun/gizmo/glass/build_boot.py:1) adds the accepted 1.25-second top entry as full-screen frames before the preserved blink. The [reference loader](/Users/jun/gizmo/body/reference/offline_assets.py:1) completed the prior 4.8-second variant with no brain and a largest resident encoded frame of 11,237 bytes; Jun accepted the current 5.05-second timing by feel. Existing source drawings remain the authoring assets. | Re-export for the selected panel, put the bundle in device-local flash/storage, and connect the manifest callbacks to the real JPEG/display/audio drivers. The checkpoint proves delivery and local timing, not board decode time or the final character/screen. |
+| **H5 — fixed locally: hardware-shaped Show preview** | The packaged [preview profile](/Users/jun/gizmo/simulator/hardware-preview.json:1) is explicitly provisional. [SimulatorModel](/Users/jun/gizmo/simulator/Sources/GizmoSimulator/SimulatorModel.swift:1) requests the authenticated MJPEG at 320 × 240 / 24 fps under a 4 MiB cap, and [LoopingClipView](/Users/jun/gizmo/simulator/Sources/GizmoSimulator/LoopingClipView.swift:1) decodes one retained JPEG at a time. The saved 124-frame rocket loop was 1 ms from its 5,167 ms target; Select restored home. | Repeat the configurable fps sweep after selecting the physical board and panel. Check labels, crop, decode time and input/audio responsiveness there; the Mac run does not establish the hardware limit. |
+| **H6 — software bounds exist; board memory and playback remain unverified** | Native Show and the checkpoint-2 [reference adapter](/Users/jun/gizmo/body/reference/io_macos.py:1) now use finite MJPEG with a configurable 4 MiB encoded cap; the native view retains compressed frames and one decoded display frame. Speaker PCM remains bounded at 96,000 bytes. These Mac paths prove the protocol shape, not ESP32 memory, storage, bus or simultaneous decode/audio timing. Server subscriber queues remain unbounded. | Implement measured PCM pacing/backpressure, JPEG decode and finite-loop storage on the selected board. Keep network reception and button handling independent of decode/display. Size the profile from actual PSRAM/storage and do not copy the Mac adapters into firmware. |
 | **H7 — reference reconnect fixed; physical sleep mode remains open** | The checkpoint-2 [reference runtime](/Users/jun/gizmo/body/reference/gizmo_body.py:1) preserves up to ten seconds of microphone PCM locally while its WSS connection is absent. A replacement connection sends a fresh PTT-down edge before replay, and the focused run proved byte delivery in that order. The native simulator still models sleep as a connected Mac, and no ESP32 wake source, Wi-Fi resume time or power draw has been measured. | Port the verified edge/buffer ordering into firmware, then choose and measure the actual hardware sleep mode. Distinguish cold boot from sleep wake. A physical hard power cut cannot guarantee a final `power:false` transmission. |
 | **H8 — P2: battery, clock, and haptics are placeholders/adapters** | [Battery](/Users/jun/gizmo/simulator/Sources/GizmoSimulator/SimulatorModel.swift:60) starts at 100% and is changed by a debug method. The offline bundle now supplies panel-sized clock glyph and heart resources scoped to home, but there is no body time/battery input. [Haptics](/Users/jun/gizmo/simulator/Sources/GizmoSimulator/DeviceHaptics.swift:9) use Mac APIs, with no specified physical actuator/driver. | Supply real battery readings and a device time source/timezone, then render them from the bundled resources on home only. Treat tactile feedback as conditional on the selected hardware. |
 
@@ -233,12 +258,12 @@ Measured resource implications:
   the bundle is 11,237 bytes. A decoded
   RGB565 display buffer still requires 153,600 bytes, so this does not establish
   board heap fit.
-- The existing 320 × 240, 12 fps rocket sequence contains 62 JPEGs totaling
-  **1,250,954 bytes**. One RGB565 display buffer adds 153,600 bytes; two add
-  307,200. This is compressed clip storage plus display buffers, before decoder,
-  network, camera, audio, or application memory. It is not an estimate for every
-  generated clip. Server media limits allow up to 64 MiB and are not a device
-  memory budget.
+- The saved 320 × 240 rocket sequence contains 124 JPEGs totaling **2,502,648
+  bytes** at 24 fps, or 62 JPEGs totaling 1,250,954 bytes at 12 fps. One RGB565
+  display buffer adds 153,600 bytes; two add 307,200. This is compressed clip
+  storage plus display buffers, before decoder, network, camera, audio, or
+  application memory. It is not an estimate for every generated clip. Server
+  media limits allow up to 64 MiB and are not a device memory budget.
 - The saved voice turn contains 432,990 PCM bytes: 9.02 seconds of speech arrived
   in 2.447 seconds. Assuming immediate continuous playback, its estimated peak
   queue is **315,534 PCM bytes**, before JSON/base64 or player overhead. This is a
@@ -248,9 +273,9 @@ Measured resource implications:
   24-slot sequence has 15 distinct images; loading all 24 decoded frames would
   require 36,470,784 bytes. That is a hypothetical direct port, not a claim about
   Mac NSImage allocation. Resize and deduplicate the export.
-- A 320 × 240 full-frame RGB565 update at 12 fps transfers 1,843,200 bytes/second
-  to the display before bus overhead. The actual panel interface and shared-bus
-  load must support the chosen resolution and frame rate.
+- A 320 × 240 full-frame RGB565 update transfers 3,686,400 bytes/second at 24 fps
+  or 1,843,200 bytes/second at 12 fps, before bus overhead. The actual panel
+  interface and shared-bus load must support the chosen resolution and frame rate.
 
 Espressif specifies 512 KB of on-chip SRAM and memory variants with differing
 PSRAM. The measured resident clip alone exceeds the on-chip SRAM, so additional
@@ -276,11 +301,12 @@ SwiftUI/AppKit themselves are Mac adapters, not libraries expected to run on the
 ESP32. The desktop conversation panel and local backend launcher are development
 tools and need no counterpart on the device.
 
-Remaining order before further emulator polish: review the slowed Oddity boot,
-then H5's constrained media preview and H6's board playback measurements. Keep
-profiles configurable while the screen remains open.
-Finalize H7/H8 with the actual board, power circuit and panel. Stop for review at
-each agreed implementation checkpoint; this audit does not advance SHOW.md.
+The slowed Oddity boot is accepted and H5's constrained media preview passes.
+The next physical checkpoint is H6's fps, memory and playback sweep on the selected
+board and panel, followed by H7/H8 power, clock, battery and haptic integration.
+Keep profiles configurable while the screen remains open. Until that hardware is
+available, software work can return to SHOW.md checkpoint 4 or measurements 6/12.
+Stop for review at each agreed implementation checkpoint.
 
 Evidence: [connection reproduction](/Users/jun/gizmo/data/hardware-audit/2026-09-04/connection-reproduction.json)
 and [asset/media measurements](/Users/jun/gizmo/data/hardware-audit/2026-09-04/resource-measurements.json).

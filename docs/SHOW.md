@@ -195,29 +195,33 @@ its own panel:
 
 ```
 data/devices/<device>/shows/<id>.jpg           still, 512×384
-data/devices/<device>/shows/<id>.mp4           clip, 640×480 24 fps, audio stripped
+data/devices/<device>/shows/<id>.mp4           clip master, 640×480 24 fps, audio stripped
 data/devices/<device>/shows/<id>.json          {subject, motion, prompts, created, session}
 GET /shows/<device>/<id>.jpg?w=320&h=240        still, cover-cropped, cached
-GET /shows/<device>/<id>.mp4                    clip as-is (simulator, later a phone)
-GET /shows/<device>/<id>.mjpeg?w=320&h=240&fps=12   clip as a JPEG frame sequence (body)
+GET /shows/<device>/<id>.mp4                    clip master as-is (later a phone)
+GET /shows/<device>/<id>.mjpeg?w=320&h=240&fps=24   clip as a JPEG frame sequence (body and simulator)
 ```
 
 - Routes require the device token like everything else. A body fetches only its own.
 - The `.json` sidecar is what makes Make trivial later: keeping a card is tagging a show
   with a line, not a new pipeline.
-- Sizing on request means no `GIZMO_PANEL` setting anywhere. The simulator asks for its
-  screen rect; the ESP32 asks for its panel. Cover-crop; never distort.
-- **MJPEG for the body.** An ESP32-S3 will not decode H.264, but it decodes a 320×240
-  JPEG in a few tens of milliseconds, so a 5 s clip at 12 fps is 60 small JPEGs
-  it can hold in PSRAM and loop. The first measured 5.167-second clip produced
-  62 frames and 1,250,954 bytes at 320×240 / 12 fps; budget from measured payloads,
-  not the original ~600 KB estimate. The brain transcodes once with a bundled
+- Sizing on request means no `GIZMO_PANEL` setting on the server. The simulator sends
+  its explicit provisional profile; the ESP32 sends its selected panel profile.
+  Cover-crop; never distort.
+- **MJPEG for the body.** An ESP32-S3 will not decode H.264, but it can decode
+  panel-sized JPEG frames. Start physical profiling at the 24 fps source maximum
+  and step down only when the selected board/panel misses timing, memory or input
+  responsiveness. The saved 5.167-second rocket produced 62 frames / 1,250,954
+  bytes at 12 fps and 124 frames / 2,502,648 bytes at 24 fps, both 320×240. Budget
+  from measured payloads, not the original ~600 KB estimate. The brain transcodes once with a bundled
   ffmpeg (`imageio-ffmpeg` wheel; no apt in the image) and caches per size. This is a
   line item in the body contract (`SPRINT.md`): the glass plays a frame loop, not just
   one frame.
 - The MJPEG response is a finite, concatenated JPEG sequence (`video/x-motion-jpeg`),
   with frame count, frame rate and dimensions in `X-Gizmo-Frame-*` headers. Defaults
-  are 320×240 at 12 fps; accepted dimensions are 1–1024 pixels and frame rates 1–24.
+  remain 320×240 at 12 fps for an unspecified caller; the provisional simulator/body
+  profile explicitly requests 320×240 at 24 fps. Accepted dimensions are 1–1024 pixels
+  and frame rates 1–24.
   The client downloads the sequence and paces its loop; this is not a live multipart
   camera stream. MP4 supports byte-range requests for the simulator player.
 
@@ -319,15 +323,17 @@ an `animate` is ~$0.32. (75% off on fal until Sep 7; plan on list.)
   defer fades until they are proven on the board and panel.
 - Clip arrival: **no transition.** Frame 0 of the clip is the still, so the clip simply
   starts playing where the still was. If it looks like a cut, the transcode or crop is
-  wrong, not the design. Loops seamlessly (5 s → 0 s); muted; `AVPlayer` with the mp4.
+  wrong, not the design. The native device view keeps the still up while it fetches
+  the authenticated finite MJPEG, retains compressed JPEGs under the profile cap,
+  decodes one frame at a time and loops silently at the requested rate.
 - Time and battery belong only to home, never to another screen. Home is a separate
   view, not an overlay; pictures and video own the whole glass.
 - No head at the edge for Show. That is See's device. The picture owns the glass.
 - **No conjuring state.** Between the call and the picture, the glass is his face, same
   as always. No spinner, no shimmer, no glance. Nothing on the glass ever says "loading";
   the first sign that anything happened is the picture.
-- Request size = the screen rect in pixels, so the simulator and the board show the same
-  crop.
+- Request size = the explicit preview/body profile, so the simulator and board can
+  request and compare the same crop at the same fps.
 
 ## Sequence
 
@@ -336,13 +342,14 @@ before the next. Steps 1–7 are the still and are tonight's work; 8–12 are mo
 Friday's. Show is not done until step 11: without motion he has two ways to answer, not
 three.
 
-Current execution status: **checkpoint 11 native playback passes with the saved
-rocket clip; stopped for review.** The rebuilt simulator displayed the still,
-downloaded its matching MP4 through the authenticated device request, played it
-muted over that still, looped, and stopped on Select. Home's time/battery never
-overlaid the video. There are no transitions or player controls. The native layer
-stays transparent until its first frame is ready; stale clip downloads cannot
-attach to another still. Reconnect snapshots handle both URLs in one event.
+Current execution status: **checkpoint 11 native playback and the subsequent H5
+hardware-preview checkpoint pass with the saved rocket clip; stopped for review.**
+The device screen now ignores the MP4 playback URL and requests the matching finite
+MJPEG through the authenticated device request. It holds the still until the complete
+bounded sequence is ready, decodes one JPEG at a time, loops silently, and stops on
+Select. Home's time/battery never overlays the video. There are no transitions or
+player controls. Stale frame downloads cannot attach to another still. Reconnect
+snapshots handle both URLs in one event.
 
 The actual Gemini Live session chose `show` with motion from a voiced sample sent
 through the device audio connection. Media providers replayed the existing rocket
@@ -350,11 +357,15 @@ still/clip; zero new image or fal generations, and no new automated tests. The n
 log recorded still display, muted playback, a completed loop, and player teardown.
 A 7.48-second recording shows the actual app. This verifies native playback, not
 new generation speed, human microphone input, or physical-board playback.
-The board's existing route remains the same clip as a JPEG frame sequence; its
-default 12 fps and resource use still need verification on the board. The Mac
-plays the 24 fps master. Checkpoint 4, measurements 6/12 and optional grounding 7
-remain pending. No deployment was made.
-Evidence: `data/show-checkpoints/2026-09-04-checkpoint-11/REVIEW.md`.
+The explicit provisional profile is 320×240 at 24 fps with a 4 MiB encoded cap.
+The saved rocket delivered 124 JPEGs totaling 2,502,648 bytes and completed its
+first native loop in 5,168 ms against a 5,167 ms target. This is Mac evidence for
+the hardware-shaped path, not the physical board's limit; the same profile sweep
+still needs to run with the selected board and panel under Wi-Fi, audio and button
+load. Checkpoint 4, measurements 6/12 and optional grounding 7 remain pending. No
+deployment was made. Evidence:
+`data/hardware-audit/2026-09-04/show-24fps/results.json` and
+`data/show-checkpoints/2026-09-04-checkpoint-11/REVIEW.md`.
 
 Checkpoint 5 native still display was implemented and
 visually verified, then stopped for review before native video playback. The rebuilt
@@ -478,7 +489,9 @@ Review: `data/show-checkpoints/2026-09-03-checkpoint-8/motion-revision/generated
     with the same id. Then dismiss the still before the clip lands and confirm it's
     dropped. Then "what did a trilobite look like" → still only; "make it move" → clip
     event on that same id.
-11. **Simulator, clip.** `AVPlayer`, looped, muted, no transition from still. *Checkpoint:*
+11. **Simulator, clip.** The native device view uses the authenticated finite MJPEG
+    path, retains compressed frames under the explicit preview cap, decodes one frame
+    at a time, loops silently, and makes no transition from the still. *Checkpoint:*
     ask out loud; the picture appears mid-beat and starts moving a few seconds later
     with no visible cut.
 12. **Measure again.** Ten spoken asks with motion: release → still, release → motion.

@@ -25,6 +25,13 @@ to Gizmo rather than the parent terminal application.
 
 Logs land in `data/` (gitignored): `simulator.log` is the app's event trail, `brain.log` is the local brain's output.
 
+Show playback uses the same authenticated finite MJPEG route intended for the
+physical body. `simulator/hardware-preview.json` supplies an explicit provisional
+width, height, fps and encoded-byte cap; the packaged default is 320 × 240 at the
+route maximum of 24 fps with a 4 MiB cap. The app keeps compressed JPEG frames and
+decodes one display frame at a time. Change that profile to repeat the eventual
+board/panel sweep; a Mac pass is not evidence of physical performance.
+
 ## Change the device render
 
 Each skin is a folder containing:
@@ -35,7 +42,7 @@ device-reference.png
 device-reference-ptt-pressed.png
 ```
 
-`skin.json` uses normalized coordinates from `0` to `1`, so the source render can be any resolution or aspect ratio. It defines the active screen rectangle, its pixel dimensions/content mode, every clickable hardware region, and the optional pressed PTT render. Replace the images in `DeviceSkins/current`, adjust the manifest, and rebuild the app. No agent, protocol, or firmware code changes are required, and there is no skin-management UI in the product simulator.
+`skin.json` uses normalized coordinates from `0` to `1`, so the source render can be any resolution or aspect ratio. It defines the active screen rectangle, every clickable hardware region, and the optional pressed PTT render. The separate hardware preview profile defines requested media pixels and timing. Replace the images in `DeviceSkins/current`, adjust the manifest, and rebuild the app. No agent, protocol, or firmware code changes are required, and there is no skin-management UI in the product simulator.
 
 The glass design target is 69 × 50 mm landscape (69∶50, about 1.38∶1); no panel
 has been selected. The included skin's screen rectangle is roughly 1.2∶1 to

@@ -465,8 +465,8 @@ def main() -> None:
     parser.add_argument("--speaker-buffer-bytes", type=int, default=96_000, help="bounded response PCM queue")
     parser.add_argument("--panel-width", type=int, default=0, help="provisional physical panel width; 0 disables fetch")
     parser.add_argument("--panel-height", type=int, default=0, help="provisional physical panel height; 0 disables fetch")
-    parser.add_argument("--panel-fps", type=int, default=12, help="provisional MJPEG playback rate")
-    parser.add_argument("--media-cache-bytes", type=int, default=2 * 1024 * 1024, help="bounded still/MJPEG cache")
+    parser.add_argument("--panel-fps", type=int, default=24, help="provisional MJPEG playback rate")
+    parser.add_argument("--media-cache-bytes", type=int, default=4 * 1024 * 1024, help="bounded still/MJPEG cache")
     args = parser.parse_args()
     if (args.panel_width == 0) != (args.panel_height == 0):
         parser.error("--panel-width and --panel-height must both be set or both be 0")

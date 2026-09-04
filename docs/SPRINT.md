@@ -32,13 +32,16 @@ images. Firmware should never have to decode a 1024×742 PNG or resize anything.
 - **Glass stream.** Everything that appears on the glass — state frames and Show — is
   announced as a `glass` event carrying a URL, and the body fetches it at its own size
   (`?w=320&h=240`). Stills come as one JPEG; clips come as a JPEG frame loop
-  (`.mjpeg`, default 12 fps) the body decodes with esp_jpeg and loops from PSRAM.
+  (`.mjpeg`) the body decodes with esp_jpeg and loops from local storage.
   This is a finite sequence of JPEGs with frame count, fps and dimensions in the
-  `X-Gizmo-Frame-*` response headers. Checkpoint 9's real 320×240 sample contains
-  **62 frames, 1,250,954 bytes** for 5.167 seconds; use measured size for the memory
+  `X-Gizmo-Frame-*` response headers. Start the selected board at the 24 fps source
+  maximum and step down only if measured performance requires it. The saved 5.167 s
+  rocket is **124 frames / 2,502,648 bytes** at 320×240 / 24 fps and 62 frames /
+  1,250,954 bytes at 12 fps; use measured size for the memory
   budget. Requests include the same device authorization and `X-Gizmo-Device`
-  headers as the socket. No panel setting on the server; the simulator uses the
-  same show IDs and plays the audio-free MP4, which supports byte ranges.
+  headers as the socket. No panel setting on the server. The simulator now uses
+  the same finite MJPEG route through an explicit provisional 320×240 / 24 fps /
+  4 MiB profile, keeps compressed frames, and decodes one at a time.
 - **Reference client.** Checkpoint 2 now provides the Python protocol-v1 client in
   `body/reference/`: authenticated health/hello compatibility, stable identity,
   every physical control edge, real macOS microphone/camera/speaker adapters,
@@ -99,9 +102,9 @@ contract until a board exists, so Show goes first.
   instantly and generate in the background, so his voice never waits and a failure is
   silent — the answer already stood alone.
 - **Body decides its size.** Stills and clips are served resized on request
-  (`/shows/...?w=&h=`), so there is no panel setting anywhere; the simulator asks for
-  its rect and the board asks for its panel. Clips go to the body as a JPEG frame loop
-  (`.mjpeg`), which an ESP32-S3 can decode; the simulator plays the mp4.
+  (`/shows/...?w=&h=`), so there is no panel setting on the server. The simulator and
+  board supply their explicit provisional or selected profile. Both device views use
+  the finite JPEG frame loop (`.mjpeg`); the MP4 remains a source master.
 - **Prompt.** Replace "Image and video generation are not available yet" with the Show
   judgment from `docs/CRAFT.md`. He never announces the picture; it is just there.
 - **Measure.** PTT release → still on glass, and → motion, ten asks each. Those two

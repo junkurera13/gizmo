@@ -106,7 +106,9 @@ health/hello compatibility, authenticated identity and controls, real macOS
 microphone/camera/speaker adapters, authenticated still/MJPEG fetching, and a
 ten-second local wake-audio buffer across reconnect. Its panel profile remains an
 explicit provisional command-line input, and its queues and media cache are
-bounded. It is a hardware handoff reference, not firmware.
+bounded. Its current defaults start a configured panel at 24 fps with a 4 MiB
+encoded-media cap; both remain command-line inputs for the physical profile sweep.
+It is a hardware handoff reference, not firmware.
 
 Boot and home do not depend on that socket. `body/assets/export_bundle.py` exports
 the current local drawings, exact boot timing, chime, home base and home-only
@@ -114,6 +116,6 @@ status resources for an explicit provisional panel size. The matching
 `body/reference/offline_assets.py` loader verifies the manifest and plays the
 cold-boot state sequence from local storage. Firmware should place the selected
 profile in device flash or equivalent local storage so network startup can run in
-parallel with the 3.8-second splash.
+parallel with the 5.05-second splash.
 
 No character art in this tree. No second brain. Body is a body.

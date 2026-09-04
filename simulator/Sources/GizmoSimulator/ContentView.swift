@@ -69,7 +69,6 @@ private struct DeviceStageView: View {
 }
 
 private struct DeviceView: View {
-    @Environment(\.displayScale) private var displayScale
     @ObservedObject var model: SimulatorModel
     @ObservedObject private var spriteStore = SpriteStore.shared
     let skin: DeviceSkin
@@ -120,7 +119,7 @@ private struct DeviceView: View {
                     .frame(width: rect.width, height: rect.height)
                     .id(model.screenImageID)
                 if let clip = model.screenClip, clip.stillPath == model.screenImageID {
-                    LoopingClipView(url: clip.localURL) { event in
+                    LoopingClipView(clip: clip) { event in
                         model.clipPlaybackEvent(event, path: clip.id)
                     }
                     .id(clip.id)
@@ -144,9 +143,6 @@ private struct DeviceView: View {
         .transaction { $0.animation = nil }
         .allowsHitTesting(false)
         .accessibilityHidden(true)
-        .onAppear { model.updateScreenSize(rect.size, scale: displayScale) }
-        .onChange(of: rect.size) { _, value in model.updateScreenSize(value, scale: displayScale) }
-        .onChange(of: displayScale) { _, value in model.updateScreenSize(rect.size, scale: value) }
     }
 
     /// Time, battery and the character belong only to home.
