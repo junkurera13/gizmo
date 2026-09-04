@@ -8,7 +8,7 @@ export function Background() {
         src={bgStill}
         alt=""
         priority
-        sizes="82vw"
+        sizes="(max-width: 700px) 160vw, 1320px"
         className="bg-still"
       />
     </div>

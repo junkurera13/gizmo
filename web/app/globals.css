@@ -17,17 +17,32 @@ body {
   display: flex;
   align-items: flex-end;
   justify-content: center;
+  overflow: hidden;
   pointer-events: none;
 }
 
 .bg-still {
-  width: 80vw;
-  max-height: 88dvh;
-  height: auto;
+  width: auto;
+  height: min(75dvh, 48.5rem);
+  max-width: none;
   object-fit: contain;
   object-position: bottom center;
-  transform: translateX(-1.5vw);
+  transform: translateX(-1.2%);
   background: transparent;
+}
+
+@media (max-width: 700px) {
+  .bg-still {
+    height: 67dvh;
+  }
+
+  .hero {
+    top: 5.6rem;
+  }
+
+  .hero-line {
+    font-size: clamp(2.15rem, 8.4vw, 2.85rem);
+  }
 }
 
 .hero {
