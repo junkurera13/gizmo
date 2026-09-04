@@ -362,10 +362,26 @@ The saved rocket delivered 124 JPEGs totaling 2,502,648 bytes and completed its
 first native loop in 5,168 ms against a 5,167 ms target. This is Mac evidence for
 the hardware-shaped path, not the physical board's limit; the same profile sweep
 still needs to run with the selected board and panel under Wi-Fi, audio and button
-load. Checkpoint 4, measurements 6/12 and optional grounding 7 remain pending. No
-deployment was made. Evidence:
+load. Checkpoint 4's Sep 5 prompt-only evaluation did not clear repeatability after
+the planned three-revision limit: the full isolated run reached 18/20 raw choices,
+but a targeted repeat sent the Silk Road map back to words. The fallback is now
+implemented. Gemini 3.1 Flash-Lite makes one structured words/still/motion/animate
+decision from each final user utterance; Gemini Live no longer receives the visual
+tools, so the two models cannot compete. Invalid, incomplete, late, or timed-out
+decisions degrade to words without spending media, and explicit no-motion sentinels
+degrade to a still. A displayed still is staged into Live for the next visual
+follow-up and cleared when Show leaves the glass.
+
+The final direct-director matrix scored 20/20 at 1.042 s median, including five of
+five repeated Silk Road still-map choices and the existing-still `animate` route.
+A real Gemini Live integration with a replayed trilobite still confirmed the picture
+arrived while Live spoke and bare “Make it move” emitted no transcript or audio.
+No still or clip generations ran during either evaluation. Checkpoint 4 is cleared
+for the silent-director architecture. Measurements 6/12 and
+optional grounding 7 remain pending. No deployment was made. Evidence:
 `data/hardware-audit/2026-09-04/show-24fps/results.json` and
-`data/show-checkpoints/2026-09-04-checkpoint-11/REVIEW.md`.
+`data/show-checkpoints/2026-09-04-checkpoint-11/REVIEW.md`, plus ignored local
+evidence in `data/show-checkpoints/2026-09-05-checkpoint-4/`.
 
 Checkpoint 5 native still display was implemented and
 visually verified, then stopped for review before native video playback. The rebuilt

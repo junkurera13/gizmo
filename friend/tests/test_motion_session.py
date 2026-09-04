@@ -21,8 +21,10 @@ from gizmo_friend.brain.images import ConjuredStill, ImageProvider
 from gizmo_friend.brain.memory import NullMemoryProvider
 from gizmo_friend.brain.reasoning import NullReasoningProvider
 from gizmo_friend.brain.show_budget import ShowBudget
+from gizmo_friend.brain.visual_director import VisualDecision
 from gizmo_friend.session import GizmoSession
 from gizmo_friend.states import State
+from gizmo_friend.transport.base import TransportEvent
 
 
 def sample_still() -> ConjuredStill:
@@ -66,7 +68,8 @@ class ShowSessionFixture(unittest.IsolatedAsyncioTestCase):
         self.images = ControlledImages()
         self.transport = SimpleNamespace(**{
             name: AsyncMock() for name in ["send_text", "close", "interrupt", "submit_tool_output",
-                                           "send_image", "begin_audio", "send_audio", "commit_audio"]
+                                           "send_image", "clear_pending_image", "begin_audio",
+                                           "send_audio", "commit_audio"]
         })
         self.friend = GizmoSession(
             self.root / "devices" / "test-a", user_id="test-a", gemini_key="",
@@ -127,6 +130,42 @@ class ControlledClips(ClipProvider):
         ))
 
 
+class FixedDirector:
+    def __init__(self, decision):
+        self.decision = decision
+        self.calls = []
+
+    async def decide(self, utterance, *, has_visual, current_subject=""):
+        self.calls.append((utterance, has_visual, current_subject))
+        return self.decision
+
+    async def close(self):
+        return
+
+
+class ControlledDirector:
+    def __init__(self):
+        self.calls = []
+
+    async def decide(self, utterance, *, has_visual, current_subject=""):
+        future = asyncio.get_running_loop().create_future()
+        self.calls.append((utterance, has_visual, current_subject, future))
+        return await future
+
+    async def wait_for_calls(self, count):
+        async with asyncio.timeout(1):
+            while len(self.calls) < count:
+                await asyncio.sleep(0.001)
+
+    def finish(self, index, decision):
+        self.calls[index][3].set_result(decision)
+
+    async def close(self):
+        for *_, future in self.calls:
+            if not future.done():
+                future.cancel()
+
+
 class MotionSessionTests(ShowSessionFixture):
     @classmethod
     def setUpClass(cls):
@@ -166,6 +205,68 @@ class MotionSessionTests(ShowSessionFixture):
     def motion_count(self):
         return json.loads((self.root / "motion-usage.json").read_text())["motions"]
 
+    async def test_no_motion_sentinels_stay_still_and_do_not_spend(self):
+        for sentinel in ("none", "no motion", "still", "static", "n/a", "none needed"):
+            await self.ask_show("earth layers", motion=sentinel)
+            await self.finish_show()
+            metadata = json.loads(self.friend.current_show.metadata_path.read_text())
+            self.assertIsNone(metadata["motion"])
+        self.assertEqual(self.clips.calls, [])
+        self.assertFalse((self.root / "motion-usage.json").exists())
+
+    async def test_director_routes_text_to_one_still_and_stages_it_for_follow_up(self):
+        director = FixedDirector(VisualDecision(route="still", subject="Silk Road map"))
+        self.friend.visual_director = director
+        await self.friend.handle(TextLine(text="Where was the Silk Road?"))
+        await self.images.wait_for_calls(1)
+        await self.finish_show()
+        await asyncio.wait_for(asyncio.shield(self.friend._director_task), 1)
+        self.assertEqual(director.calls, [("Where was the Silk Road?", False, "")])
+        self.assertEqual(self.images.calls[0][0], "Silk Road map")
+        self.assertEqual(self.transport.send_image.await_count, 1)
+        metadata = json.loads(self.friend.current_show.metadata_path.read_text())
+        self.assertIsNone(metadata["motion"])
+
+    async def test_director_animate_uses_the_existing_show_and_stays_one_per_ask(self):
+        await self.ask_show("jellyfish")
+        await self.finish_show()
+        director = FixedDirector(VisualDecision(route="animate", motion="bell pulses slowly"))
+        self.friend.visual_director = director
+        await self.friend.handle(TextLine(text="Make it move."))
+        await self.clips.wait_for_calls(1)
+        await asyncio.wait_for(asyncio.shield(self.friend._director_task), 1)
+        self.assertEqual(director.calls, [("Make it move.", True, "jellyfish")])
+        self.assertEqual(self.clips.calls[0][1], "bell pulses slowly")
+        self.assertEqual(self.transport.interrupt.await_count, 1)
+        self.assertEqual(
+            await self.friend._run_tool("animate", {"motion": "again"}),
+            {"ok": False, "reason": "one per ask"},
+        )
+
+    async def test_new_ask_cancels_a_stale_director_choice(self):
+        director = ControlledDirector()
+        self.friend.visual_director = director
+        await self.friend.handle(TextLine(text="What did a castle look like?"))
+        await director.wait_for_calls(1)
+        await self.friend.handle(TextLine(text="Where was the Silk Road?"))
+        await director.wait_for_calls(2)
+        self.assertTrue(director.calls[0][3].cancelled())
+        director.finish(1, VisualDecision(route="still", subject="Silk Road map"))
+        await asyncio.wait_for(asyncio.shield(self.friend._director_task), 1)
+        await self.images.wait_for_calls(1)
+        self.assertEqual(self.images.calls[0][0], "Silk Road map")
+
+    async def test_final_voice_transcript_schedules_the_same_director(self):
+        director = FixedDirector(VisualDecision(route="still", subject="heart diagram"))
+        self.friend.visual_director = director
+        self.friend._ask_revision += 1
+        await self.friend._on_transport(
+            TransportEvent(kind="user_transcript", text="What are the heart chambers?")
+        )
+        await self.images.wait_for_calls(1)
+        await self.finish_show()
+        self.assertEqual(director.calls, [("What are the heart chambers?", False, "")])
+
 
     async def test_select_drops_late_clip_from_glass_but_saves_it(self):
         saved = await self.moving_show()
@@ -175,6 +276,7 @@ class MotionSessionTests(ShowSessionFixture):
         self.assertEqual(self.events(), [])
         self.assertIsNone(self.friend.show_event())
         self.assertTrue(self.friend.shows.clip_path(saved.id).exists())
+        self.transport.clear_pending_image.assert_awaited_once()
 
     async def test_replacement_cannot_receive_old_clip_and_clears_snapshot(self):
         old = await self.moving_show()

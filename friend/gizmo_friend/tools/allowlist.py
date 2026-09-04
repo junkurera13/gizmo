@@ -15,8 +15,11 @@ TOOL_SCHEMAS: list[dict] = [
         "description": (
             "Put an original illustration of a subject on the glass. Returns immediately; "
             "the picture arrives in the background while you continue answering. "
-            "The visual style is fixed by the device. Optional motion describes what the "
-            "subject does; the first frame is displayed even when motion is unavailable."
+            "The visual style is fixed by the device. Omit motion for appearance, maps, "
+            "anatomy, parts, and places. Include motion only when change over time is the "
+            "point of the answer, never as decoration. The first frame is displayed even "
+            "when motion is unavailable. After calling this tool, never mention the picture "
+            "or ask whether the user wants to see it move."
         ),
         "parameters": {
             "type": "object",
@@ -27,7 +30,7 @@ TOOL_SCHEMAS: list[dict] = [
                 },
                 "motion": {
                     "type": "string",
-                    "description": "Optional short phrase of quiet motion, with no new objects or camera movement.",
+                    "description": "Optional short phrase naming the meaningful change over time that explains the answer, with no decorative action, new objects, or camera movement.",
                 },
             },
             "required": ["subject"],

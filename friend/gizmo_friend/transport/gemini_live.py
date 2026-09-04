@@ -66,6 +66,11 @@ class Pcm16Resampler:
 
 def live_config(instructions: str, resume_handle: str = "") -> types.LiveConnectConfig:
     assert_allowlist(TOOL_SCHEMAS)
+    # Visual routing belongs to the separate structured director. Live stays
+    # the voice and cannot make a second, competing show/animate choice.
+    live_schemas = [
+        schema for schema in TOOL_SCHEMAS if schema["name"] not in {"show", "animate"}
+    ]
     declarations = [
         types.FunctionDeclaration(
             name=schema["name"],
@@ -77,7 +82,7 @@ def live_config(instructions: str, resume_handle: str = "") -> types.LiveConnect
                 else types.Behavior.BLOCKING
             ),
         )
-        for schema in TOOL_SCHEMAS
+        for schema in live_schemas
     ]
     return types.LiveConnectConfig(
         response_modalities=["AUDIO"],
@@ -307,6 +312,9 @@ class GeminiLiveTransport:
             await self._require_session().send_realtime_input(video=image)
         else:
             self._pending_image = image
+
+    async def clear_pending_image(self) -> None:
+        self._pending_image = None
 
     def _require_session(self):
         if self._session is None:

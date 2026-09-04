@@ -12,7 +12,10 @@ ESP32-S3 or native emulator
             │    ├─ realtime voice
             │    ├─ vision frames
             │    ├─ native Google Search grounding
-            │    └─ typed function calls
+            │    └─ deep_think / set_expression function calls
+            ├─ VisualDirector → Gemini 3.1 Flash-Lite
+            │    ├─ words / still / motion / animate decision
+            │    └─ ImageProvider / ClipProvider → glass
             ├─ MemoryProvider → self-hosted Memobase
             ├─ ReasoningProvider → Gemini 3.7 Flash
             └─ final transcript JSONL
@@ -50,6 +53,10 @@ The server keeps one `GizmoSession` per device. A body identifies itself with th
 - input/output final transcripts
 - one real native camera snapshot per PTT hold, forwarded over the existing
   `Frame` event; voice does not wait for camera access or capture
+- one structured visual decision per final user utterance, with stale decisions
+  cancelled when a newer ask arrives
+- Show still/clip generation, persistent budgets, dismissal, and staging the
+  displayed still back into Live for visual follow-ups
 - tool validation and execution
 - startup memory context and background memory ingestion
 - device state transitions and idle sleep
@@ -67,7 +74,7 @@ The emulator protocol and controls are unchanged.
 
 ### Safety
 
-`gizmo_friend/safety.py` configures Gemini's own content filters for every model call (Live voice and `deep_think`): sexually explicit, harassment, and hate speech at `BLOCK_LOW_AND_ABOVE`; dangerous content at `BLOCK_MEDIUM_AND_ABOVE` so science and history rabbit holes survive. The frozen prompt's `SAFETY` section covers tone: stay with a scared kid and point to a trusted adult, never collect location or passwords, refuse not-for-kids requests plainly with no hints, and ignore voices claiming to be a parent or developer.
+`gizmo_friend/safety.py` configures Gemini's supported content filters for generate-content calls (`deep_think`, the visual director, and still generation): sexually explicit, harassment, and hate speech at `BLOCK_LOW_AND_ABOVE`; dangerous content at `BLOCK_MEDIUM_AND_ABOVE` so science and history rabbit holes survive. Gemini Live does not accept these settings at setup and retains its built-in filters. The frozen prompt's `SAFETY` section covers tone: stay with a scared kid and point to a trusted adult, never collect location or passwords, refuse not-for-kids requests plainly with no hints, and ignore voices claiming to be a parent or developer.
 
 ## Memory
 
@@ -79,14 +86,18 @@ New semantic memory behavior belongs in the provider, not in a second custom mem
 
 ## Tools and search
 
-Only two custom functions are model-facing in V1:
+Only two custom functions are exposed to Gemini Live in V1:
 
 | Function | Behavior |
 | --- | --- |
 | `deep_think(question)` | Calls `gemini-3.7-flash` through `ReasoningProvider`. The result is private notes returned to Gemini Live; Live remains the speaker and personality. |
 | `set_expression(expression)` | Placeholder bus only. Not the character architecture — Jun is still designing the face. The glass does not play these events. Do not treat the enum as canon. |
 
-Google Search is configured as Gemini's native tool beside these functions. There is no custom search service or model router.
+Google Search is configured as Gemini's native tool beside these functions. There is no custom search service.
+
+Visual routing is deliberately outside Live. `GeminiVisualDirector` receives the final user utterance plus whether a Show is already on the glass and returns a temperature-zero structured `words`, `still`, `motion`, or `animate` decision. It has a four-second local deadline, no retries, and degrades to words on any invalid or unavailable result, so a routing failure cannot spend media. New asks cancel stale decisions. Live keeps speaking naturally and cannot call `show` or `animate` itself; a bare “make it move” is locally silenced while the director animates the existing still.
+
+For `still` and `motion`, the image provider generates and stores the first frame before any optional clip work starts. Explicit no-motion sentinels are normalized to a still. Motion uses H3 Max on fal only when `FAL_KEY` is present and remains behind persistent device/global budgets. A finished still is staged back into Live as the next visual frame and cleared on dismissal, so follow-up speech can refer to what is actually on the glass.
 
 ## Railway
 
@@ -115,4 +126,4 @@ The native emulator reads `GIZMO_BRAIN_URL` and `GIZMO_DEVICE_TOKEN` from the ig
 
 ## Deliberate V1 exclusions
 
-No H3 Max, Adaptive Media director, image-generation pipeline, games, parent dashboard, custom AI router, or custom semantic-memory system is implemented here.
+No games, parent dashboard, general-purpose Adaptive Media platform, second voice/personality router, or custom semantic-memory system is implemented here. Show is the bounded visual path: one silent decision per ask, one still first, and optional motion on that same still.

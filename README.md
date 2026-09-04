@@ -4,7 +4,7 @@ A wizard in a kid's pocket. One face, one voice, one coat. Kids 9–14. Dry, a l
 
 This repo is the device: GizmoSession (brain), Body (firmware later), Glass (device renderer), and the native emulator. The public site lives in `web/`.
 
-**v1 runs on a laptop.** The existing emulator connects to the same WebSocket contract the eventual ESP32-S3 body will use. Gemini 3.1 Flash Live handles realtime voice and vision; Memobase supplies persistent user memory; Gemini 3.7 Flash is available only through `deep_think()`.
+**v1 runs on a laptop.** The existing emulator connects to the same WebSocket contract the eventual ESP32-S3 body will use. Gemini 3.1 Flash Live handles realtime voice and vision; Gemini 3.1 Flash-Lite silently chooses words, still, motion, or animate; Memobase supplies persistent user memory; Gemini 3.7 Flash is available only through `deep_think()`.
 
 ## Tree
 
@@ -39,7 +39,8 @@ Or: `python -m gizmo_friend` from a venv with this repo installed.
 
 | Variable | Required | What |
 | --- | --- | --- |
-| `GEMINI_API_KEY` | yes | Gemini 3.1 Flash Live and Gemini 3.7 Flash `deep_think()`. Gizmo has no offline brain; if Gemini is unreachable he reports the outage and retries. |
+| `GEMINI_API_KEY` | yes | Gemini Live voice/vision, the Flash-Lite visual director, still generation, and Gemini 3.7 Flash `deep_think()`. Gizmo has no offline brain; if Gemini is unreachable he reports the outage and retries. |
+| `GIZMO_DIRECTOR_MODEL` | no | Visual-director override. Default `gemini-3.1-flash-lite`. |
 | `GIZMO_USER_ID` | optional | Fallback identity for a body that sends no `X-Gizmo-Device` header. Each device otherwise gets its own memory. |
 | `MEMOBASE_URL` | for persistent memory | Root URL of the self-hosted Railway Memobase service. |
 | `MEMOBASE_API_KEY` | for persistent memory | Memobase project token. |
@@ -81,9 +82,9 @@ npx @railway/cli up --service gizmo-brain
 
 Set `GEMINI_API_KEY` and a randomly generated `GIZMO_DEVICE_TOKEN` on `gizmo-brain`, and a random `ACCESS_TOKEN` plus the Gemini key as `MEMOBASE_LLM_API_KEY` on `memobase`, using Railway secrets rather than source files. The IaC file marks those values with `preserve()` so future applies retain them. Generate a public Railway domain for `gizmo-brain` after its first healthy deployment; Postgres, Redis, and Memobase remain on Railway's private network. All public device/data routes require the device token; `/health` is the only unauthenticated cloud route.
 
-## Tools
+## Tools and Show
 
-The model-facing V1 functions are `deep_think(question)` and a placeholder `set_expression()` bus (not the character). Google Search is Gemini's native grounding tool, not a custom search function. No media generation pipeline exists yet.
+Gemini Live can call only `deep_think(question)` and the placeholder `set_expression()` bus (not the character). Google Search is Gemini's native grounding tool, not a custom search function. A separate structured visual director reads the same final user utterance and silently executes `show` or `animate`; stills use Gemini image generation, and optional motion uses H3 Max on fal when `FAL_KEY` is configured.
 
 ## Who owns what
 

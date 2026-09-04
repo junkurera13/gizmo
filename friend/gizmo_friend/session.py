@@ -21,6 +21,12 @@ from gizmo_friend.brain.reasoning import ReasoningProvider, reasoning_provider_f
 from gizmo_friend.brain.show_budget import MotionBudget, ShowBudget
 from gizmo_friend.brain.shows import ShowStore, StoredShow
 from gizmo_friend.brain.transcripts import TranscriptStore
+from gizmo_friend.brain.visual_director import (
+    NO_MOTION_SENTINELS,
+    VisualDirector,
+    is_bare_animate_request,
+    visual_director_from_env,
+)
 from gizmo_friend.body_protocol import (
     BodyEvent,
     Frame,
@@ -78,6 +84,7 @@ class GizmoSession:
         show_idle_s: float = 90.0,
         clip_provider: ClipProvider | None = None,
         motion_budget: MotionBudget | None = None,
+        visual_director: VisualDirector | None = None,
     ) -> None:
         self.data_dir = Path(data_dir)
         self.data_dir.mkdir(parents=True, exist_ok=True)
@@ -94,6 +101,7 @@ class GizmoSession:
             raise RuntimeError("GEMINI_API_KEY is required: Gizmo has no offline brain")
         self.memory_provider = memory_provider or memory_provider_from_env()
         self.reasoning = reasoning_provider or reasoning_provider_from_env(self.gemini_key)
+        self.visual_director = visual_director or visual_director_from_env(self.gemini_key)
         self.user_id = user_id or os.environ.get("GIZMO_USER_ID", "gizmo-local-user")
         self.images = image_provider or image_provider_from_env(self.gemini_key)
         self.clips = clip_provider or clip_provider_from_env()
@@ -110,6 +118,10 @@ class GizmoSession:
         self._show_tasks: set[asyncio.Task[None]] = set()
         self._clip_tasks: set[asyncio.Task[None]] = set()
         self._motion_pending: set[str] = set()
+        self._director_task: asyncio.Task[None] | None = None
+        self._director_tasks: set[asyncio.Task[None]] = set()
+        self._directed_ask_revision = -1
+        self._suppress_live_output = False
         self._current_clip_id: str | None = None
         self._show_idle_task: asyncio.Task[None] | None = None
         self._show_visible_at = 0.0
@@ -297,6 +309,7 @@ class GizmoSession:
         """Hard off. Not sleep. Sleep is idle-only."""
         if self.machine.state is State.POWERED_OFF:
             return
+        self._cancel_visual_direction()
         if self._boot_task and not self._boot_task.done():
             self._boot_task.cancel()
             self._boot_task = None
@@ -353,6 +366,8 @@ class GizmoSession:
                 await self._wake_from_sleep(reason="ptt")
             if not self._ready_for_input():
                 return
+            self._cancel_visual_direction()
+            self._suppress_live_output = False
             self._ask_revision += 1
             self._ptt_pressed = True
             self._ptt_open_task = asyncio.create_task(self._open_mic())
@@ -424,11 +439,15 @@ class GizmoSession:
         if not self._ready_for_input():
             return
         self._ask_revision += 1
+        self._suppress_live_output = is_bare_animate_request(cleaned)
+        self._schedule_visual_direction(cleaned, self._ask_revision)
         self._record_transcript("user", cleaned)
         await self._ensure_connected()
         if self._transport:
             await self._send_camera_frame()
             await self._transport.send_text(cleaned)
+            if self._suppress_live_output:
+                await self._transport.interrupt()
 
     async def on_mic(self, pcm: bytes) -> None:
         if not self._ready_for_input():
@@ -443,6 +462,9 @@ class GizmoSession:
 
     async def close(self) -> None:
         self._closing = True
+        self._cancel_visual_direction()
+        if self._director_tasks:
+            await asyncio.gather(*tuple(self._director_tasks), return_exceptions=True)
         await self._dismiss_show(reason="close")
         if self._show_tasks:
             await asyncio.gather(*tuple(self._show_tasks), return_exceptions=True)
@@ -475,6 +497,7 @@ class GizmoSession:
                     task.cancel()
         await self.memory_provider.close()
         await self.reasoning.close()
+        await self.visual_director.close()
 
     def _ready_for_input(self) -> bool:
         return self.machine.state not in {State.POWERED_OFF, State.ASLEEP, State.BOOTING}
@@ -512,6 +535,7 @@ class GizmoSession:
         """Only idleness puts him to sleep; there is no sleep button."""
         if not self.machine.can("sleep"):
             return
+        self._cancel_visual_direction()
         self._reset_ptt()
         self._flush_transcript_turns()
         self._background_memory(self.memory_provider.flush(self.user_id))
@@ -759,22 +783,33 @@ class GizmoSession:
         self._touch()
         kind = event.kind
         if kind == "audio":
+            if self._suppress_live_output:
+                return
             await self._start_talking()
             self._item_id = event.item_id or self._item_id
             self.mouth.speak_pcm(event.pcm)
             await self.emit({"type": "audio", "pcm": base64.b64encode(event.pcm).decode("ascii")})
             return
         if kind == "transcript_delta":
+            if self._suppress_live_output:
+                return
             await self._start_talking()
             await self.emit({"type": "transcript_delta", "text": event.text})
             return
         if kind == "transcript":
+            if self._suppress_live_output:
+                return
             await self._start_talking(announce=False)
             self._record_transcript("assistant", event.text)
             await self.emit({"type": "transcript", "role": "gizmo", "text": event.text})
             return
         if kind == "user_transcript":
             self._record_transcript("user", event.text)
+            if is_bare_animate_request(event.text):
+                self._suppress_live_output = True
+                if self._transport:
+                    await self._transport.interrupt()
+            self._schedule_visual_direction(event.text, self._ask_revision)
             await self.emit({"type": "transcript", "role": "user", "text": event.text})
             return
         if kind == "function_call":
@@ -797,6 +832,7 @@ class GizmoSession:
             if self.machine.state is State.TALKING and self.machine.can("done"):
                 self.machine.apply("done")
             await self.emit({"type": "state"})
+            self._suppress_live_output = False
             return
         if kind == "grounding":
             await self.emit({"type": "grounding", "metadata": event.raw})
@@ -809,6 +845,55 @@ class GizmoSession:
             return
         if kind == "error":
             await self.emit({"type": "error", "message": event.text})
+
+    def _cancel_visual_direction(self) -> None:
+        if self._director_task and not self._director_task.done():
+            self._director_task.cancel()
+        self._director_task = None
+
+    def _schedule_visual_direction(self, utterance: str, ask_revision: int) -> None:
+        cleaned = utterance.strip()
+        if (
+            not cleaned
+            or ask_revision == self._directed_ask_revision
+            or self._closing
+            or not self._ready_for_input()
+        ):
+            return
+        self._directed_ask_revision = ask_revision
+        self._cancel_visual_direction()
+        has_visual = self.current_show is not None
+        current_subject = self.current_show_subject if has_visual else ""
+
+        async def direct() -> None:
+            try:
+                decision = await self.visual_director.decide(
+                    cleaned,
+                    has_visual=has_visual,
+                    current_subject=current_subject,
+                )
+                if (
+                    ask_revision != self._ask_revision
+                    or self._closing
+                    or not self._ready_for_input()
+                ):
+                    return
+                if decision.route == "animate":
+                    await self._animate({"motion": decision.motion})
+                elif decision.route in {"still", "motion"}:
+                    arguments: dict[str, Any] = {"subject": decision.subject}
+                    if decision.route == "motion":
+                        arguments["motion"] = decision.motion
+                    await self._show(arguments)
+            except asyncio.CancelledError:
+                raise
+            except Exception as error:  # noqa: BLE001 - routing degrades to words
+                logger.warning("Visual direction failed: error=%s", type(error).__name__)
+
+        task = asyncio.create_task(direct())
+        self._director_task = task
+        self._director_tasks.add(task)
+        task.add_done_callback(self._director_tasks.discard)
 
     async def _start_talking(self, announce: bool = True) -> None:
         if self.machine.state is State.LISTENING and self.machine.can("speech_out"):
@@ -833,6 +918,9 @@ class GizmoSession:
         self.current_show_subject = ""
         self._current_clip_id = None
         if was_visible:
+            clear_pending_image = getattr(self._transport, "clear_pending_image", None)
+            if clear_pending_image:
+                await clear_pending_image()
             await self.emit({"type": "glass", "viewing": False, "reason": reason})
 
     def show_event(self) -> dict[str, Any] | None:
@@ -889,6 +977,10 @@ class GizmoSession:
             self._current_clip_id = None
             self._show_visible_at = asyncio.get_running_loop().time()
             await self.emit(self.show_event())
+            if self._transport:
+                await self._transport.send_image(
+                    f"data:image/jpeg;base64,{base64.b64encode(still.jpeg).decode('ascii')}"
+                )
             if self.show_idle_s > 0 and (self._show_idle_task is None or self._show_idle_task.done()):
                 self._show_idle_task = asyncio.create_task(self._watch_show_idle())
             if motion:
@@ -909,6 +1001,11 @@ class GizmoSession:
             return {"ok": False, "reason": "invalid motion"}
         subject = subject.strip()
         motion = (motion.strip() or None) if motion is not None else None
+        if motion is not None and motion.casefold().rstrip(".") in NO_MOTION_SENTINELS:
+            # Live occasionally fills an optional string with "none" instead
+            # of omitting it. Treat that as the still request it meant; never
+            # spend a motion credit animating a sentinel.
+            motion = None
         if not self._ready_for_input() or self._closing:
             return {"ok": False, "reason": "asleep"}
         if isinstance(self.images, NullImageProvider):
