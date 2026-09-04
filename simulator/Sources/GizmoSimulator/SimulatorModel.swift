@@ -62,9 +62,9 @@ final class SimulatorModel: ObservableObject {
     private var bootSound: NSSound?
     private var bootSoundTask: Task<Void, Never>?
     private var hasColdBooted = false
-    /// The glass owns the splash. Blink is 14 frames at 8 fps (~1.75 s);
-    /// then `14.png` (the wordmark) holds for a beat so it can be read.
-    static let splashMinimum: Duration = .milliseconds(3800)
+    /// The glass owns the splash. A 1.25-second local frame drop leads into the
+    /// existing 14-frame blink; the final wordmark then holds for its old beat.
+    static let splashMinimum: Duration = .milliseconds(5050)
     @Published private(set) var splashHolding = false
     private var splashTask: Task<Void, Never>?
 
@@ -170,7 +170,7 @@ final class SimulatorModel: ObservableObject {
         send(["type": "select"])
     }
 
-    /// Ding lands when `14.png` (the wordmark) first appears, not on power-on.
+    /// Ding lands when the final boot frame (the wordmark) first appears, not on power-on.
     /// That's the last flipbook frame: delay is (frameCount - 1) / fps.
     private func playBootSound() {
         bootSoundTask?.cancel()

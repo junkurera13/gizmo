@@ -27,15 +27,30 @@ Optional `glass/sprites/sprites.json` can override fps / loop per folder name. D
 
 ## Boot
 
-`glass/sprites/boot/` is a one-shot double blink at 8 fps: the eye opens and settles, blinks slowly, opens, then a quick second blink lands on the wordmark (`14.png`). That last frame holds until the body's 3.8 s splash ends (about 1.75 s of motion, ~2 s of logo). The body owns that timer (`SimulatorModel.splashMinimum`); the brain finishing early or late never cuts the logo short.
+`glass/sprites/boot/` begins with a 1.25-second, ten-slot drop from the top at
+8 fps. The illustration reaches its centered source position, then the existing
+double blink plays unchanged and lands on the wordmark (`24.png`). The wordmark
+holds until the body's 5.05 s splash ends. The body owns that timer
+(`SimulatorModel.splashMinimum`); the brain finishing early or late never cuts
+the sequence short.
 
-The seven source drawings live in `glass/boot-source/` (open, closing, shut, opening, wordmark). The played sequence is copies of those in the order `01 01 01 02 03 04 05 06 01 01 03 04 05 07`. To change the rhythm, rebuild the copies in a new order; the player plays every numbered frame and holds the last one. The eye is shut on frames 06 and 12.
+The seven preserved drawings live in `glass/boot-source/` (open, closing, shut,
+opening, wordmark). Run `python glass/build_boot.py` to generate the entry plus
+the original sequence `01 01 01 02 03 04 05 06 01 01 03 04 05 07`. The drop is
+baked into full-screen frames, so the Mac preview and physical display perform
+the same work: decode and swap images. No simulator transition is involved.
 
-Drop `glass/sounds/boot.wav` for the ding; it fires when `14.png` first appears. Missing wav is a silent boot.
+Drop `glass/sounds/boot.wav` for the ding; it fires when `24.png` first appears.
+Missing wav is a silent boot.
 
 To make the hold feel alive, add frames after the wordmark (a breathing logo, loading dots, a slow shimmer).
 
 After the splash, home is the full-body drawing in `idle/` (`01.png`, 1024×742). The uncropped original is `glass/character-source/full.png`.
+
+`body/assets/export_bundle.py` is the hardware handoff for these source drawings.
+It emits panel-sized boot/home assets without rewriting this folder. The output
+profile is provisional until the display is selected; boot remains local and does
+not wait for the brain.
 
 ## Fonts
 

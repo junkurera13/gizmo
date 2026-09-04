@@ -63,11 +63,76 @@ body {
   paint-order: stroke fill;
 }
 
-.interest {
+.topbar {
   position: fixed;
   top: 1.35rem;
+  left: 1.5rem;
   right: 1.5rem;
   z-index: 2;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.nav-brand {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  margin: 0;
+  transform: translate(-50%, -50%);
+  font-family: var(--font-michroma), ui-sans-serif, system-ui, sans-serif;
+  font-size: 0.68rem;
+  font-weight: 400;
+  letter-spacing: 0.14em;
+  line-height: 1;
+  text-transform: uppercase;
+  color: #fff;
+  -webkit-text-stroke: 0.16em currentColor;
+  paint-order: stroke fill;
+  pointer-events: none;
+}
+
+.nav-left {
+  display: flex;
+  align-items: center;
+  gap: 0.85rem;
+  transform: translateY(-6px);
+}
+
+.nav-link {
+  color: #fff;
+  font-family: "Helvetica Neue", Helvetica, Arial, sans-serif;
+  font-size: 0.68rem;
+  font-weight: 400;
+  letter-spacing: 0;
+  line-height: 1;
+  text-decoration: none;
+  text-transform: uppercase;
+}
+
+.nav-link:hover {
+  opacity: 0.55;
+}
+
+.nav-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  color: #fff;
+  text-decoration: none;
+}
+
+.nav-icon svg {
+  display: block;
+  width: 0.78rem;
+  height: 0.78rem;
+}
+
+.nav-icon:hover {
+  opacity: 0.55;
+}
+
+.interest {
   display: inline-flex;
   align-items: center;
   justify-content: center;

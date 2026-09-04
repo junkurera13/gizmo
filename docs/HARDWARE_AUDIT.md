@@ -12,16 +12,16 @@ The initial review inspected the implemented native app, shared session, WebSock
 media routes, current assets, and saved run evidence. One local WebSocket
 reproduction used null providers and a stub voice transport. No new provider
 generation, persistent test files, product-code changes, or deployment occurred
-during that initial audit. No physical board was exercised. Checkpoint 4 has not
-started.
+during that initial audit. No physical board was exercised in that review.
 
 **Fix status, September 4:** H1 is fixed in the local backend and verified through
 both the WebSocket and native app. H2's microphone wire mismatch is now fixed and
 verified at the WebSocket boundary. H3 now captures a real Mac-camera JPEG on PTT
 and sends it through the shared brain. Native verification reached the Gemini
 adapter's SDK boundary with a local receiver; no cloud vision result is claimed.
-H3's camera checkpoint was reviewed, and body handoff checkpoints 1 and 2 now
-pass. H4–H8 still require physical integration or selected hardware, and firmware
+H3's camera checkpoint was reviewed, body handoff checkpoints 1 and 2 pass, and
+H4 now has a verified offline asset export/loader plus the Oddity boot entrance.
+H5–H8 still require physical integration or selected hardware, and firmware
 remains open. No deployment has been made.
 
 **Body handoff checkpoint 1, September 4:** protocol v1 is now explicit in
@@ -74,6 +74,64 @@ through the real speaker adapter with no queue drop, and handled interruption.
 No raw room audio or camera image was saved, no provider was called, and no test
 file or test suite was added. Evidence:
 [checkpoint-2 result](/Users/jun/gizmo/data/hardware-audit/2026-09-04/reference-client/checkpoint-2.json).
+
+**Offline boot/home checkpoint 3, September 4:**
+[`export_bundle.py`](/Users/jun/gizmo/body/assets/export_bundle.py:1) converts the
+current source drawings into one explicit panel profile without modifying them.
+The current 14-slot, 8 fps boot sequence references five unique baseline JPEGs,
+so repeated drawings cost timing slots rather than flash copies. Its manifest
+also carries the 3.8-second minimum splash, the wordmark/chime time, the existing
+24 kHz mono PCM16 WAV, a composited home base, resized heart states, a clock glyph
+atlas, source hashes and output hashes. Time and battery resources are marked
+`home_only`.
+
+The matching
+[`OfflineAssetBundle`](/Users/jun/gizmo/body/reference/offline_assets.py:1)
+validates every hash and panel dimension, reads one encoded frame at a time, skips
+redundant consecutive decodes while preserving all timing slots, and reaches home
+without HTTP, WebSocket or brain configuration. The generated 320 × 240 profile
+is explicitly provisional. Its encoded asset payload is 95,411 bytes; the largest
+resident encoded frame during playback is 11,237 bytes.
+
+One focused real-time run used no brain or network route. The wordmark and real
+speaker chime fired at 1,628 ms against the 1,625 ms target, and home arrived at
+3,802 ms against the 3,800 ms minimum. The speaker accepted all 32,160 PCM bytes
+with no queue drop. No source art changed and no persistent test file was added.
+Evidence: [checkpoint-3 result](/Users/jun/gizmo/data/hardware-audit/2026-09-04/offline-assets/checkpoint-3.json),
+[provisional bundle](/Users/jun/gizmo/data/hardware-audit/2026-09-04/offline-assets/320x240/manifest.json),
+and [visual checkpoint](/Users/jun/gizmo/data/hardware-audit/2026-09-04/offline-assets/checkpoint-preview.png).
+
+**Oddity boot-animation checkpoint 4, September 4:** the illustration enters
+from above the display, reaches its original centered position, and then plays
+the preserved 14-slot blink/wordmark sequence without changing those source
+pixels. Motion is baked into full-screen frames; the Mac and the intended
+physical route both decode and swap images rather than depending on a SwiftUI
+transform or another simulator-only transition.
+
+The rebuilt, signed native app was cold-booted and reviewed live. Captures around
+250 ms, 750 ms, 1,100 ms, 2,700 ms and 4,900 ms showed the top entry, descent,
+centered blink, wordmark and home in order. The focused body-loader run validated
+the new manifest and every hash, preserved the old sequence exactly, sent the
+wordmark chime to the real speaker at 2,653 ms against a 2,625 ms target, and
+reached home at 4,803 ms against a 4,800 ms minimum. All 32,160 PCM bytes were
+accepted with no queue drop. The provisional 320 × 240 bundle stores 147,382
+asset bytes across 22 timing slots and 13 unique boot JPEGs; its largest resident
+encoded frame is 11,237 bytes. No brain, provider, HTTP or WebSocket route was
+used, and no persistent test file was added. This proves the device-shaped frame
+contract, not decode timing on an unselected physical panel. Evidence:
+[checkpoint-4 result](/Users/jun/gizmo/data/hardware-audit/2026-09-04/boot-drop/checkpoint-4-1s.json),
+[provisional manifest](/Users/jun/gizmo/data/hardware-audit/2026-09-04/boot-drop/320x240-1s/manifest.json),
+and [visual checkpoint](/Users/jun/gizmo/data/hardware-audit/2026-09-04/boot-drop/contact-sheet-1s.png).
+
+After that review, the entrance was slowed slightly at Jun's request. The current
+build uses ten slots at 8 fps, so the descent lasts 1.25 seconds. The unchanged
+sequence now lands the wordmark at 2,875 ms, and the splash minimum is 5,050 ms
+to preserve its hold. The rebuilt provisional bundle contains 24 timing slots,
+15 unique boot JPEGs and 161,479 total asset bytes. The native app was rebuilt;
+Jun asked to perform the feel check himself, so no new runtime, timed-loader or
+speaker test was run for this revision. Current artifacts:
+[provisional manifest](/Users/jun/gizmo/data/hardware-audit/2026-09-04/boot-drop/320x240/manifest.json)
+and [frame sheet](/Users/jun/gizmo/data/hardware-audit/2026-09-04/boot-drop/contact-sheet.png).
 
 The PTT fix tracks the connection owning a hold, rejects audio/releases from
 other connections, and clears an abandoned hold on owner disconnect. It closes
@@ -161,14 +219,20 @@ and [native checkpoint preview](/Users/jun/gizmo/data/hardware-audit/2026-09-04/
 | **H1 — fixed locally: dropped connections left PTT down** | Before the fix, closing the socket left `pressed`, `active`, and `audio_ready` true and blocked a fresh press. [WebSocket cleanup](/Users/jun/gizmo/friend/gizmo_friend/server.py:190) now invokes [owner-specific teardown](/Users/jun/gizmo/friend/gizmo_friend/session.py:187). The local socket and native checks above passed. | Deploy after review; verify a real board disconnect/power cut when available. A silent network loss is handled once the WebSocket detects it; this does not promise instantaneous physical power-cut detection. |
 | **H2 — microphone mismatch fixed locally** | Before the fix, the notes said `mic` while the server silently ignored it. [The server](/Users/jun/gizmo/friend/gizmo_friend/server.py:223) now accepts canonical `audio` and compatible `mic`, with PCM validation. [The body wire contract](/Users/jun/gizmo/body/README.md:9) distinguishes actual JSON messages from Python controller names. Exact-byte and ownership checks passed for both input names. | Deploy after review. The planned general reference client and protocol-version handoff remain separate unfinished work before firmware integration; this correction does not claim those are complete. |
 | **H3 — fixed locally: real PTT camera capture** | [CameraFeed](/Users/jun/gizmo/simulator/Sources/GizmoSimulator/CameraFeed.swift:37) captures a bounded JPEG and stops. [The native PTT flow](/Users/jun/gizmo/simulator/Sources/GizmoSimulator/SimulatorModel.swift:307) sends it on the hold's socket. The unused viewfinder and file-picker paths were removed. Real camera bytes reached the Gemini adapter's local SDK receiver; ownership and stale-frame checks passed. | Deploy the shared backend after review. Verify a lit book and actual vision response, then implement/measure capture with the selected sensor and board. VGA needs PSRAM; a lower capture resolution may be necessary. No physical-camera firmware or text-readability result is claimed. |
-| **H4 — P1: home and boot have no hardware asset delivery** | [SpriteStore](/Users/jun/gizmo/simulator/Sources/GizmoSimulator/SpriteStore.swift:59) reads original PNGs directly from the Mac checkout. The implemented `glass` URLs and routes cover Show; there is no equivalent state-art endpoint or firmware asset export. Body remains a README. | Export/cache panel-sized boot and home assets, with frame timing and the chime, or implement the planned shared state-frame route. Keep source drawings as authoring assets; decode one suitably sized frame at a time on the body. This needs no new character design. |
-| **H5 — P2: the preview does not constrain itself to hardware pixels or timing** | [Still request sizing](/Users/jun/gizmo/simulator/Sources/GizmoSimulator/SimulatorModel.swift:732) uses the window size times the Mac display scale, up to 2048 pixels. The last run requested 1167 × 974. The visible skin is about 1.199:1; the design target is 1.38:1; its unused metadata says 240 × 240. Native video uses the 24 fps MP4, while the board route defaults to 12 fps. | Add explicit provisional device profiles for resolution, aspect and fps, then use the selected panel profile when known. Use the board frame path in a hardware-oriented preview. Check generated labels at those actual pixels; the large Mac preview cannot establish readability or matching crop. |
+| **H4 — fixed at the software handoff: offline boot/home assets** | The configurable [exporter](/Users/jun/gizmo/body/assets/export_bundle.py:1) packages panel-sized boot/home assets, timing, chime, home-only status resources and integrity metadata. The [boot builder](/Users/jun/gizmo/glass/build_boot.py:1) adds the current 1.25-second top entry as full-screen frames before the preserved blink. The [reference loader](/Users/jun/gizmo/body/reference/offline_assets.py:1) completed the prior 4.8-second variant with no brain and a largest resident encoded frame of 11,237 bytes; the current 5.05-second timing awaits Jun's feel check. Existing source drawings remain the authoring assets. | Re-export for the selected panel, put the bundle in device-local flash/storage, and connect the manifest callbacks to the real JPEG/display/audio drivers. The checkpoint proves delivery and local timing, not board decode time or the final character/screen. |
+| **H5 — P2: Show preview is not constrained to hardware pixels or timing** | [Still request sizing](/Users/jun/gizmo/simulator/Sources/GizmoSimulator/SimulatorModel.swift:732) uses the window size times the Mac display scale, up to 2048 pixels. The offline boot/home exporter now accepts an explicit profile and produced a 320 × 240 visual checkpoint, but native Show still uses the 24 fps MP4 and a large window while the board route serves finite MJPEG. | Apply the explicit provisional profile to a hardware-oriented Show preview, including the MJPEG path and its actual frame pacing. Re-run it for the selected panel and check generated labels at those pixels; the large Mac preview cannot establish readability or matching crop. |
 | **H6 — reference bounds exist; board memory and playback remain unverified** | [Native video](/Users/jun/gizmo/simulator/Sources/GizmoSimulator/LoopingClipView.swift:34) still relies on AVPlayer and a downloaded local MP4. The checkpoint-2 [reference adapter](/Users/jun/gizmo/body/reference/io_macos.py:1) now caps speaker PCM at 96,000 bytes and authenticated still/MJPEG cache storage at 2 MiB. Its AudioToolbox and temporary-disk paths prove the protocol flow, not ESP32 memory or decode timing. Server subscriber queues remain unbounded. | Implement measured PCM pacing/backpressure, JPEG decode and finite-loop storage on the selected board. Keep network reception and button handling independent of decode/display. Size the profile from actual PSRAM/storage and do not copy the Mac adapters into firmware. |
 | **H7 — reference reconnect fixed; physical sleep mode remains open** | The checkpoint-2 [reference runtime](/Users/jun/gizmo/body/reference/gizmo_body.py:1) preserves up to ten seconds of microphone PCM locally while its WSS connection is absent. A replacement connection sends a fresh PTT-down edge before replay, and the focused run proved byte delivery in that order. The native simulator still models sleep as a connected Mac, and no ESP32 wake source, Wi-Fi resume time or power draw has been measured. | Port the verified edge/buffer ordering into firmware, then choose and measure the actual hardware sleep mode. Distinguish cold boot from sleep wake. A physical hard power cut cannot guarantee a final `power:false` transmission. |
-| **H8 — P2: battery, clock, and haptics are placeholders/adapters** | [Battery](/Users/jun/gizmo/simulator/Sources/GizmoSimulator/SimulatorModel.swift:60) starts at 100% and is changed by a debug method. [The clock](/Users/jun/gizmo/simulator/Sources/GizmoSimulator/HeartRowView.swift:29) uses Mac time; there is no body time/battery integration. [Haptics](/Users/jun/gizmo/simulator/Sources/GizmoSimulator/DeviceHaptics.swift:9) use Mac APIs, with no specified physical actuator/driver. | Supply real battery readings and a device time source/timezone. Export clock glyphs or use an appropriate body renderer. Treat tactile feedback as conditional on the selected hardware. Keep time and battery on home only. |
+| **H8 — P2: battery, clock, and haptics are placeholders/adapters** | [Battery](/Users/jun/gizmo/simulator/Sources/GizmoSimulator/SimulatorModel.swift:60) starts at 100% and is changed by a debug method. The offline bundle now supplies panel-sized clock glyph and heart resources scoped to home, but there is no body time/battery input. [Haptics](/Users/jun/gizmo/simulator/Sources/GizmoSimulator/DeviceHaptics.swift:9) use Mac APIs, with no specified physical actuator/driver. | Supply real battery readings and a device time source/timezone, then render them from the bundled resources on home only. Treat tactile feedback as conditional on the selected hardware. |
 
 Measured resource implications:
 
+- The current provisional 320 × 240 offline boot/home bundle stores 161,479
+  encoded asset bytes plus its manifest. Fifteen unique boot JPEGs preserve all
+  24 timing slots, including the 1.25-second entry; the largest encoded frame in
+  the bundle is 11,237 bytes. A decoded
+  RGB565 display buffer still requires 153,600 bytes, so this does not establish
+  board heap fit.
 - The existing 320 × 240, 12 fps rocket sequence contains 62 JPEGs totaling
   **1,250,954 bytes**. One RGB565 display buffer adds 153,600 bytes; two add
   307,200. This is compressed clip storage plus display buffers, before decoder,
@@ -180,10 +244,10 @@ Measured resource implications:
   queue is **315,534 PCM bytes**, before JSON/base64 or player overhead. This is a
   calculation from captured arrival times, not measured board heap usage. Longer
   answers need a bounded strategy.
-- One original 1024 × 742 boot drawing expands to **1,519,616 bytes in RGB565**.
-  The 14-frame sequence has only five distinct images; loading all 14 decoded
-  frames would require 21,274,624 bytes. That is a hypothetical direct port, not a
-  claim about Mac NSImage allocation. Resize and deduplicate the export.
+- One 1024 × 742 boot frame expands to **1,519,616 bytes in RGB565**. The current
+  24-slot sequence has 15 distinct images; loading all 24 decoded frames would
+  require 36,470,784 bytes. That is a hypothetical direct port, not a claim about
+  Mac NSImage allocation. Resize and deduplicate the export.
 - A 320 × 240 full-frame RGB565 update at 12 fps transfers 1,843,200 bytes/second
   to the display before bus overhead. The actual panel interface and shared-bus
   load must support the chosen resolution and frame rate.
@@ -212,9 +276,9 @@ SwiftUI/AppKit themselves are Mac adapters, not libraries expected to run on the
 ESP32. The desktop conversation panel and local backend launcher are development
 tools and need no counterpart on the device.
 
-Remaining order before further emulator polish: review body reference checkpoint 2,
-then H4/H5/H6 shared assets and constrained media preview. Prepare those with
-configurable profiles while the screen remains open.
+Remaining order before further emulator polish: review the slowed Oddity boot,
+then H5's constrained media preview and H6's board playback measurements. Keep
+profiles configurable while the screen remains open.
 Finalize H7/H8 with the actual board, power circuit and panel. Stop for review at
 each agreed implementation checkpoint; this audit does not advance SHOW.md.
 

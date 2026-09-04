@@ -1,6 +1,13 @@
 {
   "boot": {
     "fps": 8,
-    "loop": false
+    "loop": false,
+    "minimum_duration_ms": 5050,
+    "entrance": {
+      "kind": "vertical_drop",
+      "duration_ms": 1250,
+      "slots": 10,
+      "easing": "linear"
+    }
   }
 }

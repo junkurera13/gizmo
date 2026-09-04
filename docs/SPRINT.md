@@ -110,8 +110,10 @@ contract until a board exists, so Show goes first.
 
 ### Sep 6–9 (Sat–Tue): make him alive, get him in hands
 
-- **Contract frozen (Sep 6).** State frames on the `glass` stream, reference client in
-  `body/reference/`, `/health` with panel and protocol version. Sent to the body lane.
+- **Contract frozen (Sep 6).** Show media stays on the authenticated `glass` stream;
+  cold-boot/home assets come from the configurable offline bundle in `body/assets/`.
+  The reference loaders live in `body/reference/`, and `/health` advertises protocol
+  and media limits without claiming an unselected panel. Sent to the body lane.
 - **Face reacts.** Preview frames for `listen`, `talk`, `think`, `asleep` in
   `glass/sprites/` driven by the state events the brain already emits. Two or three
   frames each is enough (eyes, mouth). `talk` can flip mouth frames on output audio
