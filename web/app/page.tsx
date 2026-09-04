@@ -1,4 +1,5 @@
 import { Background } from "./background";
+import { OddwareStrip } from "./oddware-strip";
 
 function XLogo() {
   return (
@@ -42,7 +43,6 @@ export default function Home() {
     <main>
       <Background />
       <nav className="topbar">
-        <p className="nav-brand">Oddware</p>
         <div className="nav-left">
           <a className="nav-link" href="#about">
             About
@@ -50,19 +50,22 @@ export default function Home() {
           <a className="nav-link" href="#careers">
             Careers
           </a>
-          <a className="nav-icon" href="#x" aria-label="X">
-            <XLogo />
-          </a>
-          <a className="nav-icon" href="#instagram" aria-label="Instagram">
-            <InstagramLogo />
-          </a>
+          <div className="socials">
+            <a className="nav-icon" href="#x" aria-label="X">
+              <XLogo />
+            </a>
+            <a className="nav-icon" href="#instagram" aria-label="Instagram">
+              <InstagramLogo />
+            </a>
+          </div>
         </div>
         <a className="interest" href="#register">
           Register Interest
         </a>
       </nav>
+      <OddwareStrip />
       <header className="hero">
-        <p className="site-mark">Oddware Gizmo</p>
+        <p className="site-mark">Introducing Gizmo 1</p>
         <h1 className="hero-line">Magic you can hold.</h1>
       </header>
     </main>

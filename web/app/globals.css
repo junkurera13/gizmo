@@ -21,18 +21,18 @@ body {
 }
 
 .bg-still {
-  width: 82vw;
-  max-height: 90dvh;
+  width: 80vw;
+  max-height: 88dvh;
   height: auto;
   object-fit: contain;
   object-position: bottom center;
-  transform: translateX(-1.6vw);
+  transform: translateX(-1.5vw);
   background: transparent;
 }
 
 .hero {
   position: fixed;
-  top: 12vh;
+  top: calc(16vh - 1.58rem);
   left: 1.5rem;
   right: 1.5rem;
   z-index: 1;
@@ -42,7 +42,7 @@ body {
 .hero-line {
   margin: 0;
   font-family: var(--font-newsreader), Georgia, serif;
-  font-size: clamp(2.36rem, 4.55vw, 3.18rem);
+  font-size: clamp(2.72rem, 5.2vw, 3.62rem);
   font-weight: 500;
   font-variation-settings: "wght" 500;
   letter-spacing: -0.045em;
@@ -74,29 +74,22 @@ body {
   justify-content: space-between;
 }
 
-.nav-brand {
-  position: absolute;
-  left: 50%;
-  top: 50%;
-  margin: 0;
-  transform: translate(-50%, -50%);
-  font-family: var(--font-michroma), ui-sans-serif, system-ui, sans-serif;
-  font-size: 0.68rem;
-  font-weight: 400;
-  letter-spacing: 0.14em;
-  line-height: 1;
-  text-transform: uppercase;
-  color: #fff;
-  -webkit-text-stroke: 0.16em currentColor;
-  paint-order: stroke fill;
-  pointer-events: none;
-}
-
 .nav-left {
   display: flex;
   align-items: center;
   gap: 0.85rem;
-  transform: translateY(-6px);
+}
+
+.socials {
+  display: flex;
+  align-items: center;
+  gap: 0.85rem;
+  margin-left: 0.15rem;
+}
+
+.nav-link,
+.nav-icon {
+  position: relative;
 }
 
 .nav-link {
@@ -110,10 +103,6 @@ body {
   text-transform: uppercase;
 }
 
-.nav-link:hover {
-  opacity: 0.55;
-}
-
 .nav-icon {
   display: inline-flex;
   align-items: center;
@@ -122,14 +111,31 @@ body {
   text-decoration: none;
 }
 
+.nav-link::after,
+.nav-icon::after {
+  content: "";
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: -0.28rem;
+  height: 1px;
+  background: #fff;
+  transform: scaleX(0);
+  transform-origin: left;
+  transition: transform 180ms cubic-bezier(0.23, 1, 0.32, 1);
+}
+
+.nav-link:hover::after,
+.nav-link:focus-visible::after,
+.nav-icon:hover::after,
+.nav-icon:focus-visible::after {
+  transform: scaleX(1);
+}
+
 .nav-icon svg {
   display: block;
   width: 0.78rem;
   height: 0.78rem;
-}
-
-.nav-icon:hover {
-  opacity: 0.55;
 }
 
 .interest {
@@ -153,4 +159,61 @@ body {
 .interest:hover {
   background: #fff;
   color: #000;
+}
+
+.bottombar {
+  position: fixed;
+  left: 0;
+  right: 0;
+  bottom: 0.38rem;
+  z-index: 2;
+  height: 1.1rem;
+  overflow: hidden;
+  pointer-events: none;
+}
+
+.marquee {
+  display: flex;
+  width: max-content;
+  will-change: transform;
+  animation-name: marquee;
+  animation-timing-function: linear;
+  animation-iteration-count: infinite;
+}
+
+.marquee-track {
+  display: flex;
+  flex-shrink: 0;
+  align-items: center;
+  gap: 1.4em;
+  padding-right: 1.4em;
+  font-family: var(--font-michroma), ui-sans-serif, system-ui, sans-serif;
+  font-size: 0.52rem;
+  font-weight: 400;
+  letter-spacing: 0.14em;
+  line-height: 1.1rem;
+  white-space: nowrap;
+  text-transform: uppercase;
+  color: #f3ece6;
+  -webkit-text-stroke: 0.16em currentColor;
+  paint-order: stroke fill;
+}
+
+.marquee-word {
+  flex-shrink: 0;
+}
+
+@keyframes marquee {
+  from {
+    transform: translateX(0);
+  }
+  to {
+    transform: translateX(-50%);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .marquee {
+    animation: none;
+  }
 }
