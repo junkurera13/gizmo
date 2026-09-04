@@ -20,9 +20,9 @@ both the WebSocket and native app. H2's microphone wire mismatch is now fixed an
 verified at the WebSocket boundary. H3 now captures a real Mac-camera JPEG on PTT
 and sends it through the shared brain. Native verification reached the Gemini
 adapter's SDK boundary with a local receiver; no cloud vision result is claimed.
-H3's camera checkpoint was reviewed, and body handoff checkpoint 1 now passes.
-H4–H8, the reference client's real-I/O checkpoint 2, and firmware remain open.
-No deployment has been made.
+H3's camera checkpoint was reviewed, and body handoff checkpoints 1 and 2 now
+pass. H4–H8 still require physical integration or selected hardware, and firmware
+remains open. No deployment has been made.
 
 **Body handoff checkpoint 1, September 4:** protocol v1 is now explicit in
 `/health`, `hello`, and the `X-Gizmo-Protocol` request header. Health advertises
@@ -46,6 +46,34 @@ code `1002`. The first rejection attempt exposed a pre-accept HTTP 403; the hand
 was corrected and the same checkpoint passed. Null providers prevented model and
 media calls. No test suite or test file was added. Evidence:
 [checkpoint-1 result](/Users/jun/gizmo/data/hardware-audit/2026-09-04/reference-client/checkpoint-1.json).
+
+**Body handoff checkpoint 2, September 4:** the reference client now uses the
+bundled FFmpeg binary for real Mac microphone and camera input and AudioToolbox
+speaker output. PTT starts 24 kHz PCM16 mono capture and one warmed-up camera
+snapshot. Camera output is re-encoded under the protocol's 640 × 480 / 128 KiB
+ceiling. The speaker has a 96,000-byte application queue and drops new chunks at
+the bound. A disconnect cancels stale camera and speaker work but leaves an active
+microphone hold running into a first-word-preserving ten-second local PCM buffer.
+The replacement socket sends a fresh PTT-down edge before replaying that buffer;
+it never sends a cold-boot power event on reconnect.
+
+Glass-media fetching is same-origin and repeats the bearer token, device id and
+protocol version. It requests explicit panel dimensions and fps, validates the
+returned JPEG or finite MJPEG metadata/frame count, and writes only to a private
+temporary cache capped at 2 MiB by default. Width and height default to zero, so
+media fetching remains disabled until a provisional profile is supplied; 320 ×
+240 at 12 fps was used only for this checkpoint and is not a selected screen.
+
+One focused run used a local authenticated stub brain and deliberately closed the
+first WebSocket during a real hold. The reference opened a second authenticated
+socket, sent PTT down first, replayed 11,264 locally buffered PCM bytes, then
+continued live audio. A real 640 × 480, 15,533-byte Mac-camera JPEG followed on
+that reconnected hold before release. The client authenticated and validated a
+320 × 240 still plus a two-frame 12 fps MJPEG, accepted 4,800 response PCM bytes
+through the real speaker adapter with no queue drop, and handled interruption.
+No raw room audio or camera image was saved, no provider was called, and no test
+file or test suite was added. Evidence:
+[checkpoint-2 result](/Users/jun/gizmo/data/hardware-audit/2026-09-04/reference-client/checkpoint-2.json).
 
 The PTT fix tracks the connection owning a hold, rejects audio/releases from
 other connections, and clears an abandoned hold on owner disconnect. It closes
@@ -135,8 +163,8 @@ and [native checkpoint preview](/Users/jun/gizmo/data/hardware-audit/2026-09-04/
 | **H3 — fixed locally: real PTT camera capture** | [CameraFeed](/Users/jun/gizmo/simulator/Sources/GizmoSimulator/CameraFeed.swift:37) captures a bounded JPEG and stops. [The native PTT flow](/Users/jun/gizmo/simulator/Sources/GizmoSimulator/SimulatorModel.swift:307) sends it on the hold's socket. The unused viewfinder and file-picker paths were removed. Real camera bytes reached the Gemini adapter's local SDK receiver; ownership and stale-frame checks passed. | Deploy the shared backend after review. Verify a lit book and actual vision response, then implement/measure capture with the selected sensor and board. VGA needs PSRAM; a lower capture resolution may be necessary. No physical-camera firmware or text-readability result is claimed. |
 | **H4 — P1: home and boot have no hardware asset delivery** | [SpriteStore](/Users/jun/gizmo/simulator/Sources/GizmoSimulator/SpriteStore.swift:59) reads original PNGs directly from the Mac checkout. The implemented `glass` URLs and routes cover Show; there is no equivalent state-art endpoint or firmware asset export. Body remains a README. | Export/cache panel-sized boot and home assets, with frame timing and the chime, or implement the planned shared state-frame route. Keep source drawings as authoring assets; decode one suitably sized frame at a time on the body. This needs no new character design. |
 | **H5 — P2: the preview does not constrain itself to hardware pixels or timing** | [Still request sizing](/Users/jun/gizmo/simulator/Sources/GizmoSimulator/SimulatorModel.swift:732) uses the window size times the Mac display scale, up to 2048 pixels. The last run requested 1167 × 974. The visible skin is about 1.199:1; the design target is 1.38:1; its unused metadata says 240 × 240. Native video uses the 24 fps MP4, while the board route defaults to 12 fps. | Add explicit provisional device profiles for resolution, aspect and fps, then use the selected panel profile when known. Use the board frame path in a hardware-oriented preview. Check generated labels at those actual pixels; the large Mac preview cannot establish readability or matching crop. |
-| **H6 — P1 for a resident loop without enough memory; otherwise unverified: media buffering assumes Mac resources** | [Native video](/Users/jun/gizmo/simulator/Sources/GizmoSimulator/LoopingClipView.swift:34) relies on AVPlayer and a downloaded local MP4. The alternative JPEG route exists, but has no board consumer yet. [SpeakerPlayback](/Users/jun/gizmo/simulator/Sources/GizmoSimulator/SpeakerPlayback.swift:14) schedules incoming audio without an application queue bound, and server subscriber queues are unbounded. Resource measurements below show why the same strategy cannot be copied to bare on-chip SRAM. | Choose a bounded audio buffer, playback pacing/backpressure, JPEG decoder, and a measured clip cache in PSRAM or other storage. Keep network reception and button handling independent of decode/display. Do not make a low-memory board hold the whole clip in internal SRAM. |
-| **H7 — P2: sleep currently means a live Mac with a dark screen** | The [session sleep path](/Users/jun/gizmo/friend/gizmo_friend/session.py:507) closes the Gemini connection, while the body WebSocket remains available. Native PTT [requires that socket to be connected](/Users/jun/gizmo/simulator/Sources/GizmoSimulator/SimulatorModel.swift:292). Its 10-second microphone preroll is in the server, so it cannot save samples that never left an offline board. | Define the hardware sleep mode and preserve the wake press/audio locally while Wi-Fi and WSS reconnect. Distinguish a cold boot from sleep wake. A physical hard power cut also cannot guarantee the simulator's final `power:false` transmission. |
+| **H6 — reference bounds exist; board memory and playback remain unverified** | [Native video](/Users/jun/gizmo/simulator/Sources/GizmoSimulator/LoopingClipView.swift:34) still relies on AVPlayer and a downloaded local MP4. The checkpoint-2 [reference adapter](/Users/jun/gizmo/body/reference/io_macos.py:1) now caps speaker PCM at 96,000 bytes and authenticated still/MJPEG cache storage at 2 MiB. Its AudioToolbox and temporary-disk paths prove the protocol flow, not ESP32 memory or decode timing. Server subscriber queues remain unbounded. | Implement measured PCM pacing/backpressure, JPEG decode and finite-loop storage on the selected board. Keep network reception and button handling independent of decode/display. Size the profile from actual PSRAM/storage and do not copy the Mac adapters into firmware. |
+| **H7 — reference reconnect fixed; physical sleep mode remains open** | The checkpoint-2 [reference runtime](/Users/jun/gizmo/body/reference/gizmo_body.py:1) preserves up to ten seconds of microphone PCM locally while its WSS connection is absent. A replacement connection sends a fresh PTT-down edge before replay, and the focused run proved byte delivery in that order. The native simulator still models sleep as a connected Mac, and no ESP32 wake source, Wi-Fi resume time or power draw has been measured. | Port the verified edge/buffer ordering into firmware, then choose and measure the actual hardware sleep mode. Distinguish cold boot from sleep wake. A physical hard power cut cannot guarantee a final `power:false` transmission. |
 | **H8 — P2: battery, clock, and haptics are placeholders/adapters** | [Battery](/Users/jun/gizmo/simulator/Sources/GizmoSimulator/SimulatorModel.swift:60) starts at 100% and is changed by a debug method. [The clock](/Users/jun/gizmo/simulator/Sources/GizmoSimulator/HeartRowView.swift:29) uses Mac time; there is no body time/battery integration. [Haptics](/Users/jun/gizmo/simulator/Sources/GizmoSimulator/DeviceHaptics.swift:9) use Mac APIs, with no specified physical actuator/driver. | Supply real battery readings and a device time source/timezone. Export clock glyphs or use an appropriate body renderer. Treat tactile feedback as conditional on the selected hardware. Keep time and battery on home only. |
 
 Measured resource implications:
@@ -184,9 +212,9 @@ SwiftUI/AppKit themselves are Mac adapters, not libraries expected to run on the
 ESP32. The desktop conversation panel and local backend launcher are development
 tools and need no counterpart on the device.
 
-Remaining order before further emulator polish: review body reference checkpoint 1,
-finish its real-I/O/reconnect checkpoint 2, then H4/H5/H6 shared assets and constrained media
-preview. Prepare those with configurable profiles while the screen remains open.
+Remaining order before further emulator polish: review body reference checkpoint 2,
+then H4/H5/H6 shared assets and constrained media preview. Prepare those with
+configurable profiles while the screen remains open.
 Finalize H7/H8 with the actual board, power circuit and panel. Stop for review at
 each agreed implementation checkpoint; this audit does not advance SHOW.md.
 

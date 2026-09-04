@@ -39,10 +39,12 @@ images. Firmware should never have to decode a 1024×742 PNG or resize anything.
   budget. Requests include the same device authorization and `X-Gizmo-Device`
   headers as the socket. No panel setting on the server; the simulator uses the
   same show IDs and plays the audio-free MP4, which supports byte ranges.
-- **Reference client.** Checkpoint 1 now provides the Python protocol-v1 client in
-  `body/reference/`: authenticated health/hello compatibility, stable identity and
-  every physical control edge. Checkpoint 2 still owes microphone, camera, speaker,
-  glass-media and reconnect adapters before it exercises every event end to end.
+- **Reference client.** Checkpoint 2 now provides the Python protocol-v1 client in
+  `body/reference/`: authenticated health/hello compatibility, stable identity,
+  every physical control edge, real macOS microphone/camera/speaker adapters,
+  authenticated still/MJPEG fetching, bounded queues, and local wake audio replayed
+  after a fresh PTT edge on reconnect. Panel dimensions are explicit provisional
+  inputs until the screen is selected. This is an executable handoff, not firmware.
 - **One health page.** `/health` now publishes protocol v1, canonical events and media
   limits so the body can assert what it is talking to. It does not publish a panel
   size while no panel has been selected.
@@ -56,7 +58,7 @@ Anything not in this list, the body owner decides.
 | Brain | Done and deployed. Live voice, PTT, deep_think, camera, per-device memory, sleep/wake, Railway. Verified Sep 2. | Real engineering. Good. |
 | Glass | Boot splash, start card, home = one static frame + clock + hearts. Face does not react to listen / talk / think. | A voice chatbot with a picture. |
 | Show / Make | Not wired. Prompt tells him he can't make media. | The pitch ("Infinite Disney in a pocket") is not in the demo. |
-| Body | Wire contract plus checkpoint-1 laptop reference client. No firmware, board, or shell. | The software handoff is concrete; the physical body is still the gap. |
+| Body | Wire contract plus checkpoint-2 laptop reference client with bounded real I/O and reconnect. No firmware, board, or shell. | The software handoff is executable; the physical body is still the gap. |
 | Web | Hero + "Register Interest" linking to nothing. Not deployed. | No motion, no waitlist. |
 | Kids | `data/transcripts/` is empty. No kid has used him. | No evidence anyone wants this. |
 

@@ -101,9 +101,11 @@ events and accompanying event fields. Show uses `glass` with `still`, then
 the output event. The `frames` URL serves the finite JPEG sequence described in
 `docs/SHOW.md`. Media fetches use the same authorization and device-id headers.
 
-The basic protocol-v1 laptop client is in `body/reference/`. Checkpoint 1 covers
-health/hello compatibility, authenticated connection, identity and physical
-control messages. Its real microphone, camera, speaker, glass-media and reconnect
-adapters remain checkpoint 2; it is not firmware.
+The protocol-v1 laptop client is in `body/reference/`. Checkpoint 2 now exercises
+health/hello compatibility, authenticated identity and controls, real macOS
+microphone/camera/speaker adapters, authenticated still/MJPEG fetching, and a
+ten-second local wake-audio buffer across reconnect. Its panel profile remains an
+explicit provisional command-line input, and its queues and media cache are
+bounded. It is a hardware handoff reference, not firmware.
 
 No character art in this tree. No second brain. Body is a body.

@@ -42,7 +42,7 @@ body {
 .hero-line {
   margin: 0;
   font-family: var(--font-newsreader), Georgia, serif;
-  font-size: clamp(2.28rem, 4.4vw, 3.08rem);
+  font-size: clamp(2.36rem, 4.55vw, 3.18rem);
   font-weight: 500;
   font-variation-settings: "wght" 500;
   letter-spacing: -0.045em;
@@ -54,7 +54,7 @@ body {
 .site-mark {
   margin: 0 0 0.78rem;
   font-family: var(--font-michroma), ui-sans-serif, system-ui, sans-serif;
-  font-size: 0.7rem;
+  font-size: 0.8rem;
   font-weight: 400;
   letter-spacing: 0.14em;
   text-transform: uppercase;

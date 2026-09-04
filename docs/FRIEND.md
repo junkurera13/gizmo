@@ -32,8 +32,10 @@ unrelated observer disconnect does not interrupt capture.
 a panel size. Version-aware bodies send `X-Gizmo-Protocol: 1`; an explicit mismatch
 opens only long enough to close with WebSocket protocol-error code `1002`. The
 `hello` repeats the selected version. `body/reference/gizmo_body.py` is the
-checkpoint-1 authenticated laptop client for compatibility, identity and controls.
-Its real device I/O adapters are still pending.
+checkpoint-2 authenticated laptop client for compatibility, identity, controls,
+real macOS microphone/camera/speaker I/O, and authenticated still/MJPEG fetches.
+It keeps up to ten seconds of wake audio locally and sends a fresh PTT edge before
+replaying it after reconnect.
 
 Power-on and wake are silent: no greeting or response is requested until the user speaks or types. A PTT press while asleep wakes him and the same press keeps listening; Select and the rocker also wake him and do nothing else on that press. PCM captured before the cloud turn is open is buffered (up to 10 s) and replayed in order, and release waits for that opening before committing. Empty presses and local interruptions never send fabricated user turns to Gemini. The native emulator serializes PTT/audio messages and shows microphone capture or permission errors next to the conversation.
 
