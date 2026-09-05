@@ -22,9 +22,13 @@ from gizmo_friend.brain.show_budget import MotionBudget, ShowBudget
 from gizmo_friend.brain.shows import ShowStore, StoredShow
 from gizmo_friend.brain.transcripts import TranscriptStore
 from gizmo_friend.brain.visual_director import (
+    DialogueTurn,
+    MAX_CONTEXT_TEXT,
+    MAX_CONTEXT_TURNS,
     NO_MOTION_SENTINELS,
     VisualDirector,
     is_bare_animate_request,
+    opening_narration,
     visual_director_from_env,
 )
 from gizmo_friend.body_protocol import (
@@ -113,6 +117,7 @@ class GizmoSession:
         self.show_idle_s = show_idle_s
         self.current_show: StoredShow | None = None
         self.current_show_subject = ""
+        self.current_story_setting = ""
         self._show_revision = 0
         self._show_task: asyncio.Task[None] | None = None
         self._show_tasks: set[asyncio.Task[None]] = set()
@@ -121,6 +126,12 @@ class GizmoSession:
         self._director_task: asyncio.Task[None] | None = None
         self._director_tasks: set[asyncio.Task[None]] = set()
         self._directed_ask_revision = -1
+        self._visual_history: deque[DialogueTurn] = deque(maxlen=MAX_CONTEXT_TURNS)
+        self._visual_turn_open = False
+        self._visual_utterance = ""
+        self._visual_narration = ""
+        self._visual_narration_delta = ""
+        self._visual_completion = asyncio.Event()
         self._suppress_live_output = False
         self._current_clip_id: str | None = None
         self._show_idle_task: asyncio.Task[None] | None = None
@@ -201,6 +212,7 @@ class GizmoSession:
         async with self._body_input_lock:
             if self._ptt_owner is not source:
                 return
+            self._visual_turn_open = False
             self._reset_ptt()
             self._cancel_warm()
             if self._reconnect_task:
@@ -299,6 +311,8 @@ class GizmoSession:
             self._memory_context = ""
             self._memory_loaded = False
             self._resume_handle = ""
+            self._visual_history.clear()
+            self._visual_turn_open = False
             self.machine.apply("power_on")
             await self.emit({"type": "state", "reason": "switch"})
             self._boot_task = asyncio.create_task(self._boot())
@@ -310,6 +324,7 @@ class GizmoSession:
         if self.machine.state is State.POWERED_OFF:
             return
         self._cancel_visual_direction()
+        self._visual_turn_open = False
         if self._boot_task and not self._boot_task.done():
             self._boot_task.cancel()
             self._boot_task = None
@@ -370,6 +385,7 @@ class GizmoSession:
             self._cancel_pending_show()
             self._suppress_live_output = False
             self._ask_revision += 1
+            self._begin_visual_turn("")
             self._ptt_pressed = True
             self._ptt_open_task = asyncio.create_task(self._open_mic())
             return
@@ -442,7 +458,8 @@ class GizmoSession:
         self._cancel_pending_show()
         self._ask_revision += 1
         self._suppress_live_output = is_bare_animate_request(cleaned)
-        self._schedule_visual_direction(cleaned, self._ask_revision)
+        self._cancel_visual_direction()
+        self._begin_visual_turn(cleaned)
         self._record_transcript("user", cleaned)
         await self._ensure_connected()
         if self._transport:
@@ -796,6 +813,11 @@ class GizmoSession:
             if self._suppress_live_output:
                 return
             await self._start_talking()
+            if self._visual_turn_open:
+                self._visual_narration_delta = (
+                    self._visual_narration_delta + event.text
+                )[:MAX_CONTEXT_TEXT]
+                self._direct_opening_narration()
             await self.emit({"type": "transcript_delta", "text": event.text})
             return
         if kind == "transcript":
@@ -803,15 +825,28 @@ class GizmoSession:
                 return
             await self._start_talking(announce=False)
             self._record_transcript("assistant", event.text)
+            if self._visual_turn_open:
+                self._visual_narration = (
+                    self._visual_narration + " " + event.text
+                ).strip()[:MAX_CONTEXT_TEXT]
+                self._visual_narration_delta = ""
+                self._direct_opening_narration()
             await self.emit({"type": "transcript", "role": "gizmo", "text": event.text})
             return
         if kind == "user_transcript":
             self._record_transcript("user", event.text)
+            if self._visual_turn_open:
+                self._visual_utterance = event.text.strip()[:MAX_CONTEXT_TEXT]
             if is_bare_animate_request(event.text):
                 self._suppress_live_output = True
                 if self._transport:
                     await self._transport.interrupt()
-            self._schedule_visual_direction(event.text, self._ask_revision)
+            if self._visual_turn_open and is_bare_animate_request(event.text):
+                self._schedule_visual_direction(event.text, self._ask_revision)
+            elif self._visual_turn_open:
+                # Live may finalize microphone transcription after the opening
+                # sentence has already streamed. Use both when they are available.
+                self._direct_opening_narration()
             await self.emit({"type": "transcript", "role": "user", "text": event.text})
             return
         if kind == "function_call":
@@ -827,8 +862,13 @@ class GizmoSession:
             return
         if kind in {"done", "cancelled"}:
             self.mouth.mark_idle()
-            if kind == "done":
+            if kind == "done" and not (self._ptt_pressed or self._ptt_active):
                 self._flush_transcript_turns()
+                self._finish_visual_turn()
+            elif kind == "cancelled" and not (self._ptt_pressed or self._ptt_active):
+                self._visual_turn_open = False
+                self._cancel_visual_direction()
+                self._cancel_pending_show()
             if kind == "done" and event.text:
                 await self.emit({"type": "transcript", "role": "gizmo", "text": event.text})
             if self.machine.state is State.TALKING and self.machine.can("done"):
@@ -853,6 +893,47 @@ class GizmoSession:
             self._director_task.cancel()
         self._director_task = None
 
+    def _begin_visual_turn(self, utterance: str) -> None:
+        self._visual_turn_open = True
+        self._visual_utterance = utterance[:MAX_CONTEXT_TEXT]
+        self._visual_narration = ""
+        self._visual_narration_delta = ""
+        self._visual_completion = asyncio.Event()
+        # This request intentionally has no narration. Keep its existing
+        # immediate, silent path rather than waiting for suppressed Live output.
+        if is_bare_animate_request(utterance):
+            self._schedule_visual_direction(utterance, self._ask_revision)
+
+    def _direct_opening_narration(self) -> None:
+        if not self._visual_utterance or self._suppress_live_output:
+            return
+        opening = opening_narration(
+            (self._visual_narration + " " + self._visual_narration_delta).strip()
+        )
+        if opening:
+            self._schedule_visual_direction(
+                self._visual_utterance, self._ask_revision, narration=opening
+            )
+
+    def _finish_visual_turn(self) -> None:
+        if not self._visual_turn_open:
+            return
+        self._visual_turn_open = False
+        self._visual_completion.set()
+        if not self._visual_utterance:
+            return
+        narration = self._visual_narration
+        # Short replies without an opening-sentence boundary direct here.
+        # Missing narration must not conjure an invented chapter.
+        if narration and not self._suppress_live_output:
+            self._schedule_visual_direction(
+                self._visual_utterance, self._ask_revision, narration=narration,
+                narration_complete=True,
+            )
+            self._visual_history.append(
+                DialogueTurn(self._visual_utterance, narration).bounded()
+            )
+
     def _cancel_pending_show(self) -> None:
         """A new turn supersedes a still that has not reached the glass yet."""
         task = self._show_task
@@ -863,7 +944,10 @@ class GizmoSession:
             task.cancel()
         self._show_task = None
 
-    def _schedule_visual_direction(self, utterance: str, ask_revision: int) -> None:
+    def _schedule_visual_direction(
+        self, utterance: str, ask_revision: int, *, narration: str = "",
+        narration_complete: bool = False,
+    ) -> None:
         cleaned = utterance.strip()
         if (
             not cleaned
@@ -876,6 +960,9 @@ class GizmoSession:
         self._cancel_visual_direction()
         has_visual = self.current_show is not None
         current_subject = self.current_show_subject if has_visual else ""
+        current_story_setting = self.current_story_setting if has_visual else ""
+        recent_dialogue = tuple(self._visual_history)
+        completion = self._visual_completion
 
         async def direct() -> None:
             try:
@@ -883,7 +970,27 @@ class GizmoSession:
                     cleaned,
                     has_visual=has_visual,
                     current_subject=current_subject,
+                    narration=narration,
+                    recent_dialogue=recent_dialogue,
+                    narration_complete=narration_complete,
+                    current_story_setting=current_story_setting,
                 )
+                if decision.follow_narration and not narration_complete:
+                    # A provisional words-only story decision may inspect the
+                    # finished chapter once. No media has been requested yet.
+                    async with asyncio.timeout(35):
+                        await completion.wait()
+                    if ask_revision != self._ask_revision or not self._visual_narration:
+                        return
+                    decision = await self.visual_director.decide(
+                        cleaned,
+                        has_visual=self.current_show is not None,
+                        current_subject=self.current_show_subject if self.current_show else "",
+                        narration=self._visual_narration,
+                        recent_dialogue=recent_dialogue,
+                        narration_complete=True,
+                        current_story_setting=self.current_story_setting if self.current_show else "",
+                    )
                 if (
                     ask_revision != self._ask_revision
                     or self._closing
@@ -894,6 +1001,8 @@ class GizmoSession:
                     await self._animate({"motion": decision.motion})
                 elif decision.route in {"still", "motion"}:
                     arguments: dict[str, Any] = {"subject": decision.subject}
+                    arguments["story_setting"] = decision.story_setting
+                    arguments["kind"] = decision.kind
                     if decision.route == "motion":
                         arguments["motion"] = decision.motion
                     await self._show(arguments)
@@ -928,6 +1037,7 @@ class GizmoSession:
         was_visible = self.current_show is not None
         self.current_show = None
         self.current_show_subject = ""
+        self.current_story_setting = ""
         self._current_clip_id = None
         if was_visible:
             clear_pending_image = getattr(self._transport, "clear_pending_image", None)
@@ -965,7 +1075,8 @@ class GizmoSession:
             return
 
     async def _conjure_show(
-        self, subject: str, motion: str | None, revision: int, session_id: str
+        self, subject: str, motion: str | None, revision: int, session_id: str,
+        story_setting: str = "", kind: str = "scene",
     ) -> None:
         def current() -> bool:
             return (
@@ -976,7 +1087,7 @@ class GizmoSession:
             )
 
         try:
-            still = await self.images.conjure(subject)
+            still = await self.images.conjure(subject, kind=kind)
             if still is None or not current():
                 return
             stored = await asyncio.to_thread(
@@ -990,6 +1101,7 @@ class GizmoSession:
                 self._show_task = None
             self.current_show = stored
             self.current_show_subject = subject
+            self.current_story_setting = story_setting
             self._current_clip_id = None
             self._show_visible_at = asyncio.get_running_loop().time()
             await self.emit(self.show_event())
@@ -1047,7 +1159,15 @@ class GizmoSession:
             return {"ok": False, "reason": "quiet day"}
         if revision != self._show_revision or not self._ready_for_input() or self._closing:
             return {"ok": False, "reason": "cancelled"}
-        task = asyncio.create_task(self._conjure_show(subject, motion, revision, session_id))
+        story_setting = arguments.get("story_setting", "")
+        story_setting = story_setting[:100] if isinstance(story_setting, str) else ""
+        kind = arguments.get("kind", "scene")
+        kind = kind if kind in {"scene", "diagram"} else "scene"
+        if story_setting:
+            kind = "scene"
+        task = asyncio.create_task(
+            self._conjure_show(subject, motion, revision, session_id, story_setting, kind)
+        )
         self._show_task = task
         self._show_tasks.add(task)
         task.add_done_callback(self._show_tasks.discard)

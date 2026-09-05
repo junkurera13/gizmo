@@ -53,8 +53,8 @@ The server keeps one `GizmoSession` per device. A body identifies itself with th
 - input/output final transcripts
 - audio-only PTT ownership and ordering; camera input remains unwired until See
   has a separate explicit interaction
-- one structured visual decision per final user utterance, with stale decisions
-  cancelled when a newer ask arrives
+- one applied visual choice per ask, grounded in its opening narration and
+  recent dialogue, with stale decisions cancelled when a newer ask arrives
 - Show still/clip generation, persistent budgets, dismissal, and staging the
   displayed still back into Live for visual follow-ups
 - tool validation and execution
@@ -95,7 +95,13 @@ Only two custom functions are exposed to Gemini Live in V1:
 
 Google Search is configured as Gemini's native tool beside these functions. There is no custom search service.
 
-Visual routing is deliberately outside Live. `GeminiVisualDirector` receives the final user utterance plus whether a Show is already on the glass and returns a temperature-zero structured `words`, `still`, `motion`, or `animate` decision. It has a four-second local deadline, no retries, and degrades to words on any invalid or unavailable result, so a routing failure cannot spend media. New asks cancel stale decisions. Live keeps speaking naturally and cannot call `show` or `animate` itself; a bare “make it move” is locally silenced while the director animates the existing still.
+Visual routing is deliberately outside Live. `GeminiVisualDirector` receives the user utterance, the current picture's subject, the opening narration, and up to eight completed dialogue turns. It returns a temperature-zero structured `words`, `still`, `motion`, or `animate` decision. It has a four-second local deadline, no retries, and degrades to words on any invalid or unavailable result, so a routing failure cannot spend media. New asks cancel stale decisions. Live keeps speaking naturally and cannot call `show` or `animate` itself; a bare “make it move” is locally silenced while the director animates the existing still.
+
+The director starts once a meaningful complete opening sentence is available in the streamed transcript and the user's utterance is known. Short answers fall back to turn completion. There is at most one applied visual choice per ask, and missing narration does not invent a scene. A provisional words-only story decision can request one follow-up after the chapter completes (bounded to a 35-second wait); the follow-up receives the full narration and cannot recurse. This adds at most one director call and no duplicate media generation. Live establishes the chapter's setting in its first sentence; the director follows that setting rather than writing its own story. Each installed story picture also has a broad setting key (such as "castle"). The director copies that key while the setting is unchanged; the controller normalizes redundant still/motion requests for the same key to words unless an explicit redraw/new story was requested. Same-setting continuations and emotional edits preserve the picture; an actual move to a different setting can create a new scene. The director also chooses whether the picture is a `scene` or a `diagram`. Stories are always scenes: a lived-in place with no labels. Maps, anatomy, and named parts may be diagrams with sparse labels.
+
+The session retains the completed dialogue separately from the transcript store's flush queue: at most eight turns, with 2,000 characters per utterance/narration. This temporary context survives sleep/reconnect within the same session and clears on cold boot. It is not a new persistent memory system or a guarantee for arbitrarily long stories. Cancelled chapters are not appended as completed history. Each director call captures an immutable history snapshot. Full prior narration becomes available to the next decision even though this turn's visual starts from its opening. If the opening already requested a visual, a later change does not trigger a second generation; the one-setting-per-chapter voice instruction is therefore part of this v0 contract. If the opening stayed words and requested follow-up, the completed chapter can establish a new scene.
+
+The opt-in `friend/checkpoints/story_continuity.py` exercises real Gemini voice and direction with explicitly injected saved-media providers and no persistent memory. It saves synthetic story transcripts, generated speech, route decisions, and event timings under `data/show-checkpoints/`. It makes no image or video generation calls. See `docs/STORY.md` for the checkpoint scope.
 
 For `still` and `motion`, the image provider generates and stores the first frame before any optional clip work starts. Explicit no-motion sentinels are normalized to a still. Motion uses H3 Max on fal only when `FAL_KEY` is present and remains behind persistent device/global budgets. A finished still is staged back into Live as the next visual frame and cleared on dismissal, so follow-up speech can refer to what is actually on the glass.
 

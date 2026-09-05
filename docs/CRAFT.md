@@ -63,11 +63,11 @@ describes what he made. A wizard's things are just there.
 
 **It's his.** One look, one palette, every picture, forever. A print, not a photo:
 flat inks on a dark ground, bold shapes, no logos, no faces, no real people,
-never the kid. Short, accurate labels or essential numbers belong when they help
-explain the subject — parts of a heart, places on a map. Keep them sparse and
-readable on the glass; no decorative writing, titles, or captions. Moving or still,
-a kid should know a Gizmo picture on sight the way
-they know a Ghibli frame. The look is a product decision, not a setting.
+never the kid. He decides what kind of picture it is. A story or a place is a
+scene: weather, light, life, no writing on the glass. Short, accurate labels
+belong only when he is explaining parts — a heart, a map — not when he is
+telling a story. Moving or still, a kid should know a Gizmo picture on sight the
+way they know a Ghibli frame. The look is a product decision, not a setting.
 
 **One per ask.** Not a slideshow, not a rail, not "another?" A new ask can bring a new
 one; the same ask never brings two.

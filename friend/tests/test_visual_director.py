@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import unittest
 
+from gizmo_friend.brain.images import SCENE_ADDENDUM, DIAGRAM_ADDENDUM, still_instruction
 from gizmo_friend.brain.visual_director import (
     VisualDecision,
     decision_from_payload,
@@ -41,6 +42,28 @@ class VisualDecisionTests(unittest.TestCase):
             self.assertTrue(is_bare_animate_request(utterance))
         for utterance in ("Make it move and explain why.", "Can it move?", "Move it to the left"):
             self.assertFalse(is_bare_animate_request(utterance))
+
+    def test_stories_are_scenes_even_if_the_model_asks_for_a_diagram(self):
+        payload = {
+            "route": "motion", "subject": "submarine on the ocean floor",
+            "motion": "bubbles rise", "story_setting": "ocean floor", "kind": "diagram",
+        }
+        self.assertEqual(decision_from_payload(payload, has_visual=False).kind, "scene")
+        payload = {
+            "route": "still", "subject": "heart chambers", "motion": "",
+            "story_setting": "", "kind": "diagram",
+        }
+        self.assertEqual(decision_from_payload(payload, has_visual=False).kind, "diagram")
+        payload["kind"] = "scene"
+        self.assertEqual(decision_from_payload(payload, has_visual=False).kind, "scene")
+
+    def test_scene_instructions_forbid_text_and_diagrams_allow_labels(self):
+        scene = still_instruction("scene")
+        diagram = still_instruction("diagram")
+        self.assertIn(SCENE_ADDENDUM, scene)
+        self.assertNotIn(DIAGRAM_ADDENDUM, scene)
+        self.assertIn(DIAGRAM_ADDENDUM, diagram)
+        self.assertNotIn(SCENE_ADDENDUM, diagram)
 
     def test_live_voice_cannot_make_a_competing_visual_choice(self):
         config = live_config("test")

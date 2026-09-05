@@ -1,0 +1,149 @@
+"""Opt-in live story check with two fresh scenes. Spends image and clip credits.
+
+Run from the repository: .venv/bin/python friend/checkpoints/story_scenes.py
+Generated stills, clips, speech, and transcripts are saved in data/show-checkpoints/.
+"""
+from __future__ import annotations
+
+import json
+import os
+from pathlib import Path
+import sys
+import tempfile
+from datetime import UTC, datetime
+
+from dotenv import load_dotenv
+
+from gizmo_friend.brain.clips import ClipProvider, clip_provider_from_env
+from gizmo_friend.brain.images import ImageProvider, image_provider_from_env
+from gizmo_friend.brain.memory import NullMemoryProvider
+from gizmo_friend.brain.reasoning import NullReasoningProvider
+from gizmo_friend.session import GizmoSession
+from gizmo_friend.states import State
+
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+from story_continuity import RecordingDirector, ROOT, run_turn
+
+
+PROMPTS = [
+    "Tell me a short story about Copper, a clockwork fox with one brass ear, who lives in a castle and is afraid of dragons. Begin in the castle and stay there for this chapter.",
+    "Actually, Copper is afraid of bells, and the dragon is afraid of Copper. Keep them in the castle.",
+    "They should escape together in a submarine. Take Copper and the dragon all the way down to the ocean floor in this chapter. Start already on the ocean floor.",
+]
+
+
+class RecordingImages(ImageProvider):
+    def __init__(self, inner, output: Path):
+        self.inner = inner
+        self.output = output
+        self.calls = []
+
+    async def conjure(self, subject, *, kind="scene"):
+        still = await self.inner.conjure(subject, kind=kind)
+        record = {"subject": subject, "kind": kind, "ok": still is not None}
+        if still is not None:
+            path = self.output / f"still-{len(self.calls) + 1}.jpg"
+            path.write_bytes(still.jpeg)
+            record.update(
+                path=str(path),
+                latency_seconds=round(still.latency_seconds, 3),
+                model=still.model,
+                width=still.width,
+                height=still.height,
+            )
+        self.calls.append(record)
+        return still
+
+    async def close(self):
+        await self.inner.close()
+
+
+class RecordingClips(ClipProvider):
+    def __init__(self, inner, output: Path):
+        self.inner = inner
+        self.output = output
+        self.calls = []
+
+    async def animate(self, still, motion):
+        clip = await self.inner.animate(still, motion)
+        record = {"motion": motion, "ok": clip is not None}
+        if clip is not None:
+            path = self.output / f"clip-{len(self.calls) + 1}.mp4"
+            path.write_bytes(clip.mp4)
+            record.update(
+                path=str(path),
+                latency_seconds=round(clip.latency_seconds, 3),
+                model=clip.model,
+                request_id=clip.request_id,
+            )
+        self.calls.append(record)
+        return clip
+
+    async def close(self):
+        await self.inner.close()
+
+
+def _glass_timing(events):
+    still_at = next((event["seconds"] for event in events if event.get("type") == "glass" and event.get("still") and not event.get("clip")), None)
+    clip_at = next((event["seconds"] for event in events if event.get("type") == "glass" and event.get("clip")), None)
+    listening_at = next((event["seconds"] for event in events if event.get("type") == "state" and event.get("state") == "listening"), None)
+    return {
+        "still_seconds": still_at,
+        "clip_seconds": clip_at,
+        "listening_seconds": listening_at,
+        "still_during_speech": bool(still_at is not None and listening_at is not None and still_at < listening_at),
+        "clip_during_speech": bool(clip_at is not None and listening_at is not None and clip_at < listening_at),
+    }
+
+
+async def main():
+    load_dotenv(ROOT / ".env")
+    output = ROOT / "data/show-checkpoints" / datetime.now(UTC).strftime("%Y-%m-%d-story-scenes-%H%M%S")
+    output.mkdir(parents=True)
+    images = RecordingImages(image_provider_from_env(os.environ["GEMINI_API_KEY"]), output)
+    clips = RecordingClips(clip_provider_from_env(), output)
+    director = RecordingDirector(os.environ["GEMINI_API_KEY"])
+    result = {
+        "media": "fresh Gemini stills and fal clips; inspect files before claiming character consistency",
+        "turns": [],
+    }
+    with tempfile.TemporaryDirectory() as temporary:
+        friend = GizmoSession(
+            Path(temporary), user_id="story-scenes-checkpoint",
+            gemini_key=os.environ["GEMINI_API_KEY"],
+            memory_provider=NullMemoryProvider(), reasoning_provider=NullReasoningProvider(),
+            image_provider=images, clip_provider=clips, visual_director=director,
+            idle_sleep_s=0, show_idle_s=0,
+        )
+        friend.machine.state = State.LISTENING
+        friend._touch()
+        queue = friend.subscribe()
+        try:
+            await friend._ensure_connected()
+            for number, prompt in enumerate(PROMPTS, 1):
+                turn = await run_turn(
+                    friend, queue, director, images, clips, prompt, output, number,
+                    timeout_s=90,
+                )
+                turn["glass"] = _glass_timing(turn["events"])
+                result["turns"].append(turn)
+                result["image_generation_requests"] = len(images.calls)
+                result["video_generation_requests"] = len(clips.calls)
+                (output / "results.json").write_text(json.dumps(result, indent=2) + "\n")
+                print(json.dumps({
+                    "turn": number,
+                    "narration": turn["narration"],
+                    "director": [call["decision"] for call in turn["director"]],
+                    "images": turn["images"],
+                    "clips": turn["clips"],
+                    "same_show": turn["same_show"],
+                    "glass": turn["glass"],
+                }), flush=True)
+        finally:
+            await friend.close()
+            print(f"Evidence: {output}", flush=True)
+
+
+if __name__ == "__main__":
+    import asyncio
+    asyncio.run(main())

@@ -39,10 +39,12 @@ def sample_still() -> ConjuredStill:
 class ControlledImages(ImageProvider):
     def __init__(self):
         self.calls = []
+        self.kinds = []
 
-    async def conjure(self, subject):
+    async def conjure(self, subject, *, kind="scene"):
         future = asyncio.get_running_loop().create_future()
         self.calls.append((subject, future))
+        self.kinds.append(kind)
         return await future
 
     async def close(self):
@@ -134,9 +136,13 @@ class FixedDirector:
     def __init__(self, decision):
         self.decision = decision
         self.calls = []
+        self.contexts = []
 
-    async def decide(self, utterance, *, has_visual, current_subject=""):
+    async def decide(self, utterance, *, has_visual, current_subject="",
+                     narration="", recent_dialogue=(), narration_complete=True,
+                     current_story_setting=""):
         self.calls.append((utterance, has_visual, current_subject))
+        self.contexts.append((narration, recent_dialogue))
         return self.decision
 
     async def close(self):
@@ -147,7 +153,9 @@ class ControlledDirector:
     def __init__(self):
         self.calls = []
 
-    async def decide(self, utterance, *, has_visual, current_subject=""):
+    async def decide(self, utterance, *, has_visual, current_subject="",
+                     narration="", recent_dialogue=(), narration_complete=True,
+                     current_story_setting=""):
         future = asyncio.get_running_loop().create_future()
         self.calls.append((utterance, has_visual, current_subject, future))
         return await future
@@ -218,6 +226,8 @@ class MotionSessionTests(ShowSessionFixture):
         director = FixedDirector(VisualDecision(route="still", subject="Silk Road map"))
         self.friend.visual_director = director
         await self.friend.handle(TextLine(text="Where was the Silk Road?"))
+        await self.friend._on_transport(TransportEvent(kind="transcript", text="Routes connected Asia and Europe."))
+        await self.friend._on_transport(TransportEvent(kind="done"))
         await self.images.wait_for_calls(1)
         await self.finish_show()
         await asyncio.wait_for(asyncio.shield(self.friend._director_task), 1)
@@ -247,8 +257,12 @@ class MotionSessionTests(ShowSessionFixture):
         director = ControlledDirector()
         self.friend.visual_director = director
         await self.friend.handle(TextLine(text="What did a castle look like?"))
+        await self.friend._on_transport(TransportEvent(kind="transcript", text="A stone castle with towers."))
+        await self.friend._on_transport(TransportEvent(kind="done"))
         await director.wait_for_calls(1)
         await self.friend.handle(TextLine(text="Where was the Silk Road?"))
+        await self.friend._on_transport(TransportEvent(kind="transcript", text="Routes connected Asia and Europe."))
+        await self.friend._on_transport(TransportEvent(kind="done"))
         await director.wait_for_calls(2)
         self.assertTrue(director.calls[0][3].cancelled())
         director.finish(1, VisualDecision(route="still", subject="Silk Road map"))
@@ -297,9 +311,12 @@ class MotionSessionTests(ShowSessionFixture):
         director = FixedDirector(VisualDecision(route="still", subject="heart diagram"))
         self.friend.visual_director = director
         self.friend._ask_revision += 1
+        self.friend._begin_visual_turn("")
         await self.friend._on_transport(
             TransportEvent(kind="user_transcript", text="What are the heart chambers?")
         )
+        await self.friend._on_transport(TransportEvent(kind="transcript", text="Two atria and two ventricles."))
+        await self.friend._on_transport(TransportEvent(kind="done"))
         await self.images.wait_for_calls(1)
         await self.finish_show()
         self.assertEqual(director.calls, [("What are the heart chambers?", False, "")])

@@ -1,5 +1,10 @@
 # Show — build plan
 
+**Current story checkpoint (Sep 5):** `docs/STORY.md` describes narration-grounded
+scene continuity. The director now reads an opening sentence and recent completed
+dialogue, not only the latest ask. The numbered plan below preserves the original
+Show implementation history; current runtime architecture is in `docs/FRIEND.md`.
+
 The first real spell. A kid asks something that seeing answers better than telling, and
 while he talks, a picture he made appears on the glass — and if it's the kind of thing
 that moves, it moves. Then his face again.
@@ -18,9 +23,9 @@ whichever one is wrong, not the code.
 
 **V1 checkpoint update (Sep 3, Jun):** generation time is measured, not a pass/fail
 requirement. The timings below describe the intended beat, not a speed gate for V1.
-Short, accurate labels or essential numbers are welcome when they help explain the
-subject, such as in a biology diagram or map. Text is judged for usefulness and
-readability on the glass; its presence alone is not a failure.
+Short, accurate labels belong on diagrams and maps, never on a story scene.
+Text on a diagram is judged for usefulness and readability on the glass; its
+presence alone is not a failure.
 
 ## The beat, from the kid's side
 
@@ -174,10 +179,9 @@ A fixed prefix the model never sees or changes, applied to every subject. Propos
 
 > Flat-color print illustration, like a risograph or screenprint: two or three spot inks
 > on a dark ground, bold simple shapes, visible paper grain, no gradients, no photoreal
-> rendering, no logos, no human faces, no children. Short, accurate labels or essential
-> numbers only when they help explain the subject; sparse and readable on a small
-> screen. No decorative writing, titles, or captions. One subject, centered, filling
-> the frame. Landscape.
+> rendering, no logos, no human faces, no children. Labels only on diagrams and maps;
+> story scenes have no text. No decorative writing, titles, or captions. One subject,
+> centered, filling the frame. Landscape.
 
 Dark ground on purpose: the glass is black and sits in a bezel. A white paper still
 flashes; a dark one feels like the glass itself changed. Whether the inks are his coat
