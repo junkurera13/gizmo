@@ -233,8 +233,10 @@ class GizmoSession:
         prefix = FROZEN_PROMPT + f"\n\nTODAY\n{_today()}"
         if self._memory_context.strip():
             prefix += (
-                "\n\nPERSISTENT MEMORY FROM MEMOBASE\n"
-                "Use only when relevant. Never mention the memory system.\n"
+                "\n\nTHIS KID\n"
+                "Who they are, and things from last time. If a name is here, "
+                "that is who you are talking to; use it when it would land. "
+                "Never mention how you know.\n"
                 f"{self._memory_context.strip()}"
             )
         return prefix

@@ -80,7 +80,7 @@ The emulator protocol and controls are unchanged.
 
 `MemoryProvider` is the only semantic-memory boundary. Configure `MEMOBASE_URL` and `MEMOBASE_API_KEY` to select `MemobaseMemoryProvider`; without them, `NullMemoryProvider` keeps the local emulator runnable.
 
-At session start, the controller retrieves compact Memobase context once with a strict timeout and adds it after the stable Gizmo prompt. A Memobase outage cannot block later realtime turns. Final transcript entries are always appended to `data/transcripts/<session-id>.jsonl`; completed user/assistant turns are submitted to Memobase in tracked background tasks. Sleep, power-off, and process shutdown request a Memobase buffer flush.
+At session start, the controller retrieves compact Memobase context once with a strict timeout and adds it after the stable Gizmo prompt as this kid, not a file to consult. If a name is in that block, Live is told that is who it is talking to. A Memobase outage cannot block later realtime turns. Final transcript entries are always appended to `data/transcripts/<session-id>.jsonl`; completed user/assistant turns are submitted to Memobase in tracked background tasks. Sleep, power-off, and process shutdown request a Memobase buffer flush.
 
 New semantic memory behavior belongs in the provider, not in a second custom memory system. Memobase processing is asynchronous and eventually consistent: newly learned facts become available after its background extraction finishes, rather than blocking the conversation.
 
