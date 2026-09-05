@@ -29,8 +29,6 @@
         <key>NSAllowsLocalNetworking</key>
         <true/>
     </dict>
-    <key>NSCameraUsageDescription</key>
-    <string>Gizmo Simulator uses the Mac camera to emulate the device's world camera.</string>
     <key>NSHighResolutionCapable</key>
     <true/>
     <key>NSMicrophoneUsageDescription</key>

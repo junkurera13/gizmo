@@ -17,7 +17,7 @@ not any provider API key.
 
 The current wire version is **1**. Before opening the socket, read `/health` and
 require `body_protocol.version == 1`. That response also publishes the canonical
-events, audio format, camera ceiling, and Show-frame route limits. It intentionally
+events, audio format, the reserved visual-frame ceiling, and Show-frame route limits. It intentionally
 does not claim a panel size: no screen has been selected. Send
 `X-Gizmo-Protocol: 1` on the WebSocket handshake. An explicit unsupported version
 is closed with WebSocket code `1002`; clients from before this version header was
@@ -29,7 +29,7 @@ introduced may temporarily omit it.
 | `ptt` | Pink side button down / up | Down: listen (wakes him if asleep). Up: answer. No tap gesture; sleep is idle-only |
 | `select` | Circular Select button | Select the focused item or interrupt output; wakes him if asleep; never opens the camera |
 | `navigate` | Up/down rocker | Move the device UI selection up or down; wakes him if asleep |
-| `frame` | One camera JPEG, base64 in `image`, during PTT | Visual context for that hold; same owning socket as audio |
+| `frame` | Reserved visual JPEG, base64 in `image` | Not emitted by either current body client; future See input needs its own interaction contract |
 | `audio` | PCM in `pcm` while PTT is down | Realtime microphone input; `mic` is an accepted compatibility alias |
 | `audio` (brain → body) | PCM in `pcm` | Realtime speaker output; there is no `speaker` wire event |
 
@@ -53,30 +53,18 @@ In use, stream captured PCM chunks between press and release. Preserve that orde
 and do not wait for the server's `ptt:true` acknowledgement before sending PCM;
 the server buffers incoming audio while opening the voice turn. That buffer does
 not cover a disconnected body: wake/reconnect audio needs a local firmware buffer.
-Only the connection owning the hold may send its audio, camera frame or release.
-Audio and frames sent outside a hold or from another socket are ignored, for
-both audio input names.
+Only the connection owning the hold may send its audio or release. Audio sent
+outside a hold or from another socket is ignored, for both audio input names.
 If the owning socket disconnects, the backend drops that hold without committing
 it. Reconnect and report a fresh physical press for the next turn.
 
-Camera policy for this v1: start one snapshot on PTT down, alongside the microphone.
-Send it as `{"type":"frame","image":"<base64 JPEG>"}` between press and release,
-as soon as it is ready. Do not delay audio for the camera. Preserve the full camera
-aspect; the provisional capture ceiling is **640 × 480 pixels and 128 KiB of JPEG**,
-independent of the undecided screen. The server enforces the byte ceiling and
-valid base64, and acknowledges accepted frames with a `frame` event containing
-`bytes`. That acknowledgement means the brain received the frame, not that a
-model has understood it.
-
-Stop capture after the snapshot, or on release, disconnect, shutdown or failure.
-The native adapter gives an authorized camera five seconds to deliver a frame,
-including a brief exposure warm-up. A dark scene remains valid input.
-If release wins, discard the unfinished capture; never send it in the next hold.
-A failed/unavailable camera leaves voice usable, and a silent hold discards its
-unconsumed snapshot. The face stays on glass; no viewfinder is part of this flow.
-Aim before pressing. Book-text readability and the eventual sensor/PSRAM budget
-still require a real device check. Firmware should capture JPEG directly into a
-bounded buffer; the Mac's BGRA-to-JPEG conversion is only its camera adapter.
+Camera policy for this v1: **PTT is audio-only.** Neither the native simulator nor
+the laptop reference client activates a camera or sends `frame` when the pink
+button is pressed. The server still recognizes a bounded `frame` event as dormant
+protocol capability, but current clients do not emit it. Before See is connected,
+its entry/exit control, viewfinder behavior, ownership, privacy feedback, and the
+event's relationship to voice must be designed explicitly. Do not infer camera
+activation from PTT.
 
 Other device inputs:
 
@@ -103,7 +91,7 @@ the output event. The `frames` URL serves the finite JPEG sequence described in
 
 The protocol-v1 laptop client is in `body/reference/`. Checkpoint 2 now exercises
 health/hello compatibility, authenticated identity and controls, real macOS
-microphone/camera/speaker adapters, authenticated still/MJPEG fetching, and a
+microphone/speaker adapters, authenticated still/MJPEG fetching, and a
 ten-second local wake-audio buffer across reconnect. Its panel profile remains an
 explicit provisional command-line input, and its queues and media cache are
 bounded. Its current defaults start a configured panel at 24 fps with a 4 MiB

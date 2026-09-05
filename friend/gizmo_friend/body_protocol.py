@@ -18,9 +18,11 @@ simulator and real hardware behave identically.
   up/down rocker             -> Navigate(up/down)
   select button              -> Select
       Selects the focused item or interrupts current output. It does not
-      open the camera; camera frames arrive independently from Oddity OS.
+      open the camera.
       While asleep, any button wakes him and does nothing else.
-  camera frame               -> Frame  (image and/or hint)
+  reserved visual input      -> Frame  (image and/or hint)
+      Current body clients do not emit this. See needs its own explicit
+      interaction; it must never be inferred from push-to-talk.
   mic audio while holding    -> MicChunk (pcm16, 24kHz mono)
 
 These are Python controller events, not serialized WebSocket messages.

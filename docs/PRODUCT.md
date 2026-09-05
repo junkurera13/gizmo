@@ -41,7 +41,7 @@ These are not features and not a menu. They are what he can reach for, and he re
 | **Make** | They want to keep it. | He keeps a **card**: the still, and a line if they wrote one together. Tomorrow he still has it; they can ask and it comes back on the glass. Not a document, not a website, not a stack of screens. A kept object, not a session of play. |
 | **Play** | They want to do something, not watch. | Something interactive he invents for this moment. Rocker and Select are the controls. No library, no levels menu. In the product; after Show can conjure. |
 
-**Status:** Talk and Think are live. See is live as camera frames on the current turn; the glass is not the viewfinder-plus-head yet. Show is being built (`docs/SHOW.md`). Make follows Show. Play waits until Show is real. Until each is wired, the prompt says so.
+**Status:** Talk and Think are live. See is not wired yet; the pink PTT button is audio-only, and camera activation waits for the viewfinder-plus-head interaction to be designed. Show is being built (`docs/SHOW.md`). Make follows Show. Play waits until Show is real. Until each is wired, the prompt says so.
 
 The rule for the screen: no UI he didn't conjure for this moment. His face is home. Anything else on the glass exists because he decided this kid needed it, and it goes away when they're done. No grid, no launcher, no settings page, no "want to watch another."
 

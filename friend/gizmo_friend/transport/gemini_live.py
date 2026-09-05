@@ -256,7 +256,7 @@ class GeminiLiveTransport:
             await self._require_session().send_realtime_input(activity_end=types.ActivityEnd())
         self._audio_active = False
         self._activity_open = False
-        # A silent hold must not lend its unseen camera snapshot to a later
+        # A silent hold must not lend pending visual input to a later
         # voice/text turn. Spoken turns have already consumed their image.
         self._pending_image = None
         self._pre_gate.clear()

@@ -44,7 +44,7 @@ images. Firmware should never have to decode a 1024×742 PNG or resize anything.
   4 MiB profile, keeps compressed frames, and decodes one at a time.
 - **Reference client.** Checkpoint 2 now provides the Python protocol-v1 client in
   `body/reference/`: authenticated health/hello compatibility, stable identity,
-  every physical control edge, real macOS microphone/camera/speaker adapters,
+  every physical control edge, real macOS microphone/speaker adapters,
   authenticated still/MJPEG fetching, bounded queues, and local wake audio replayed
   after a fresh PTT edge on reconnect. Panel dimensions are explicit provisional
   inputs until the screen is selected. This is an executable handoff, not firmware.
@@ -58,7 +58,7 @@ Anything not in this list, the body owner decides.
 
 | | State | Blueprint reads it as |
 | --- | --- | --- |
-| Brain | Done and deployed. Live voice, PTT, deep_think, camera, per-device memory, sleep/wake, Railway. Verified Sep 2. | Real engineering. Good. |
+| Brain | Done and deployed. Live voice, audio-only PTT, deep_think, per-device memory, sleep/wake, Railway. Camera input is deliberately unwired pending See interaction design. | Real engineering. Good. |
 | Glass | Boot splash, start card, home = one static frame + clock + hearts. Face does not react to listen / talk / think. | A voice chatbot with a picture. |
 | Show / Make | Not wired. Prompt tells him he can't make media. | The pitch ("Infinite Disney in a pocket") is not in the demo. |
 | Body | Wire contract plus checkpoint-2 laptop reference client with bounded real I/O and reconnect. No firmware, board, or shell. | The software handoff is executable; the physical body is still the gap. |

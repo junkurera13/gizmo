@@ -13,15 +13,12 @@ With no `GIZMO_BRAIN_URL` in `.env`, the app owns its brain: at launch it evicts
 
 Each install mints a device id on first launch (kept in user defaults, shown in `simulator.log`) and sends it as `X-Gizmo-Device`, so every install is its own Gizmo with its own memory. Set `GIZMO_DEVICE_ID` in the environment to impersonate a device or start fresh.
 
-PTT also requests one real Mac-camera snapshot for visual context. Aim before
-pressing. The capture keeps its full aspect, fits within 640 × 480, and sends a
-JPEG of at most 128 KiB on the same socket while the button is held. Capture stops
-after that frame or on release/disconnect/power-off; a late permission response or
-frame cannot attach to another hold. A missing/denied camera leaves voice usable.
-Camera status appears in the desktop conversation panel, while the face stays
-on the device. Allow Gizmo Simulator's Camera and Microphone permissions when
-macOS asks. Launch the `.app` with `open` so macOS attributes those permissions
-to Gizmo rather than the parent terminal application.
+The pink PTT button is audio-only: pressing it opens the Mac microphone, streams
+PCM while held, and releasing it ends the turn. It never activates the camera or
+sends a visual frame. Camera input remains unwired until See gets its own explicit
+interaction design. Allow Gizmo Simulator's Microphone permission when macOS asks.
+Launch the `.app` with `open` so macOS attributes that permission to Gizmo rather
+than the parent terminal application.
 
 Logs land in `data/` (gitignored): `simulator.log` is the app's event trail, `brain.log` is the local brain's output.
 

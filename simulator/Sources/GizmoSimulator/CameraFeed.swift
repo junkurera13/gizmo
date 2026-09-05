@@ -2,7 +2,8 @@ import AVFoundation
 import CoreImage
 import Foundation
 
-/// One world-camera snapshot per hold. No viewfinder or continuous upload.
+/// Dormant one-shot adapter for a future explicit See interaction.
+/// Pink push-to-talk does not construct or call this adapter.
 /// All AVFoundation state belongs to `queue`; callbacks never touch the UI.
 final class CameraFeed: NSObject, @unchecked Sendable {
     struct Snapshot: Sendable {

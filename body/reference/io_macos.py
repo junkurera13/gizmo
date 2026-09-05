@@ -128,7 +128,7 @@ def _bounded_jpeg(raw: bytes) -> tuple[bytes, tuple[int, int]]:
 
 
 class FFmpegCamera:
-    """Captures one warmed-up AVFoundation JPEG for each PTT hold."""
+    """Dormant one-shot adapter reserved for a future explicit See interaction."""
 
     def __init__(self, ffmpeg: str, device_index: int = 0) -> None:
         self.ffmpeg = ffmpeg

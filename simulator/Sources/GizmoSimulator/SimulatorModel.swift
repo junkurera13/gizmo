@@ -52,7 +52,6 @@ final class SimulatorModel: ObservableObject {
     @Published private(set) var screenImage: NSImage?
     @Published private(set) var screenImageID: String?
     @Published private(set) var screenClip: ScreenClip?
-    @Published private(set) var cameraStatus: String?
     @Published private(set) var events: [SimulatorEvent] = []
     @Published private(set) var conversation: [ConversationMessage] = []
     @Published private(set) var isPushToTalking = false
@@ -99,7 +98,6 @@ final class SimulatorModel: ObservableObject {
     private var receiveTask: Task<Void, Never>?
     private var sendTask: Task<Void, Never>?
     private var microphonePressID = UUID()
-    private var cameraCapturePending = false
     private var microphoneBytes = 0
     private var microphonePeak = 0
     private var microphoneStartedAt: Date?
@@ -109,7 +107,6 @@ final class SimulatorModel: ObservableObject {
     private var hasStarted = false
     private var isShuttingDown = false
     private let microphone = MicrophoneCapture()
-    private let camera = CameraFeed()
     private let speaker = SpeakerPlayback()
 
     private init() {}
@@ -309,23 +306,6 @@ final class SimulatorModel: ObservableObject {
         speaker.interrupt()
         voiceError = nil
         send(["type": "ptt", "active": true])
-        cameraCapturePending = true
-        cameraStatus = "Opening camera…"
-        camera.capture(id: pressID) { [weak self] result in
-            Task { @MainActor in
-                guard let self, self.isPushToTalking, self.microphonePressID == pressID else { return }
-                self.cameraCapturePending = false
-                switch result {
-                case .success(let snapshot):
-                    self.send(["type": "frame", "image": snapshot.jpeg.base64EncodedString()])
-                    self.cameraStatus = "Sending camera snapshot…"
-                    self.appendEvent("camera", "Sent \(snapshot.width) × \(snapshot.height) JPEG, \(snapshot.jpeg.count) bytes.")
-                case .failure(let error):
-                    self.cameraStatus = error.message
-                    self.appendEvent("camera", error.message)
-                }
-            }
-        }
 
         Task {
             guard await MicrophoneCapture.requestAccess() else {
@@ -379,9 +359,6 @@ final class SimulatorModel: ObservableObject {
         microphone.stop()
         isPushToTalking = false
         microphonePressID = UUID()
-        camera.cancel()
-        if cameraCapturePending { cameraStatus = "Stopped before camera was ready — no snapshot sent" }
-        cameraCapturePending = false
         microphoneStatus = nil
         microphoneLevel = 0
     }
@@ -685,8 +662,6 @@ final class SimulatorModel: ObservableObject {
             // Reconnect snapshots can contain both URLs in the same event.
             if let still = object["still"] as? String { loadScreenImage(path: still) }
             if let frames = object["frames"] as? String { loadScreenFrames(path: frames) }
-        } else if type == "frame", cameraStatus == "Sending camera snapshot…" {
-            cameraStatus = "Camera snapshot received"
         } else if type == "error" {
             appendEvent("error", object["message"] as? String ?? "Unknown error")
         }

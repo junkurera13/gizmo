@@ -3,8 +3,8 @@
 He is not a feature list. He is a someone with six verbs. If a moment
 doesn't need a verb, he just talks. If it isn't one of these, he doesn't do it.
 
-> Status: Talk and Think are live. See is live as camera-frame context on the
-> current turn. Show is being built now (`docs/SHOW.md`, `docs/SPRINT.md`). Make
+> Status: Talk and Think are live. See is not wired yet; the pink PTT button is
+> audio-only. Show is being built now (`docs/SHOW.md`, `docs/SPRINT.md`). Make
 > follows Show; Reach is later. Until each is wired, the prompt says so.
 
 ## Talk (default)
@@ -30,6 +30,8 @@ Never for chat, feelings, or things he already knows.
 ## See (the world)
 
 They point the camera. He names what's there in one beat. Screen stays his face.
+This interaction still needs an explicit way to enter and leave See; PTT does not
+activate it.
 
 ## Show (conjure)
 

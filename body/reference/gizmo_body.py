@@ -18,7 +18,6 @@ from websockets.asyncio.client import connect
 from websockets.exceptions import WebSocketException
 
 from io_macos import (
-    FFmpegCamera,
     FFmpegMicrophone,
     FFmpegSpeaker,
     GlassMediaFetcher,
@@ -158,24 +157,21 @@ class BodyRuntime:
         self,
         args: argparse.Namespace,
         microphone: FFmpegMicrophone,
-        camera: FFmpegCamera,
         speaker: FFmpegSpeaker,
         glass: GlassMediaFetcher,
     ) -> None:
         self.args = args
-        self.microphone, self.camera, self.speaker, self.glass = microphone, camera, speaker, glass
+        self.microphone, self.speaker, self.glass = microphone, speaker, glass
         self.client: BodyClient | None = None
         self.send_lock = asyncio.Lock()
         self.connected = asyncio.Event()
         self.stopping = False
         self.ptt_held = False
         self.ptt_announced = False
-        self.hold = 0
         self.wake_audio = WakeAudioBuffer()
         self.connections_opened = 0
         self.buffered_audio_bytes = 0
         self.reconnected_audio_bytes = 0
-        self.camera_task: asyncio.Task[None] | None = None
         self.glass_task: asyncio.Task[None] | None = None
 
     def report(self, event: dict[str, Any]) -> None:
@@ -208,7 +204,6 @@ class BodyRuntime:
             await self._shutdown_io()
 
     async def _activate(self, client: BodyClient) -> None:
-        restart_camera = False
         async with self.send_lock:
             self.client = client
             self.connections_opened += 1
@@ -217,10 +212,7 @@ class BodyRuntime:
                 await client.send({"type": "ptt", "active": True})
                 self.ptt_announced = True
                 await self._flush_wake_audio(client, reconnect=self.connections_opened > 1)
-                restart_camera = True
             self.connected.set()
-        if restart_camera:
-            self._start_camera(self.hold)
 
     async def _deactivate(self, client: BodyClient) -> None:
         async with self.send_lock:
@@ -228,7 +220,6 @@ class BodyRuntime:
                 self.client = None
                 self.ptt_announced = False
                 self.connected.clear()
-        await self._cancel_camera()
         await self.speaker.interrupt()
         with contextlib.suppress(Exception):
             await client.close()
@@ -271,8 +262,6 @@ class BodyRuntime:
     async def begin_ptt(self) -> None:
         if self.ptt_held:
             return
-        self.hold += 1
-        hold = self.hold
         self.ptt_held = True
         self.ptt_announced = False
         self.wake_audio.clear()
@@ -285,14 +274,12 @@ class BodyRuntime:
                     await self._flush_wake_audio(self.client)
                 except (OSError, WebSocketException, ConnectionError):
                     self.ptt_announced = False
-        self._start_camera(hold)
 
     async def end_ptt(self) -> None:
         if not self.ptt_held:
             return
         self.ptt_held = False
         await self.microphone.stop()
-        await self._cancel_camera()
         async with self.send_lock:
             if self.client is not None and self.ptt_announced:
                 try:
@@ -302,40 +289,6 @@ class BodyRuntime:
                     pass
             self.ptt_announced = False
             self.wake_audio.clear()
-
-    def _start_camera(self, hold: int) -> None:
-        if self.camera_task is None and self.ptt_held:
-            self.camera_task = asyncio.create_task(self._capture_camera(hold))
-
-    async def _capture_camera(self, hold: int) -> None:
-        try:
-            jpeg, dimensions = await self.camera.capture()
-            if hold != self.hold or not self.ptt_held:
-                return
-            sent = await self._send({
-                "type": "frame",
-                "mime": "image/jpeg",
-                "image": base64.b64encode(jpeg).decode("ascii"),
-            })
-            self.report({
-                "type": "camera", "status": "sent" if sent else "dropped",
-                "bytes": len(jpeg), "width": dimensions[0], "height": dimensions[1],
-            })
-        except asyncio.CancelledError:
-            pass
-        except HardwareIOError as error:
-            self.report({"type": "camera", "status": "error", "message": str(error)})
-        finally:
-            if self.camera_task is asyncio.current_task():
-                self.camera_task = None
-
-    async def _cancel_camera(self) -> None:
-        task, self.camera_task = self.camera_task, None
-        if task is not None:
-            task.cancel()
-        await self.camera.cancel()
-        if task is not None:
-            await asyncio.gather(task, return_exceptions=True)
 
     async def _handle(self, event: dict[str, Any]) -> None:
         kind = event.get("type")
@@ -384,7 +337,6 @@ class BodyRuntime:
 
     async def _shutdown_io(self) -> None:
         await self.microphone.stop()
-        await self._cancel_camera()
         await self.speaker.shutdown()
         if self.glass_task is not None:
             self.glass_task.cancel()
@@ -425,7 +377,6 @@ async def interactive(args: argparse.Namespace) -> None:
     runtime = BodyRuntime(
         args,
         FFmpegMicrophone(ffmpeg, args.microphone_index),
-        FFmpegCamera(ffmpeg, args.camera_index),
         FFmpegSpeaker(ffmpeg, args.speaker_index, args.speaker_buffer_bytes),
         GlassMediaFetcher(
             args.url, args.device_id, args.token,
@@ -460,7 +411,6 @@ def main() -> None:
     parser.add_argument("--token", default=os.environ.get("GIZMO_DEVICE_TOKEN", ""))
     parser.add_argument("--ffmpeg", default="", help="FFmpeg binary; defaults to imageio-ffmpeg")
     parser.add_argument("--microphone-index", type=int, default=0, help="AVFoundation audio input index")
-    parser.add_argument("--camera-index", type=int, default=0, help="AVFoundation video input index")
     parser.add_argument("--speaker-index", type=int, default=-1, help="AudioToolbox output index; -1 uses system default")
     parser.add_argument("--speaker-buffer-bytes", type=int, default=96_000, help="bounded response PCM queue")
     parser.add_argument("--panel-width", type=int, default=0, help="provisional physical panel width; 0 disables fetch")
@@ -474,7 +424,7 @@ def main() -> None:
         parser.error("panel dimensions must be 0–1024 pixels")
     if not (1 <= args.panel_fps <= 24):
         parser.error("panel fps must be 1–24")
-    if args.microphone_index < 0 or args.camera_index < 0 or args.speaker_index < -1:
+    if args.microphone_index < 0 or args.speaker_index < -1:
         parser.error("input indices must be non-negative; speaker index may also be -1")
     if args.speaker_buffer_bytes <= 0 or args.media_cache_bytes <= 0:
         parser.error("buffer bounds must be positive")

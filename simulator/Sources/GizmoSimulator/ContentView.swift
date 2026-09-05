@@ -363,13 +363,6 @@ private struct ConversationPanel: View {
                     .padding(.horizontal, 14)
                     .padding(.vertical, 8)
             }
-            if let status = model.cameraStatus {
-                Text(status)
-                    .font(.system(size: 12))
-                    .foregroundStyle(.secondary)
-                    .padding(.horizontal, 14)
-                    .padding(.bottom, 8)
-            }
             composer
         }
         .background(Color(nsColor: .windowBackgroundColor))

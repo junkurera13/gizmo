@@ -14,12 +14,18 @@ reproduction used null providers and a stub voice transport. No new provider
 generation, persistent test files, product-code changes, or deployment occurred
 during that initial audit. No physical board was exercised in that review.
 
-**Fix status, September 4:** H1 is fixed in the local backend and verified through
+**Current correction, September 5:** the H3 PTT-camera implementation described
+below was rejected as the wrong product interaction and removed from both body
+clients. Pink PTT is audio-only. The historical capture evidence remains here as
+an engineering audit trail, not as the current contract; See is unwired until it
+has an explicit interaction design.
+
+**Fix status, September 4 (historical):** H1 is fixed in the local backend and verified through
 both the WebSocket and native app. H2's microphone wire mismatch is now fixed and
-verified at the WebSocket boundary. H3 now captures a real Mac-camera JPEG on PTT
-and sends it through the shared brain. Native verification reached the Gemini
-adapter's SDK boundary with a local receiver; no cloud vision result is claimed.
-H3's camera checkpoint was reviewed, body handoff checkpoints 1 and 2 pass, and
+verified at the WebSocket boundary. H3 temporarily captured a real Mac-camera JPEG on PTT
+and sent it through the shared brain. Native verification reached the Gemini
+adapter's SDK boundary with a local receiver; no cloud vision result was claimed.
+H3's historical camera checkpoint was reviewed, body handoff checkpoints 1 and 2 pass, and
 H4 now has a verified offline asset export/loader plus the Oddity boot entrance.
 H5 now has a hardware-shaped native Show preview at the route's 24 fps maximum.
 H6–H8 still require physical integration or selected hardware, and firmware
@@ -48,7 +54,7 @@ was corrected and the same checkpoint passed. Null providers prevented model and
 media calls. No test suite or test file was added. Evidence:
 [checkpoint-1 result](/Users/jun/gizmo/data/hardware-audit/2026-09-04/reference-client/checkpoint-1.json).
 
-**Body handoff checkpoint 2, September 4:** the reference client now uses the
+**Body handoff checkpoint 2, September 4 (historical camera variant):** the reference client then used the
 bundled FFmpeg binary for real Mac microphone and camera input and AudioToolbox
 speaker output. PTT starts 24 kHz PCM16 mono capture and one warmed-up camera
 snapshot. Camera output is re-encoded under the protocol's 640 × 480 / 128 KiB
@@ -196,7 +202,7 @@ calls or media generations were needed for this checkpoint. This verifies the
 wire correction, not physical microphone electronics or playback.
 Evidence: [microphone contract results](/Users/jun/gizmo/data/hardware-audit/2026-09-04/microphone-contract/results.json).
 
-H3 replaces the unused file-picker/viewfinder paths with one real camera snapshot
+**Superseded September 5:** H3 replaced the unused file-picker/viewfinder paths with one real camera snapshot
 per PTT hold. Capture begins alongside microphone input, preserves the camera's
 aspect, and produces a JPEG no larger than 640 × 480 / 128 KiB. The Mac adapter
 allows a brief exposure warm-up and stops after one snapshot, release, disconnect,
@@ -243,7 +249,7 @@ and [native checkpoint preview](/Users/jun/gizmo/data/hardware-audit/2026-09-04/
 | --- | --- | --- |
 | **H1 — fixed locally: dropped connections left PTT down** | Before the fix, closing the socket left `pressed`, `active`, and `audio_ready` true and blocked a fresh press. [WebSocket cleanup](/Users/jun/gizmo/friend/gizmo_friend/server.py:190) now invokes [owner-specific teardown](/Users/jun/gizmo/friend/gizmo_friend/session.py:187). The local socket and native checks above passed. | Deploy after review; verify a real board disconnect/power cut when available. A silent network loss is handled once the WebSocket detects it; this does not promise instantaneous physical power-cut detection. |
 | **H2 — microphone mismatch fixed locally** | Before the fix, the notes said `mic` while the server silently ignored it. [The server](/Users/jun/gizmo/friend/gizmo_friend/server.py:223) now accepts canonical `audio` and compatible `mic`, with PCM validation. [The body wire contract](/Users/jun/gizmo/body/README.md:9) distinguishes actual JSON messages from Python controller names. Exact-byte and ownership checks passed for both input names. | Deploy after review. The planned general reference client and protocol-version handoff remain separate unfinished work before firmware integration; this correction does not claim those are complete. |
-| **H3 — fixed locally: real PTT camera capture** | [CameraFeed](/Users/jun/gizmo/simulator/Sources/GizmoSimulator/CameraFeed.swift:37) captures a bounded JPEG and stops. [The native PTT flow](/Users/jun/gizmo/simulator/Sources/GizmoSimulator/SimulatorModel.swift:307) sends it on the hold's socket. The unused viewfinder and file-picker paths were removed. Real camera bytes reached the Gemini adapter's local SDK receiver; ownership and stale-frame checks passed. | Deploy the shared backend after review. Verify a lit book and actual vision response, then implement/measure capture with the selected sensor and board. VGA needs PSRAM; a lower capture resolution may be necessary. No physical-camera firmware or text-readability result is claimed. |
+| **H3 — superseded: camera was coupled to PTT** | The September 4 experiment proved bounded capture and transport, but the interaction was not authorized product behavior. On September 5 the native simulator and laptop reference client stopped constructing camera capture from PTT; the app also dropped its camera permission declaration and camera-status UI. | Design See's explicit entry/exit interaction, viewfinder, privacy feedback, and protocol ownership before reconnecting any camera adapter. Keep pink PTT audio-only. |
 | **H4 — fixed at the software handoff: offline boot/home assets** | The configurable [exporter](/Users/jun/gizmo/body/assets/export_bundle.py:1) packages panel-sized boot/home assets, timing, chime, home-only status resources and integrity metadata. The [boot builder](/Users/jun/gizmo/glass/build_boot.py:1) adds the accepted 1.25-second top entry as full-screen frames before the preserved blink. The [reference loader](/Users/jun/gizmo/body/reference/offline_assets.py:1) completed the prior 4.8-second variant with no brain and a largest resident encoded frame of 11,237 bytes; Jun accepted the current 5.05-second timing by feel. Existing source drawings remain the authoring assets. | Re-export for the selected panel, put the bundle in device-local flash/storage, and connect the manifest callbacks to the real JPEG/display/audio drivers. The checkpoint proves delivery and local timing, not board decode time or the final character/screen. |
 | **H5 — fixed locally: hardware-shaped Show preview** | The packaged [preview profile](/Users/jun/gizmo/simulator/hardware-preview.json:1) is explicitly provisional. [SimulatorModel](/Users/jun/gizmo/simulator/Sources/GizmoSimulator/SimulatorModel.swift:1) requests the authenticated MJPEG at 320 × 240 / 24 fps under a 4 MiB cap, and [LoopingClipView](/Users/jun/gizmo/simulator/Sources/GizmoSimulator/LoopingClipView.swift:1) decodes one retained JPEG at a time. The saved 124-frame rocket loop was 1 ms from its 5,167 ms target; Select restored home. | Repeat the configurable fps sweep after selecting the physical board and panel. Check labels, crop, decode time and input/audio responsiveness there; the Mac run does not establish the hardware limit. |
 | **H6 — software bounds exist; board memory and playback remain unverified** | Native Show and the checkpoint-2 [reference adapter](/Users/jun/gizmo/body/reference/io_macos.py:1) now use finite MJPEG with a configurable 4 MiB encoded cap; the native view retains compressed frames and one decoded display frame. Speaker PCM remains bounded at 96,000 bytes. These Mac paths prove the protocol shape, not ESP32 memory, storage, bus or simultaneous decode/audio timing. Server subscriber queues remain unbounded. | Implement measured PCM pacing/backpressure, JPEG decode and finite-loop storage on the selected board. Keep network reception and button handling independent of decode/display. Size the profile from actual PSRAM/storage and do not copy the Mac adapters into firmware. |

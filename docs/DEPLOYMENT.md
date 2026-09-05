@@ -16,7 +16,8 @@ The native simulator uses the ignored repository `.env` for `GIZMO_BRAIN_URL` an
 - Unauthenticated device/data access is rejected.
 - Existing device WebSocket: 24 kHz PTT input, Gemini input resampling, voice reply, and final input/output transcripts.
 - Gemini Live calls `deep_think`, receives Gemini 3.7's result, and voices the answer.
-- Camera snapshot recognition through the deployed brain.
+- Camera snapshot recognition was verified through the deployed brain, then removed
+  from PTT on Sep 5; the pink control is audio-only and See is currently unwired.
 - Memobase extraction, retrieval, and recall in a new `GizmoSession` with a separate local transcript directory. Synthetic test identities were removed afterward.
 - Rebuilt native app: cloud connection, typed conversation, PTT hold-to-talk, and hard power-off. (PTT tap-to-sleep was removed afterwards; sleep is idle-only.)
 

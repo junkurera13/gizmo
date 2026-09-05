@@ -6,11 +6,11 @@
 
 ```text
 ESP32-S3 or native emulator
-  └─ Power / PTT / up / down / select / 24 kHz PCM / camera frames
+  └─ Power / PTT / up / down / select / 24 kHz PCM
        └─ GizmoSession
             ├─ Gemini 3.1 Flash Live
             │    ├─ realtime voice
-            │    ├─ vision frames
+            │    ├─ staged Show-image context
             │    ├─ native Google Search grounding
             │    └─ deep_think / set_expression function calls
             ├─ VisualDirector → Gemini 3.1 Flash-Lite
@@ -36,7 +36,7 @@ a panel size. Version-aware bodies send `X-Gizmo-Protocol: 1`; an explicit misma
 opens only long enough to close with WebSocket protocol-error code `1002`. The
 `hello` repeats the selected version. `body/reference/gizmo_body.py` is the
 checkpoint-2 authenticated laptop client for compatibility, identity, controls,
-real macOS microphone/camera/speaker I/O, and authenticated still/MJPEG fetches.
+real macOS microphone/speaker I/O, and authenticated still/MJPEG fetches.
 It keeps up to ten seconds of wake audio locally and sends a fresh PTT edge before
 replaying it after reconnect.
 
@@ -51,8 +51,8 @@ The server keeps one `GizmoSession` per device. A body identifies itself with th
 - Gemini Live connect, close, interruption, resumption handle, context compression, and go-away reconnect with backoff
 - the device identity it was created for, and a unique ID for each hard-power session
 - input/output final transcripts
-- one real native camera snapshot per PTT hold, forwarded over the existing
-  `Frame` event; voice does not wait for camera access or capture
+- audio-only PTT ownership and ordering; camera input remains unwired until See
+  has a separate explicit interaction
 - one structured visual decision per final user utterance, with stale decisions
   cancelled when a newer ask arrives
 - Show still/clip generation, persistent budgets, dismissal, and staging the
