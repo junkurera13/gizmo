@@ -18,14 +18,19 @@ Two generated scenes arrived during speech. The motive change kept the first
 picture. The two stills share the print look and not the characters; story images
 are environments, not a cast.
 
+Typed kid-language evidence: `data/show-checkpoints/2026-09-05-kid-story-080522/`.
+Four ordinary lines — a story, a wait-he's-scared-of-bells, a submarine, then
+what — kept one fox, one fear change, and two unlabeled places. The first still
+was observed after a short chapter finished talking. Its recorded 18-second
+arrival is not reliable: the old recorder timestamped queued post-speech media
+after waiting for all generation jobs. Do not use that number as latency evidence.
+
 ## Interaction
 
-1. Request an original story. Gizmo establishes one setting in his opening sentence.
-2. Change a character's fear or motive. The same story continues and its scene stays.
-3. Say "Then what?". Gizmo continues with the established characters and events.
-4. Move them somewhere new. The narration establishes the new location and the
-   director requests that scene.
-5. Ask an unrelated question. Gizmo answers normally; no new story media is requested.
+1. “Tell me a story about a fox who's scared of dragons.”
+2. “Wait. He's actually scared of bells.”
+3. “They should escape in a submarine.”
+4. “Then what?”
 
 ## Implementation
 
@@ -85,3 +90,59 @@ assumed in advance.
 This spends two still generations and up to two clip generations. Memory and deep
 reasoning stay disabled. Evidence, including the generated JPEG/MP4 files, is
 saved under `data/show-checkpoints/`. No microphone, deployment, or device check.
+
+
+## Character continuity and timing — September 5
+
+The director now supplies a session-local appearance description for the main
+fictional non-human character. The controller keeps that description across
+setting and fear changes and passes the first successfully installed scene back
+as an image reference for later scenes. The original reference is retained rather
+than chaining every new image, which limits accumulating visual drift. Starting
+an explicitly new story or cold boot clears it; dismissing a picture does not.
+Ordinary diagrams and factual pictures receive no character reference.
+
+Characters are now visible within the scene, with a recognizable silhouette and
+simple surroundings. This first version supports one protagonist per active
+story, not an enduring cast library. Explicit redesigns and multiple recurring
+characters need a separate identity-editing contract; it does not infer them
+from mood changes. A remembered name is used only if explicitly identified as
+the user's own, never just because a person, pet, or character appears in memory.
+
+The checkpoint consumes events continuously through speech and media completion.
+Its timestamps measure receipt of server events, not pixels reaching a physical
+screen. A regression check ensures a late still is recorded while the clip task
+is still running.
+
+Verified live evidence: `data/show-checkpoints/2026-09-05-kid-story-135809/`.
+The narrator named this run's fox Finley; no fox name is hardcoded. Forest and
+submarine stills preserve his silhouette, face markings, pink tail tip and collar.
+The second generation received the first still as its character reference.
+Both JPEGs and a frame three seconds into each clip were inspected. This is a
+sampled visual check, not a frame-by-frame guarantee or a physical-panel test.
+
+| Turn | Still event | Clip event | Voice finished | New generations |
+| --- | --- | --- | --- | --- |
+| Forest | 15.102 s | 20.737 s | 52.185 s | One still, one clip |
+| Fear changes to bells | Reused | Reused | 25.448 s | None |
+| Submarine | 16.631 s | 21.803 s | 25.709 s | One still, one clip |
+| Then what? | Reused | Reused | 28.683 s | None |
+
+The first narration exceeded the intended short chapter length. Character
+continuity passed this sample; chapter pacing remains inconsistent. These
+server-event timings do not establish actual device playback latency.
+
+Name ownership was checked against the actual Live voice transport with three
+synthetic memory contexts: other people's names, ambiguous ownership, and an
+explicit user name. Results were “Never told me.”, “I don't know your name. You
+haven't told me.”, and “You're Alex.” respectively. Evidence:
+`data/show-checkpoints/2026-09-05-name-ownership-140151/`. This is three sampled
+responses, not a deterministic guarantee of future model behavior.
+
+```sh
+.venv/bin/python friend/checkpoints/name_ownership.py
+```
+
+Name checks use synthetic memory only and spend voice calls. They never read or
+write the user's persistent memory. Reference-image generation follows the
+provider's [documented image-input interface](https://ai.google.dev/gemini-api/docs/generate-content/image-generation).

@@ -42,6 +42,19 @@ do not turn ordinary conversation into fiction because earlier turns were a stor
 Math, jokes, feelings, and ordinary facts are never story continuations:
 story_setting must be an empty string and route is words.
 
+CHARACTER CONTINUITY
+- story_character is a compact visual identity for the main NON-HUMAN fictional
+  character: name if known, species, silhouette, markings, and one distinctive
+  accessory. Follow established details; if unspecified, choose simple features
+  in violet and pink. Never include a child or human. Otherwise leave it empty.
+- current_character is the saved identity. COPY IT EXACTLY for the same story,
+  including after a fear, mood, or location changes. Do not invent a new identity.
+- new_story is true only when the kid explicitly starts a separate new story;
+  edits and continuations are false. A new story must create its own identity.
+- Put the protagonist visibly in each new story scene, large and recognizable on
+  a small screen, with a readable silhouette and simple surroundings. The image
+  provider also receives the saved identity and first scene as a visual reference.
+
 STORY CONTINUITY (takes precedence over the generic STILL and MOTION rules)
 - story_setting is the broad location of this story chapter, such as "castle" or
   "ocean floor". Use an empty string for non-story conversation. Never copy
@@ -64,7 +77,7 @@ STORY CONTINUITY (takes precedence over the generic STILL and MOTION rules)
   (castle to ocean floor), an explicit request for a different picture, or a new story.
 - For a story scene, subject describes a lived-in place with weather, light, and
   atmosphere, never a labeled diagram, cutaway, poster, or worksheet. For example:
-  "old stone castle with a bell tower at dusk". Motion belongs to that environment:
+  "a small fox beneath the bell tower of an old castle at dusk". Motion belongs to that environment:
   drifting clouds, rippling water, swaying trees. Do not re-stage characters when a
   personality trait changes.
 
@@ -116,8 +129,10 @@ DIRECTOR_SCHEMA = {
         "story_setting": {"type": "string"},
         "redraw_requested": {"type": "boolean"},
         "kind": {"type": "string", "enum": ["scene", "diagram"]},
+        "story_character": {"type": "string"},
+        "new_story": {"type": "boolean"},
     },
-    "required": ["route", "subject", "motion", "story_setting", "redraw_requested", "kind"],
+    "required": ["route", "subject", "motion", "story_setting", "redraw_requested", "kind", "story_character", "new_story"],
     "additionalProperties": False,
 }
 
@@ -130,6 +145,8 @@ class VisualDecision:
     follow_narration: bool = False
     story_setting: str = ""
     kind: str = "scene"
+    story_character: str = ""
+    new_story: bool = False
 
 
 def picture_kind(payload: dict, *, story_setting: str) -> str:
@@ -184,11 +201,14 @@ def decision_from_payload(
     setting = " ".join(str(payload.get("story_setting") or "").casefold().split())[:100]
     current_setting = " ".join(current_story_setting.casefold().split())
     kind = picture_kind(payload, story_setting=setting)
+    character = str(payload.get("story_character") or "").strip()[:600] if setting else ""
+    identity = {"story_character": character, "new_story": bool(setting) and payload.get("new_story") is True}
     # Scene identity, not the prose description of a shot, owns reuse. A model
     # can ask for a different pose in the same castle; that must not spend again.
     if (has_visual and setting and setting == current_setting
             and route in {"still", "motion"}
-            and payload.get("redraw_requested") is not True):
+            and payload.get("redraw_requested") is not True
+            and not identity["new_story"]):
         route = "words"
     if motion.casefold().rstrip(".") in NO_MOTION_SENTINELS:
         motion = ""
@@ -196,14 +216,14 @@ def decision_from_payload(
         return VisualDecision(route="animate", motion=motion, story_setting=setting) if has_visual and motion else VisualDecision()
     if route == "motion":
         if subject and motion:
-            return VisualDecision(route="motion", subject=subject, motion=motion, story_setting=setting, kind=kind)
+            return VisualDecision(route="motion", subject=subject, motion=motion, story_setting=setting, kind=kind, **identity)
         if subject:
-            return VisualDecision(route="still", subject=subject, story_setting=setting, kind=kind)
+            return VisualDecision(route="still", subject=subject, story_setting=setting, kind=kind, **identity)
         return VisualDecision()
     if route == "still" and subject:
-        return VisualDecision(route="still", subject=subject, story_setting=setting, kind=kind)
+        return VisualDecision(route="still", subject=subject, story_setting=setting, kind=kind, **identity)
     if route == "words":
-        return VisualDecision(follow_narration=bool(setting) and not narration_complete, story_setting=setting)
+        return VisualDecision(follow_narration=bool(setting) and not narration_complete, story_setting=setting, **identity)
     return VisualDecision()
 
 
@@ -214,6 +234,7 @@ class VisualDirector(ABC):
         narration: str = "", recent_dialogue: tuple[DialogueTurn, ...] = (),
         narration_complete: bool = True,
         current_story_setting: str = "",
+        current_character: str = "",
     ) -> VisualDecision:
         """Choose one visual route without speaking or generating media."""
 
@@ -227,8 +248,9 @@ class NullVisualDirector(VisualDirector):
         narration: str = "", recent_dialogue: tuple[DialogueTurn, ...] = (),
         narration_complete: bool = True,
         current_story_setting: str = "",
+        current_character: str = "",
     ) -> VisualDecision:
-        del utterance, has_visual, current_subject, narration, recent_dialogue, narration_complete, current_story_setting
+        del utterance, has_visual, current_subject, narration, recent_dialogue, narration_complete, current_story_setting, current_character
         return VisualDecision()
 
 
@@ -253,6 +275,7 @@ class GeminiVisualDirector(VisualDirector):
         narration: str = "", recent_dialogue: tuple[DialogueTurn, ...] = (),
         narration_complete: bool = True,
         current_story_setting: str = "",
+        current_character: str = "",
     ) -> VisualDecision:
         from google.genai import types
 
@@ -266,6 +289,7 @@ class GeminiVisualDirector(VisualDirector):
                 "utterance": cleaned[:MAX_CONTEXT_TEXT],
                 "narration": narration[:MAX_CONTEXT_TEXT],
                 "narration_complete": narration_complete,
+                "current_character": current_character[:600],
                 "current_story_setting": current_story_setting if has_visual else "",
                 "recent_dialogue": [
                     asdict(turn.bounded()) for turn in recent_dialogue[-MAX_CONTEXT_TURNS:]

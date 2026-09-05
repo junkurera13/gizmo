@@ -40,11 +40,13 @@ class ControlledImages(ImageProvider):
     def __init__(self):
         self.calls = []
         self.kinds = []
+        self.identities = []
 
-    async def conjure(self, subject, *, kind="scene"):
+    async def conjure(self, subject, *, kind="scene", character="", reference=None):
         future = asyncio.get_running_loop().create_future()
         self.calls.append((subject, future))
         self.kinds.append(kind)
+        self.identities.append((character, reference))
         return await future
 
     async def close(self):
@@ -140,7 +142,7 @@ class FixedDirector:
 
     async def decide(self, utterance, *, has_visual, current_subject="",
                      narration="", recent_dialogue=(), narration_complete=True,
-                     current_story_setting=""):
+                     current_story_setting="", current_character=""):
         self.calls.append((utterance, has_visual, current_subject))
         self.contexts.append((narration, recent_dialogue))
         return self.decision
@@ -155,7 +157,7 @@ class ControlledDirector:
 
     async def decide(self, utterance, *, has_visual, current_subject="",
                      narration="", recent_dialogue=(), narration_complete=True,
-                     current_story_setting=""):
+                     current_story_setting="", current_character=""):
         future = asyncio.get_running_loop().create_future()
         self.calls.append((utterance, has_visual, current_subject, future))
         return await future

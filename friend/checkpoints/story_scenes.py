@@ -6,6 +6,7 @@ Generated stills, clips, speech, and transcripts are saved in data/show-checkpoi
 from __future__ import annotations
 
 import json
+import hashlib
 import os
 from pathlib import Path
 import sys
@@ -26,9 +27,10 @@ from story_continuity import RecordingDirector, ROOT, run_turn
 
 
 PROMPTS = [
-    "Tell me a short story about Copper, a clockwork fox with one brass ear, who lives in a castle and is afraid of dragons. Begin in the castle and stay there for this chapter.",
-    "Actually, Copper is afraid of bells, and the dragon is afraid of Copper. Keep them in the castle.",
-    "They should escape together in a submarine. Take Copper and the dragon all the way down to the ocean floor in this chapter. Start already on the ocean floor.",
+    "Tell me a story about a fox who's scared of dragons.",
+    "Wait. He's actually scared of bells.",
+    "They should escape in a submarine.",
+    "Then what?",
 ]
 
 
@@ -38,9 +40,10 @@ class RecordingImages(ImageProvider):
         self.output = output
         self.calls = []
 
-    async def conjure(self, subject, *, kind="scene"):
-        still = await self.inner.conjure(subject, kind=kind)
-        record = {"subject": subject, "kind": kind, "ok": still is not None}
+    async def conjure(self, subject, *, kind="scene", character="", reference=None):
+        still = await self.inner.conjure(subject, kind=kind, character=character, reference=reference)
+        record = {"subject": subject, "kind": kind, "character": character, "reference_used": reference is not None, "ok": still is not None}
+        record["reference_sha256"] = hashlib.sha256(reference).hexdigest() if reference else None
         if still is not None:
             path = self.output / f"still-{len(self.calls) + 1}.jpg"
             path.write_bytes(still.jpeg)
@@ -98,7 +101,7 @@ def _glass_timing(events):
 
 async def main():
     load_dotenv(ROOT / ".env")
-    output = ROOT / "data/show-checkpoints" / datetime.now(UTC).strftime("%Y-%m-%d-story-scenes-%H%M%S")
+    output = ROOT / "data/show-checkpoints" / datetime.now(UTC).strftime("%Y-%m-%d-kid-story-%H%M%S")
     output.mkdir(parents=True)
     images = RecordingImages(image_provider_from_env(os.environ["GEMINI_API_KEY"]), output)
     clips = RecordingClips(clip_provider_from_env(), output)

@@ -118,6 +118,8 @@ class GizmoSession:
         self.current_show: StoredShow | None = None
         self.current_show_subject = ""
         self.current_story_setting = ""
+        self.story_character = ""
+        self._character_reference: bytes | None = None
         self._show_revision = 0
         self._show_task: asyncio.Task[None] | None = None
         self._show_tasks: set[asyncio.Task[None]] = set()
@@ -234,8 +236,10 @@ class GizmoSession:
         if self._memory_context.strip():
             prefix += (
                 "\n\nTHIS KID\n"
-                "Who they are, and things from last time. If a name is here, "
-                "that is who you are talking to; use it when it would land. "
+                "Who they are, and things from last time. Use a name only when "
+                "memory explicitly identifies it as this user's own name. Names "
+                "of friends, relatives, pets, and story characters are not the "
+                "user's name. If ownership is ambiguous, use no name. "
                 "Never mention how you know.\n"
                 f"{self._memory_context.strip()}"
             )
@@ -314,6 +318,8 @@ class GizmoSession:
             self._memory_loaded = False
             self._resume_handle = ""
             self._visual_history.clear()
+            self.story_character = ""
+            self._character_reference = None
             self._visual_turn_open = False
             self.machine.apply("power_on")
             await self.emit({"type": "state", "reason": "switch"})
@@ -976,6 +982,7 @@ class GizmoSession:
                     recent_dialogue=recent_dialogue,
                     narration_complete=narration_complete,
                     current_story_setting=current_story_setting,
+                    current_character=self.story_character,
                 )
                 if decision.follow_narration and not narration_complete:
                     # A provisional words-only story decision may inspect the
@@ -992,6 +999,7 @@ class GizmoSession:
                         recent_dialogue=recent_dialogue,
                         narration_complete=True,
                         current_story_setting=self.current_story_setting if self.current_show else "",
+                        current_character=self.story_character,
                     )
                 if (
                     ask_revision != self._ask_revision
@@ -999,12 +1007,19 @@ class GizmoSession:
                     or not self._ready_for_input()
                 ):
                     return
+                if decision.story_setting:
+                    if decision.new_story:
+                        self.story_character = ""
+                        self._character_reference = None
+                    if not self.story_character:
+                        self.story_character = decision.story_character
                 if decision.route == "animate":
                     await self._animate({"motion": decision.motion})
                 elif decision.route in {"still", "motion"}:
                     arguments: dict[str, Any] = {"subject": decision.subject}
                     arguments["story_setting"] = decision.story_setting
                     arguments["kind"] = decision.kind
+                    arguments["character"] = self.story_character if decision.story_setting else ""
                     if decision.route == "motion":
                         arguments["motion"] = decision.motion
                     await self._show(arguments)
@@ -1079,6 +1094,7 @@ class GizmoSession:
     async def _conjure_show(
         self, subject: str, motion: str | None, revision: int, session_id: str,
         story_setting: str = "", kind: str = "scene",
+        character: str = "", reference: bytes | None = None,
     ) -> None:
         def current() -> bool:
             return (
@@ -1089,7 +1105,10 @@ class GizmoSession:
             )
 
         try:
-            still = await self.images.conjure(subject, kind=kind)
+            options = {"kind": kind}
+            if character:
+                options.update(character=character, reference=reference)
+            still = await self.images.conjure(subject, **options)
             if still is None or not current():
                 return
             stored = await asyncio.to_thread(
@@ -1104,6 +1123,8 @@ class GizmoSession:
             self.current_show = stored
             self.current_show_subject = subject
             self.current_story_setting = story_setting
+            if character and character == self.story_character and self._character_reference is None:
+                self._character_reference = still.jpeg
             self._current_clip_id = None
             self._show_visible_at = asyncio.get_running_loop().time()
             await self.emit(self.show_event())
@@ -1167,8 +1188,11 @@ class GizmoSession:
         kind = kind if kind in {"scene", "diagram"} else "scene"
         if story_setting:
             kind = "scene"
+        character = arguments.get("character", "") if story_setting else ""
+        character = character[:600] if isinstance(character, str) else ""
+        reference = self._character_reference if character and character == self.story_character else None
         task = asyncio.create_task(
-            self._conjure_show(subject, motion, revision, session_id, story_setting, kind)
+            self._conjure_show(subject, motion, revision, session_id, story_setting, kind, character, reference)
         )
         self._show_task = task
         self._show_tasks.add(task)

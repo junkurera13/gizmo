@@ -32,6 +32,32 @@ class StoryContinuityTests(ShowSessionFixture):
         if self.friend._director_task:
             await self.friend._director_task
 
+    async def test_character_anchor_survives_scene_change_and_resets_for_new_story(self):
+        async def chapter(setting, character, new_story=False):
+            self.director.decision = VisualDecision(
+                route="still", subject=setting, story_setting=setting,
+                story_character=character, new_story=new_story,
+            )
+            await self.friend.handle(TextLine(text="Continue the story."))
+            await self.finish_narration(f"The little fox was now exploring the {setting}.")
+            async with asyncio.timeout(1):
+                while len(self.images.calls) <= chapter.finished:
+                    await asyncio.sleep(0.001)
+            await self.finish_show()
+            chapter.finished += 1
+        chapter.finished = 0
+        identity = "Fen, small fox, large triangular ears, pink tail tip, violet scarf"
+        await chapter("forest", identity, True)
+        anchor = self.friend._character_reference
+        self.assertIsNotNone(anchor)
+        self.assertEqual(self.images.identities[0], (identity, None))
+        await self.friend._dismiss_show("select")
+        await chapter("submarine", "accidental different model description")
+        self.assertEqual(self.images.identities[1], (identity, anchor))
+        self.assertIs(self.friend._character_reference, anchor)
+        await chapter("forest", "Pip, tiny owl with round glasses", True)
+        self.assertEqual(self.images.identities[2], ("Pip, tiny owl with round glasses", None))
+
     async def test_director_reads_actual_chapter_and_prior_edit_once(self):
         await self.friend.handle(TextLine(text="Tell me about a clockwork fox in a castle."))
         await asyncio.sleep(0)

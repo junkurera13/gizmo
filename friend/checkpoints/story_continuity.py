@@ -33,12 +33,12 @@ ROOT = Path(__file__).resolve().parents[2]
 SAVED = ROOT / "data/show-checkpoints/2026-09-03-checkpoint-1"
 CLIP = ROOT / "data/show-checkpoints/2026-09-03-checkpoint-10/trilobite-static-fixture.mp4"
 PROMPTS = [
-    "Tell me a short story about Copper, a clockwork fox with one brass ear, who lives in a castle and is afraid of dragons. Begin in the castle and stay there for this chapter.",
-    "Actually, Copper is afraid of bells, and the dragon is afraid of Copper. Keep them in the castle.",
-    "Then what? Keep them in the castle for this chapter.",
-    "They should escape together in a submarine. Take Copper and the dragon all the way down to the ocean floor in this chapter.",
-    "Then what? Stay underwater with those same two characters.",
-    "Leave the story for now. What is six times seven?",
+    "Tell me a story about a fox who's scared of dragons.",
+    "Wait. He's actually scared of bells.",
+    "Then what?",
+    "They should escape in a submarine.",
+    "Then what?",
+    "What is six times seven?",
 ]
 
 
@@ -46,7 +46,7 @@ class ReplayImages(ImageProvider):
     def __init__(self):
         self.calls = []
 
-    async def conjure(self, subject, *, kind="scene"):
+    async def conjure(self, subject, *, kind="scene", character="", reference=None):
         lower = subject.casefold()
         filename = "06-wave.jpg" if any(word in lower for word in ("ocean", "submarine", "underwater", "seafloor", "seabed")) else "05-castle.jpg"
         path = SAVED / filename
@@ -87,6 +87,7 @@ class RecordingDirector(GeminiVisualDirector):
             "current_story_setting": context.get("current_story_setting", ""),
             "recent_dialogue": [asdict(turn) for turn in context.get("recent_dialogue", ())],
             "current_subject": context.get("current_subject", ""),
+            "current_character": context.get("current_character", ""),
             "decision": asdict(decision),
             "seconds": round(time.monotonic() - started, 3),
         })
@@ -113,21 +114,34 @@ async def run_turn(friend, queue, director, images, clips, prompt, output, numbe
             summary["pcm_bytes"] = len(raw)
         events.append(summary)
 
-    await friend.handle(TextLine(text=prompt))
-    finished = False
-    async with asyncio.timeout(timeout_s):
-        while not finished:
+    # Consume continuously, including while media jobs finish after speech.
+    # These are server-observed event times, not physical display timestamps.
+    speech_done = asyncio.Event()
+
+    async def collect():
+        while True:
             event = await queue.get()
             record(event)
-            finished = event.get("type") == "state" and event.get("state") == "listening"
-        if friend._director_task:
-            await friend._director_task
-        tasks = tuple(friend._show_tasks | friend._clip_tasks)
-        if tasks:
-            await asyncio.gather(*tasks)
-        # Still completion can start a clip task after the first snapshot.
-        if friend._clip_tasks:
-            await asyncio.gather(*tuple(friend._clip_tasks))
+            if event.get("type") == "state" and event.get("state") == "listening":
+                speech_done.set()
+
+    collector = asyncio.create_task(collect())
+    try:
+        async with asyncio.timeout(timeout_s):
+            await friend.handle(TextLine(text=prompt))
+            await speech_done.wait()
+            if friend._director_task:
+                await friend._director_task
+            tasks = tuple(friend._show_tasks | friend._clip_tasks)
+            if tasks:
+                await asyncio.gather(*tasks)
+            # Still completion can start a clip task after the first snapshot.
+            if friend._clip_tasks:
+                await asyncio.gather(*tuple(friend._clip_tasks))
+            await asyncio.sleep(0)  # Let the collector consume final emissions.
+    finally:
+        collector.cancel()
+        await asyncio.gather(collector, return_exceptions=True)
     while not queue.empty():
         record(queue.get_nowait())
     audio_path = output / f"turn-{number}.wav"

@@ -1,9 +1,10 @@
-"""Text-only still generation for Show; no session or storage dependencies."""
+"""Still generation with optional story-character reference for Show; no session or storage dependencies."""
 
 from __future__ import annotations
 
 import asyncio
 import io
+import hashlib
 import logging
 import os
 import time
@@ -70,7 +71,8 @@ class ConjuredStill:
 
 class ImageProvider(ABC):
     @abstractmethod
-    async def conjure(self, subject: str, *, kind: str = "scene") -> ConjuredStill | None:
+    async def conjure(self, subject: str, *, kind: str = "scene",
+                      character: str = "", reference: bytes | None = None) -> ConjuredStill | None:
         """Return one finished JPEG, or nothing when unavailable/late/blocked."""
 
     async def close(self) -> None:
@@ -78,8 +80,9 @@ class ImageProvider(ABC):
 
 
 class NullImageProvider(ImageProvider):
-    async def conjure(self, subject: str, *, kind: str = "scene") -> ConjuredStill | None:
-        del subject, kind
+    async def conjure(self, subject: str, *, kind: str = "scene",
+                      character: str = "", reference: bytes | None = None) -> ConjuredStill | None:
+        del subject, kind, character, reference
         return None
 
 
@@ -114,7 +117,8 @@ class GeminiImageProvider(ImageProvider):
             ),
         )
 
-    async def conjure(self, subject: str, *, kind: str = "scene") -> ConjuredStill | None:
+    async def conjure(self, subject: str, *, kind: str = "scene",
+                      character: str = "", reference: bytes | None = None) -> ConjuredStill | None:
         from google.genai import types
 
         from gizmo_friend.safety import KID_SAFETY_SETTINGS
@@ -125,12 +129,26 @@ class GeminiImageProvider(ImageProvider):
         kind = kind if kind in PICTURE_KINDS else "scene"
         instruction = still_instruction(kind)
         content = f"Subject to depict: {subject}"
+        if character and kind == "scene":
+            instruction += (
+                " Include the fictional non-human protagonist prominently, roughly one third "
+                "of the frame height, with a clear silhouette. Preserve their species, "
+                "proportions, face, markings, and accessories across locations. "
+                "The established identity overrides conflicting appearance in the subject. "
+                "The reference image, if present, supplies ONLY character identity and "
+                "print style: replace its setting and pose to match the new subject. "
+                "No duplicate characters or reference-sheet layout."
+            )
+            content += f"\nEstablished character identity: {character[:600]}"
+        contents = [types.Part.from_text(text=content)]
+        if reference and character and kind == "scene":
+            contents.append(types.Part.from_bytes(data=reference, mime_type="image/jpeg"))
         started = time.perf_counter()
         try:
             async with asyncio.timeout(IMAGE_TIMEOUT_SECONDS):
                 response = await self._client.aio.models.generate_content(
                     model=self.model,
-                    contents=content,
+                    contents=contents,
                     config=types.GenerateContentConfig(
                         system_instruction=instruction,
                         safety_settings=KID_SAFETY_SETTINGS,
@@ -155,7 +173,7 @@ class GeminiImageProvider(ImageProvider):
                         return ConjuredStill(
                             subject=subject,
                             jpeg=jpeg,
-                            prompt=f"{instruction}\n\n{content}",
+                            prompt=f"{instruction}\n\n{content}" + (f"\nCharacter reference SHA-256: {hashlib.sha256(reference).hexdigest()}" if reference and character and kind == "scene" else ""),
                             model=self.model,
                             width=STILL_SIZE[0],
                             height=STILL_SIZE[1],
