@@ -49,4 +49,23 @@ enum GlassFonts {
         }
         return NSFont.monospacedDigitSystemFont(ofSize: size, weight: .medium)
     }
+
+    /// Outfit on the glass for labels that aren't the clock.
+    static func ui(size: CGFloat, weight: CGFloat = 500) -> NSFont {
+        register()
+        let wghtAxis = 0x77676874 // 'wght'
+        let descriptor = NSFontDescriptor(fontAttributes: [
+            .family: "Outfit",
+            .size: size,
+            NSFontDescriptor.AttributeName(rawValue: kCTFontVariationAttribute as String): [
+                wghtAxis: weight,
+            ],
+        ])
+        if let font = NSFont(descriptor: descriptor, size: size),
+           font.familyName?.localizedCaseInsensitiveContains("Outfit") == true
+        {
+            return font
+        }
+        return NSFont.systemFont(ofSize: size, weight: weight >= 600 ? .semibold : .medium)
+    }
 }

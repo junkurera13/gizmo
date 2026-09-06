@@ -16,9 +16,14 @@ simulator and real hardware behave identically.
       The mic streams only while the button is down.
 
   up/down rocker             -> Navigate(up/down)
+      Friend owns Settings. From home, up opens the brightness/volume panel.
+      Inside it, up/down move the hovered row or change the active level;
+      down past Volume returns home. Camera is a body-local world: a body
+      that opens Camera consumes those rocker edges and does not forward
+      them, so "up from Camera" cannot be mistaken for "open Settings".
   select button              -> Select
-      Selects the focused item or interrupts current output. It does not
-      open the camera.
+      In Settings, selects or confirms a row. Otherwise selects the focused
+      item or interrupts current output. It does not open the camera.
       While asleep, any button wakes him and does nothing else.
   reserved visual input      -> Frame  (image and/or hint)
       Current body clients do not emit this. See needs its own explicit
@@ -47,6 +52,7 @@ BODY_AUDIO_SAMPLE_FORMAT = "pcm_s16le"
 BODY_CAMERA_MAX_WIDTH = 640
 BODY_CAMERA_MAX_HEIGHT = 480
 BODY_CAMERA_MAX_BYTES = 128 * 1024
+BODY_SETTING_STEPS = 10
 
 
 class BodyEventType(str, Enum):

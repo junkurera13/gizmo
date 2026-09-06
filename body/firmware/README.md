@@ -16,8 +16,10 @@ Those are not represented by fake success adapters.
 platformio.ini            pinned toolchain and exact board target
 include/gizmo/board.h     verified onboard pin mapping
 include/gizmo/camera.h    camera ownership/lifetime interface
+include/gizmo/settings.h  Settings snapshot, RGB565 renderer, backlight/volume helpers
 src/hardware/camera.cpp  ESP32 camera driver adapter
-src/main.cpp             USB serial camera bring-up entry point
+src/ui/settings.cpp      320×240 Settings overlay (no display GPIO yet)
+src/main.cpp             USB serial camera bring-up; `s` exercises the Settings renderer
 ../hardware/             selected parts, wiring and hardware acceptance evidence
 ../assets/               existing character/boot export tools
 ../reference/            laptop protocol reference; not firmware
@@ -58,9 +60,12 @@ Use the reported sensor PID to confirm which camera revision is installed.
 ## Remaining integration
 
 After [hardware confirmation](../hardware/xiao-esp32s3-sense.md): implement the
-panel driver and character/caption renderer, physical button inputs and camera
-world controller, PDM microphone and amplifier output, authenticated Friend
-transport and explicit vision lifecycle. Preserve audio-only PTT. Match the
+panel driver and blit the existing Settings RGB565 renderer (`src/ui/settings.cpp`)
+onto the ILI9341, plus character/caption rendering, physical button inputs and
+camera world controller, PDM microphone and amplifier output, authenticated Friend
+transport and explicit vision lifecycle. Friend already owns the Settings menu
+(`type: settings`); firmware paints the snapshot and applies backlight PWM /
+PCM gain. Preserve audio-only PTT. Match the
 agreed Camera layout (78% viewfinder, 22% persistent character strip, no Vision
 label) and Down/double-Select entry with on-device acceptance evidence.
 

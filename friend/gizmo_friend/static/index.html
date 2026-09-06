@@ -4,7 +4,7 @@
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>Gizmo</title>
-  <link rel="stylesheet" href="/static/app.css?v=3" />
+  <link rel="stylesheet" href="/static/app.css?v=4" />
 </head>
 <body>
   <main class="room">
@@ -18,7 +18,28 @@
 
     <section class="handheld" aria-label="Gizmo glass">
       <div class="bezel">
-        <div id="glass" class="glass"></div>
+        <div id="glass" class="glass">
+          <div id="settings" class="settings" hidden>
+            <div class="setting" data-key="brightness">
+              <span class="setting-caret"></span>
+              <span class="setting-icon" aria-hidden="true">☀</span>
+              <div class="setting-body">
+                <div class="setting-name">Brightness</div>
+                <div class="setting-meter" id="brightness-meter"></div>
+              </div>
+              <div class="setting-chevrons" aria-hidden="true">▲<br />▼</div>
+            </div>
+            <div class="setting" data-key="volume">
+              <span class="setting-caret"></span>
+              <span class="setting-icon" aria-hidden="true">🔊</span>
+              <div class="setting-body">
+                <div class="setting-name">Volume</div>
+                <div class="setting-meter" id="volume-meter"></div>
+              </div>
+              <div class="setting-chevrons" aria-hidden="true">▲<br />▼</div>
+            </div>
+          </div>
+        </div>
       </div>
       <p id="speaker" class="speaker" aria-live="polite"></p>
     </section>
@@ -42,6 +63,6 @@
       <p class="keys">P: power · ↑/↓: navigate · Space: select · hold PTT to talk (wakes him too)</p>
     </section>
   </main>
-  <script src="/static/app.js?v=3"></script>
+  <script src="/static/app.js?v=4"></script>
 </body>
 </html>

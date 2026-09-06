@@ -1,6 +1,7 @@
 import AppKit
 import Combine
 import Foundation
+import SwiftUI
 
 enum ConnectionStatus: String {
     case offline
@@ -115,7 +116,38 @@ final class SimulatorModel: ObservableObject {
     private let microphone = MicrophoneCapture()
     private let speaker = SpeakerPlayback()
 
-    private init() {}
+    enum GlassSetting: String {
+        case brightness
+        case volume
+    }
+
+    static let settingSteps = 10
+    @Published private(set) var settingsOpen = false
+    @Published private(set) var settingsFocus: GlassSetting = .volume
+    @Published private(set) var settingsAdjusting = false
+    @Published private(set) var brightnessStep = 8
+    @Published private(set) var volumeStep = 8
+
+    /// Black veil on the glass. Step 10 is full; step 0 stays just readable.
+    var screenDim: Double {
+        (1.0 - Double(brightnessStep) / Double(Self.settingSteps)) * 0.82
+    }
+
+    private init() {
+        speaker.setOutputVolume(Float(volumeStep) / Float(Self.settingSteps))
+    }
+
+    private var worldMotion: Animation? {
+        NSWorkspace.shared.accessibilityDisplayShouldReduceMotion
+            ? nil
+            : .spring(response: 0.4, dampingFraction: 0.92)
+    }
+
+    private var controlMotion: Animation? {
+        NSWorkspace.shared.accessibilityDisplayShouldReduceMotion
+            ? nil
+            : .spring(response: 0.22, dampingFraction: 0.9)
+    }
 
     func start() {
         guard !hasStarted else { return }
@@ -135,6 +167,7 @@ final class SimulatorModel: ObservableObject {
 
     func reconnect() {
         closeCamera()
+        closeSettings(animated: false)
         stopMicrophone()
         sendTask?.cancel()
         reconnectTask?.cancel()
@@ -152,6 +185,7 @@ final class SimulatorModel: ObservableObject {
     func shutdown() {
         isShuttingDown = true
         closeCamera()
+        closeSettings(animated: false)
         clearShow()
         reconnectTask?.cancel()
         reconnectTask = nil
@@ -175,6 +209,12 @@ final class SimulatorModel: ObservableObject {
     func select() {
         DeviceHaptics.controlTick()
         guard !poweredOff, !splashHolding else { return }
+        if settingsOpen {
+            selectTask?.cancel()
+            selectTask = nil
+            send(["type": "select"])
+            return
+        }
         if selectTask != nil {
             selectTask?.cancel()
             selectTask = nil
@@ -192,7 +232,7 @@ final class SimulatorModel: ObservableObject {
     }
 
     private func openCamera() {
-        guard !poweredOff, !splashHolding, screenOn, deviceState != "asleep" else { return }
+        guard !poweredOff, !splashHolding, screenOn, deviceState != "asleep", !settingsOpen else { return }
         clearShow()
         cameraOpen = true
         cameraImage = nil
@@ -318,6 +358,7 @@ final class SimulatorModel: ObservableObject {
         poweredOff = off
         if off {
             closeCamera()
+            closeSettings(animated: false)
             clearShow()
             speaker.interrupt()
             stopBootSound()
@@ -419,11 +460,92 @@ final class SimulatorModel: ObservableObject {
         guard !poweredOff else { return }
         selectTask?.cancel()
         selectTask = nil
+        // Camera is a local sensor world. Those rocker edges stay here so
+        // Friend can treat every forwarded "up" as Settings.
         if !splashHolding, screenOn, deviceState != "asleep" {
-            if direction == "down", !cameraOpen { openCamera() }
-            else if direction == "up", cameraOpen { closeCamera() }
+            if cameraOpen {
+                if direction == "up" { closeCamera() }
+                return
+            }
+            if direction == "down", !settingsOpen {
+                openCamera()
+                return
+            }
         }
         send(["type": "navigate", "direction": direction])
+    }
+
+    private func closeSettings(animated: Bool = true) {
+        let wasOpen = settingsOpen
+        let apply = {
+            self.settingsOpen = false
+            self.settingsAdjusting = false
+            self.settingsFocus = .volume
+        }
+        if animated {
+            withAnimation(worldMotion, apply)
+        } else {
+            apply()
+        }
+        if wasOpen { appendEvent("settings", "Closed settings") }
+    }
+
+    private func applySettings(_ object: [String: Any], allowOpen: Bool) {
+        let source: [String: Any]
+        if object["type"] as? String == "settings" {
+            source = object
+        } else if let nested = object["settings"] as? [String: Any] {
+            source = nested
+        } else {
+            return
+        }
+
+        let open = allowOpen && (source["open"] as? Bool ?? false)
+        let adjusting = open && (source["adjusting"] as? Bool ?? false)
+        let focus: GlassSetting = source["focus"] as? String == "brightness" ? .brightness : .volume
+        let brightness = clampSettingStep(source["brightness"])
+        let volume = clampSettingStep(source["volume"])
+        let panelChanged = open != settingsOpen
+            || adjusting != settingsAdjusting
+            || focus != settingsFocus
+        let volumeChanged = volume != volumeStep
+        let levelChanged = brightness != brightnessStep || volumeChanged
+        guard panelChanged || levelChanged else {
+            speaker.setOutputVolume(Float(volume) / Float(Self.settingSteps))
+            return
+        }
+
+        withAnimation(open != settingsOpen ? worldMotion : controlMotion) {
+            settingsOpen = open
+            settingsAdjusting = adjusting
+            settingsFocus = focus
+            brightnessStep = brightness
+            volumeStep = volume
+        }
+        speaker.setOutputVolume(Float(volume) / Float(Self.settingSteps))
+        if volumeChanged, adjusting {
+            speaker.previewVolumeTick()
+        }
+        appendEvent(
+            "settings",
+            open
+                ? "\(adjusting ? "Adjusting" : "Focus") \(focus.rawValue) · bright \(brightness) · vol \(volume)"
+                : "Closed settings"
+        )
+    }
+
+    private func clampSettingStep(_ value: Any?) -> Int {
+        let number: Int
+        if let intValue = value as? Int {
+            number = intValue
+        } else if let doubleValue = value as? Double {
+            number = Int(doubleValue.rounded())
+        } else if let nsNumber = value as? NSNumber {
+            number = nsNumber.intValue
+        } else {
+            number = 8
+        }
+        return min(Self.settingSteps, max(0, number))
     }
 
     func say(_ text: String) {
@@ -608,6 +730,7 @@ final class SimulatorModel: ObservableObject {
     private func markDisconnected(_ detail: String) {
         guard !isShuttingDown else { return }
         closeCamera()
+        closeSettings(animated: false)
         stopMicrophone()
         sendTask?.cancel()
         speaker.interrupt()
@@ -698,7 +821,13 @@ final class SimulatorModel: ObservableObject {
         if let isOn = object["screen"] as? Bool {
             screenOn = poweredOff ? false : isOn
         }
-        if poweredOff || !screenOn || deviceState == "asleep" { closeCamera() }
+        if poweredOff || !screenOn || deviceState == "asleep" {
+            closeCamera()
+        }
+        applySettings(
+            object,
+            allowOpen: !poweredOff && screenOn && deviceState != "asleep"
+        )
         if poweredOff || !screenOn || deviceState == "asleep" || deviceState == "booting"
             || object["viewing"] as? Bool == false {
             clearShow()

@@ -43,6 +43,7 @@ from gizmo_friend.body_protocol import (
     WorldCamera,
 )
 from gizmo_friend.prompt import FROZEN_PROMPT
+from gizmo_friend.settings import DeviceSettings
 from gizmo_friend.states import State, StateMachine
 from gizmo_friend.tools.allowlist import ALLOWED_TOOLS
 from gizmo_friend.transport.base import Transport
@@ -176,6 +177,7 @@ class GizmoSession:
         self._mic_preroll_limit = 480_000  # 10 s of 24 kHz mono PCM16
         self._camera_dirty = False
         self._closing = False
+        self.settings = DeviceSettings(self.data_dir / "settings.json")
 
     @property
     def state(self) -> State:
@@ -287,6 +289,9 @@ class GizmoSession:
             return
         if not self._ready_for_input():
             return
+        if self.settings.select():
+            await self.emit(self.settings.snapshot())
+            return
         if self.current_show is not None:
             await self._dismiss_show(reason="select", cancel_pending=False)
             return
@@ -344,6 +349,7 @@ class GizmoSession:
             self.machine.apply("power_off")
         else:
             self.machine.state = State.POWERED_OFF
+        await self._close_settings()
         await self._dismiss_show(reason="power_off")
         await self.emit({"type": "state", "reason": "switch"})
         # Power-off is a local body transition and must complete even if the
@@ -376,7 +382,15 @@ class GizmoSession:
             return
         if not self._ready_for_input():
             return
+        result = self.settings.navigate(cleaned)
+        if result != "ignored":
+            await self.emit(self.settings.snapshot())
+            return
         await self.emit({"type": "navigate", "direction": cleaned})
+
+    async def _close_settings(self) -> None:
+        if self.settings.close_panel():
+            await self.emit(self.settings.snapshot())
 
     async def on_push_to_talk(self, active: bool) -> None:
         """Press: he listens (waking first if he must). Release: he answers."""
@@ -567,6 +581,7 @@ class GizmoSession:
         self._flush_transcript_turns()
         self._background_memory(self.memory_provider.flush(self.user_id))
         self.machine.apply("sleep")
+        await self._close_settings()
         await self._dismiss_show(reason="sleep")
         await self.emit({"type": "state", "reason": reason})
         # A sleeping body holds no cloud socket. Google closes idle Live

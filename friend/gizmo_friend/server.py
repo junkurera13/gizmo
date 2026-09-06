@@ -19,6 +19,7 @@ from gizmo_friend.body_protocol import (
     BODY_CAMERA_MAX_HEIGHT,
     BODY_CAMERA_MAX_WIDTH,
     BODY_PROTOCOL_VERSION,
+    BODY_SETTING_STEPS,
     Frame,
     MicChunk,
     Navigate,
@@ -99,6 +100,7 @@ def app_factory(data_dir: Path) -> FastAPI:
                 "output_events": [
                     "hello", "state", "glass", "audio", "ptt", "navigate",
                     "select", "frame", "transcript", "interrupted", "error",
+                    "settings",
                 ],
                 "audio": {
                     "sample_rate_hz": BODY_AUDIO_SAMPLE_RATE_HZ,
@@ -119,6 +121,10 @@ def app_factory(data_dir: Path) -> FastAPI:
                     "default_fps": 12,
                     "max_dimension": MAX_FRAME_DIMENSION,
                     "max_fps": MAX_FRAME_FPS,
+                },
+                "settings": {
+                    "steps": BODY_SETTING_STEPS,
+                    "keys": ["brightness", "volume"],
                 },
             },
         }
@@ -213,6 +219,7 @@ def app_factory(data_dir: Path) -> FastAPI:
                 "power": friend.machine.powered(),
                 "screen": friend.machine.awake(),
                 "transport": friend.transport_name,
+                "settings": friend.settings.public(),
             }
         )
         await socket.send_json(friend.show_event() or {"type": "glass", "viewing": False})

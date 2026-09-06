@@ -168,6 +168,19 @@ class FFmpegCamera:
         await _stop_process(self.process)
 
 
+def _scale_pcm(pcm: bytes, volume: float) -> bytes:
+    if volume >= 0.999:
+        return pcm
+    if volume <= 0.001:
+        return bytes(len(pcm))
+    samples = memoryview(pcm).cast("h")
+    scaled = bytearray(len(pcm))
+    out = memoryview(scaled).cast("h")
+    for index, sample in enumerate(samples):
+        out[index] = int(max(-32768, min(32767, round(sample * volume))))
+    return bytes(scaled)
+
+
 class FFmpegSpeaker:
     """Plays response PCM through AudioToolbox with a strict application queue bound."""
 
@@ -175,11 +188,15 @@ class FFmpegSpeaker:
         self.ffmpeg = ffmpeg
         self.device_index = device_index
         self.max_buffer_bytes = max_buffer_bytes
+        self.volume = 0.8
         self.queue: asyncio.Queue[bytes] = asyncio.Queue()
         self.queued_bytes = 0
         self.dropped_bytes = 0
         self.process: asyncio.subprocess.Process | None = None
         self.task: asyncio.Task[None] | None = None
+
+    def set_volume(self, level: float) -> None:
+        self.volume = max(0.0, min(1.0, level))
 
     def enqueue(self, pcm: bytes) -> bool:
         if not pcm or len(pcm) % 2:
@@ -187,8 +204,9 @@ class FFmpegSpeaker:
         if len(pcm) > self.max_buffer_bytes or self.queued_bytes + len(pcm) > self.max_buffer_bytes:
             self.dropped_bytes += len(pcm)
             return False
-        self.queued_bytes += len(pcm)
-        self.queue.put_nowait(pcm)
+        scaled = _scale_pcm(pcm, self.volume)
+        self.queued_bytes += len(scaled)
+        self.queue.put_nowait(scaled)
         if self.task is None:
             self.task = asyncio.create_task(self._play())
         return True

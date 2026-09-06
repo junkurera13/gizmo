@@ -1,5 +1,7 @@
 #include <Arduino.h>
+#include <esp_heap_caps.h>
 #include "gizmo/camera.h"
+#include "gizmo/settings.h"
 
 namespace {
 gizmo::Camera camera;
@@ -20,10 +22,33 @@ void command(char value) {
     }
   } else if (value == 'x') {
     Serial.printf("camera stop: %s\n", esp_err_to_name(camera.stop()));
+  } else if (value == 's') {
+    gizmo::SettingsSnapshot snapshot;
+    snapshot.open = true;
+    snapshot.focus = 0;
+    snapshot.brightness = 8;
+    snapshot.volume = 6;
+    const size_t bytes = static_cast<size_t>(gizmo::kSettingsWidth) * gizmo::kSettingsHeight * sizeof(uint16_t);
+    auto* buffer = static_cast<uint16_t*>(heap_caps_malloc(bytes, MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT));
+    if (buffer == nullptr) {
+      buffer = static_cast<uint16_t*>(heap_caps_malloc(bytes, MALLOC_CAP_8BIT));
+    }
+    if (buffer == nullptr) {
+      Serial.println("settings render: no buffer");
+      return;
+    }
+    gizmo::render_settings(buffer, gizmo::kSettingsWidth, gizmo::kSettingsHeight, snapshot);
+    uint32_t checksum = 0;
+    for (int i = 0; i < gizmo::kSettingsWidth * gizmo::kSettingsHeight; ++i) checksum += buffer[i];
+    Serial.printf("settings render %dx%d checksum=%u backlight=%u\n",
+                  gizmo::kSettingsWidth, gizmo::kSettingsHeight, checksum,
+                  gizmo::backlight_duty(snapshot.brightness));
+    heap_caps_free(buffer);
   } else if (value == '?') {
-    Serial.printf("camera=%s heap=%u psram_free=%u\n",
+    Serial.printf("camera=%s heap=%u psram_free=%u backlight=%u\n",
                   camera.running() ? "running" : "off",
-                  ESP.getFreeHeap(), ESP.getFreePsram());
+                  ESP.getFreeHeap(), ESP.getFreePsram(),
+                  gizmo::backlight_duty(8));
   }
 }
 }  // namespace
@@ -35,7 +60,7 @@ void setup() {
   while (!Serial && millis() - started < 1500) delay(10);
   Serial.println("Gizmo / XIAO ESP32S3 Sense / camera bring-up");
   Serial.printf("flash=%u psram=%u\n", ESP.getFlashChipSize(), ESP.getPsramSize());
-  Serial.println("c: start camera, x: stop camera, ?: status");
+  Serial.println("c: start camera, x: stop camera, s: render settings, ?: status");
   Serial.println("No display/audio/network configured. Camera stays off until c.");
 }
 

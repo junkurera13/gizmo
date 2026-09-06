@@ -308,7 +308,21 @@ class BodyRuntime:
             if self.glass_task is not None:
                 self.glass_task.cancel()
             self.glass_task = asyncio.create_task(self._fetch_glass(event))
+        elif kind == "settings" or isinstance(event.get("settings"), dict):
+            self._apply_settings(event if kind == "settings" else event["settings"])
         self.report(event)
+
+    def _apply_settings(self, payload: dict[str, Any]) -> None:
+        steps = payload.get("steps")
+        volume = payload.get("volume")
+        try:
+            step_count = int(steps) if steps is not None else 10
+            level = int(volume) if volume is not None else 8
+        except (TypeError, ValueError):
+            return
+        if step_count <= 0:
+            return
+        self.speaker.set_volume(max(0, min(step_count, level)) / step_count)
 
     async def _fetch_glass(self, event: dict[str, Any]) -> None:
         try:

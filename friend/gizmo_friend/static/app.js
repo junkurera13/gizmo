@@ -2,6 +2,9 @@ const stateEl = document.getElementById("state");
 const pathEl = document.getElementById("path");
 const speakerEl = document.getElementById("speaker");
 const glassEl = document.getElementById("glass");
+const settingsEl = document.getElementById("settings");
+const brightnessMeter = document.getElementById("brightness-meter");
+const volumeMeter = document.getElementById("volume-meter");
 const powerBtn = document.getElementById("power");
 const upBtn = document.getElementById("up");
 const downBtn = document.getElementById("down");
@@ -15,6 +18,7 @@ const hintInput = document.getElementById("hint");
 const ws = new WebSocket(`${location.protocol === "https:" ? "wss" : "ws"}://${location.host}/ws`);
 
 let playbackCtx = null;
+let masterGain = null;
 let playTime = 0;
 let sources = [];
 let micStream = null;
@@ -23,6 +27,8 @@ let micCtx = null;
 let wsQueue = Promise.resolve();
 let powered = false;
 let pttPressed = false;
+let settingSteps = 10;
+let volumeStep = 8;
 
 function send(payload) {
   if (ws.readyState === WebSocket.OPEN) ws.send(JSON.stringify(payload));
@@ -40,23 +46,65 @@ function flushAudio() {
   playTime = 0;
 }
 
+function ensurePlayback() {
+  if (!playbackCtx) playbackCtx = new AudioContext({ sampleRate: 24000 });
+  if (!masterGain) {
+    masterGain = playbackCtx.createGain();
+    masterGain.connect(playbackCtx.destination);
+  }
+  masterGain.gain.value = volumeStep / settingSteps;
+  return playbackCtx;
+}
+
 function playPcm(b64) {
   const raw = atob(b64);
   const bytes = new Uint8Array(raw.length);
   for (let i = 0; i < raw.length; i += 1) bytes[i] = raw.charCodeAt(i);
   const samples = new Int16Array(bytes.buffer);
-  if (!playbackCtx) playbackCtx = new AudioContext({ sampleRate: 24000 });
-  const buffer = playbackCtx.createBuffer(1, samples.length, 24000);
+  const ctx = ensurePlayback();
+  const buffer = ctx.createBuffer(1, samples.length, 24000);
   const chan = buffer.getChannelData(0);
   for (let i = 0; i < samples.length; i += 1) chan[i] = samples[i] / 32768;
-  const src = playbackCtx.createBufferSource();
+  const src = ctx.createBufferSource();
   src.buffer = buffer;
-  src.connect(playbackCtx.destination);
-  const now = playbackCtx.currentTime;
+  src.connect(masterGain);
+  const now = ctx.currentTime;
   if (playTime < now) playTime = now;
   src.start(playTime);
   playTime += buffer.duration;
   sources.push(src);
+}
+
+function fillMeter(el, value, steps) {
+  el.innerHTML = "";
+  for (let i = 0; i < steps; i += 1) {
+    const pip = document.createElement("span");
+    if (i < value) pip.classList.add("is-on");
+    el.appendChild(pip);
+  }
+}
+
+function applySettings(payload) {
+  if (!payload || typeof payload !== "object") return;
+  const steps = Number(payload.steps) > 0 ? Number(payload.steps) : 10;
+  settingSteps = steps;
+  const brightness = Number.isFinite(Number(payload.brightness))
+    ? Math.max(0, Math.min(steps, Math.round(Number(payload.brightness))))
+    : 8;
+  volumeStep = Number.isFinite(Number(payload.volume))
+    ? Math.max(0, Math.min(steps, Math.round(Number(payload.volume))))
+    : 8;
+  glassEl.style.setProperty("--glass-dim", String((1 - brightness / steps) * 0.82));
+  if (masterGain) masterGain.gain.value = volumeStep / steps;
+  const open = Boolean(payload.open);
+  settingsEl.hidden = !open;
+  document.querySelectorAll(".setting").forEach((row) => {
+    const focused = open && row.dataset.key === payload.focus;
+    row.classList.toggle("is-focus", focused);
+    row.classList.toggle("is-adjust", focused && payload.adjusting);
+  });
+  fillMeter(brightnessMeter, brightness, steps);
+  fillMeter(volumeMeter, volumeStep, steps);
 }
 
 ws.addEventListener("message", (ev) => {
@@ -73,6 +121,8 @@ async function onMessage(msg) {
   }
   if (msg.transport) pathEl.textContent = msg.transport;
   if (typeof msg.screen === "boolean") setGlass(msg.screen);
+  if (msg.type === "settings") applySettings(msg);
+  else if (msg.settings) applySettings(msg.settings);
   if (msg.type === "transcript" && msg.role === "gizmo") {
     speakerEl.textContent = msg.text || "";
   }

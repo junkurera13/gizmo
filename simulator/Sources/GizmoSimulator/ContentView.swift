@@ -112,37 +112,48 @@ private struct DeviceView: View {
         ZStack {
             Color.black
 
-            if model.cameraOpen {
-                CameraWorldView(model: model)
-            } else if let screenImage = model.screenImage, model.viewingStill {
-                Image(nsImage: screenImage)
-                    .resizable()
-                    .scaledToFill()
-                    .frame(width: rect.width, height: rect.height)
-                    .id(model.screenImageID)
-                if let clip = model.screenClip, clip.stillPath == model.screenImageID {
-                    LoopingClipView(clip: clip) { event in
-                        model.clipPlaybackEvent(event, path: clip.id)
+            Group {
+                if model.cameraOpen {
+                    CameraWorldView(model: model)
+                } else if let screenImage = model.screenImage, model.viewingStill {
+                    ZStack {
+                        Image(nsImage: screenImage)
+                            .resizable()
+                            .scaledToFill()
+                            .frame(width: rect.width, height: rect.height)
+                            .id(model.screenImageID)
+                        if let clip = model.screenClip, clip.stillPath == model.screenImageID {
+                            LoopingClipView(clip: clip) { event in
+                                model.clipPlaybackEvent(event, path: clip.id)
+                            }
+                            .id(clip.id)
+                            .frame(width: rect.width, height: rect.height)
+                        }
                     }
-                    .id(clip.id)
-                    .frame(width: rect.width, height: rect.height)
+                } else if let spriteName, let animation = spriteStore.animation(for: spriteName) {
+                    SpriteAnimationView(animation: animation)
+                        .id("\(spriteName)-\(model.bootGeneration)")
+                } else if homeVisible {
+                    HomeClusterView(
+                        art: spriteStore.hearts,
+                        level: model.batteryLevel,
+                        character: spriteStore.animation(for: "idle")
+                    )
                 }
-            } else if let spriteName, let animation = spriteStore.animation(for: spriteName) {
-                SpriteAnimationView(animation: animation)
-                    .id("\(spriteName)-\(model.bootGeneration)")
-            } else if homeVisible {
-                HomeClusterView(
-                    art: spriteStore.hearts,
-                    level: model.batteryLevel,
-                    character: spriteStore.animation(for: "idle")
-                )
             }
+            .transaction { $0.animation = nil }
+
+            if model.settingsOpen {
+                SettingsPanelView(model: model)
+                    .transition(.move(edge: .top).combined(with: .opacity))
+            }
+
+            Color.black.opacity(model.screenDim)
         }
         .frame(width: rect.width, height: rect.height)
         .clipShape(RoundedRectangle(cornerRadius: radius, style: .continuous))
         .position(x: rect.midX, y: rect.midY)
         .opacity(model.screenOn ? 1 : 0)
-        .transaction { $0.animation = nil }
         .allowsHitTesting(false)
         .accessibilityHidden(true)
     }
@@ -301,10 +312,24 @@ private struct DeviceView: View {
     private func helpText(for control: DeviceControl) -> String {
         switch control.shortAction {
         case "navigateUp":
-            return "Move up to Home."
+            if model.settingsOpen {
+                if model.settingsAdjusting { return "Increase this setting." }
+                if model.settingsFocus == .brightness { return "Already at Brightness." }
+                return "Move up to Brightness."
+            }
+            if model.cameraOpen { return "Move up to Home." }
+            return "Move up to Settings."
         case "navigateDown":
+            if model.settingsOpen {
+                if model.settingsAdjusting { return "Decrease this setting." }
+                if model.settingsFocus == .volume { return "Move down to Home." }
+                return "Move down to Volume."
+            }
             return "Move down to Camera."
         case "select":
+            if model.settingsOpen {
+                return model.settingsAdjusting ? "Confirm this setting." : "Adjust this setting."
+            }
             return "Select. Double-press to open Camera; press to return home."
         case "ptt":
             return "Hold to talk. Wakes him if he's asleep."

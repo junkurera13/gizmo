@@ -32,8 +32,9 @@ introduced may temporarily omit it.
 | --- | --- | --- |
 | `power` | Top toggle on / off | Cold boot / hard shutdown |
 | `ptt` | Pink side button down / up | Down: listen (wakes him if asleep). Up: answer. No tap gesture; sleep is idle-only |
-| `select` | Circular Select button | Select the focused item or interrupt output; wakes him if asleep. Mac Camera gestures are handled locally before this event |
-| `navigate` | Up/down rocker | Move the device UI selection up or down; wakes him if asleep |
+| `select` | Circular Select button | In Settings, select or confirm a row. Otherwise interrupt output. Wakes him if asleep. Mac Camera gestures are local and are not this event |
+| `navigate` | Up/down rocker | Friend owns Settings: up from home opens it. Inside Settings, the rocker moves rows or changes the active level; down past Volume returns home. Camera-capable bodies consume Camera rocker edges locally and do not forward them |
+| `settings` (brain → body) | — | Overlay snapshot: `open`, `focus` (`brightness`\|`volume`), `adjusting`, `brightness`, `volume`, `steps`. Paint the two-row menu when `open` is true. Apply `brightness` to the panel backlight and `volume` to speaker gain. Hello repeats the same object so a reconnect restores levels |
 | `frame` | Reserved visual JPEG, base64 in `image` | Not emitted by current clients; preview capture is local until the vision lifecycle is connected |
 | `audio` | PCM in `pcm` while PTT is down | Realtime microphone input; `mic` is an accepted compatibility alias |
 | `audio` (brain → body) | PCM in `pcm` | Realtime speaker output; there is no `speaker` wire event |
@@ -88,9 +89,11 @@ must not blindly cold-boot it. A physical hard cut cannot guarantee a final
 `power:false` message. Wait for boot to complete before sending a talk turn; PTT
 from sleep wakes and captures on the same press.
 
-On connect, the server sends `hello` with `state`, `power`, `screen`, and
-`transport`, followed by a `glass` snapshot. State changes arrive in `state`
-events and accompanying event fields. Show uses `glass` with `still`, then
+On connect, the server sends `hello` with `state`, `power`, `screen`,
+`transport`, and `settings`, followed by a `glass` snapshot. `navigate:up` from
+home is answered with a `settings` event; the body paints that overlay and
+applies backlight/volume from `brightness` and `volume`. State changes arrive in
+`state` events and accompanying event fields. Show uses `glass` with `still`, then
 `clip`/`frames`, or `viewing:false` on dismissal; `show` is a model tool name, not
 the output event. The `frames` URL serves the finite JPEG sequence described in
 `docs/SHOW.md`. Media fetches use the same authorization and device-id headers.

@@ -4,11 +4,50 @@ import AVFoundation
 final class SpeakerPlayback {
     private let engine = AVAudioEngine()
     private let player = AVAudioPlayerNode()
+    private let tick = AVAudioPlayerNode()
     private let format = AVAudioFormat(standardFormatWithSampleRate: 24_000, channels: 1)!
 
     init() {
         engine.attach(player)
+        engine.attach(tick)
         engine.connect(player, to: engine.mainMixerNode, format: format)
+        engine.connect(tick, to: engine.mainMixerNode, format: format)
+    }
+
+    func setOutputVolume(_ volume: Float) {
+        engine.mainMixerNode.outputVolume = max(0, min(1, volume))
+    }
+
+    /// A short tone at the current mixer level, so the rocker can be heard.
+    /// Skipped while Gizmo is speaking — the voice is already the preview.
+    func previewVolumeTick() {
+        guard engine.mainMixerNode.outputVolume > 0.001, !player.isPlaying else { return }
+
+        let sampleRate = 24_000.0
+        let duration = 0.07
+        let frames = Int(sampleRate * duration)
+        guard let buffer = AVAudioPCMBuffer(pcmFormat: format, frameCapacity: AVAudioFrameCount(frames)),
+              let output = buffer.floatChannelData?[0] else { return }
+        buffer.frameLength = AVAudioFrameCount(frames)
+        for index in 0..<frames {
+            let t = Double(index) / sampleRate
+            let attack = 0.006
+            let release = 0.03
+            let envelope: Double
+            if t < attack {
+                envelope = t / attack
+            } else if t > duration - release {
+                envelope = max(0, (duration - t) / release)
+            } else {
+                envelope = 1
+            }
+            output[index] = Float(sin(2 * Double.pi * 660 * t) * envelope * 0.28)
+        }
+
+        tick.stop()
+        if !engine.isRunning { try? engine.start() }
+        tick.scheduleBuffer(buffer)
+        tick.play()
     }
 
     func enqueue(_ data: Data) throws {
@@ -34,6 +73,7 @@ final class SpeakerPlayback {
 
     func shutdown() {
         player.stop()
+        tick.stop()
         engine.stop()
     }
 }
