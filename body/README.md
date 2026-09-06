@@ -1,8 +1,13 @@
 # Body
 
-ESP32-S3 handheld: top power toggle, pink push-to-talk button, up/down rocker, circular Select button, mic, speaker, landscape screen, world camera. The screen is not selected yet; 69 × 50 mm is the design target.
+ESP32-S3 handheld: top power toggle, pink push-to-talk button, up/down rocker, circular Select button, mic, speaker, landscape screen, world camera. Selected screen: Akizuki 116265, a 2.8-inch ILI9341 SPI module, 320 × 240 landscape. The original 69 × 50 mm design target is not its verified active-area size.
 
-**Not in v1.** Do not add fake firmware here. Friend runs on a laptop and speaks this protocol in software.
+**Selected board: Seeed Studio XIAO ESP32S3 Sense (113991115).**
+Real board/camera bring-up firmware now lives in [`firmware/`](firmware/README.md).
+Selected parts, unresolved wiring and physical acceptance checks live in
+[`hardware/`](hardware/xiao-esp32s3-sense.md). The laptop reference below is
+separate from firmware. Display, physical controls, audio and network integration
+are still pending; a successful cross-compile is not a hardware pass.
 
 ## Protocol Friend already understands
 
@@ -27,9 +32,9 @@ introduced may temporarily omit it.
 | --- | --- | --- |
 | `power` | Top toggle on / off | Cold boot / hard shutdown |
 | `ptt` | Pink side button down / up | Down: listen (wakes him if asleep). Up: answer. No tap gesture; sleep is idle-only |
-| `select` | Circular Select button | Select the focused item or interrupt output; wakes him if asleep; never opens the camera |
+| `select` | Circular Select button | Select the focused item or interrupt output; wakes him if asleep. Mac Camera gestures are handled locally before this event |
 | `navigate` | Up/down rocker | Move the device UI selection up or down; wakes him if asleep |
-| `frame` | Reserved visual JPEG, base64 in `image` | Not emitted by either current body client; future See input needs its own interaction contract |
+| `frame` | Reserved visual JPEG, base64 in `image` | Not emitted by current clients; preview capture is local until the vision lifecycle is connected |
 | `audio` | PCM in `pcm` while PTT is down | Realtime microphone input; `mic` is an accepted compatibility alias |
 | `audio` (brain → body) | PCM in `pcm` | Realtime speaker output; there is no `speaker` wire event |
 
@@ -61,9 +66,10 @@ it. Reconnect and report a fresh physical press for the next turn.
 Camera policy for this v1: **PTT is audio-only.** Neither the native simulator nor
 the laptop reference client activates a camera or sends `frame` when the pink
 button is pressed. The server still recognizes a bounded `frame` event as dormant
-protocol capability, but current clients do not emit it. Before See is connected,
-its entry/exit control, viewfinder behavior, ownership, privacy feedback, and the
-event's relationship to voice must be designed explicitly. Do not infer camera
+protocol capability, but current clients do not emit it. The Mac Camera world now has Down/double-Select entry and a local viewfinder.
+The physical firmware currently exposes camera bring-up over USB serial only.
+Before agent vision is connected, define frame delivery/clearing, ownership, and
+the event's relationship to voice explicitly. Do not infer camera
 activation from PTT.
 
 Other device inputs:

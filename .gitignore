@@ -27,3 +27,6 @@ Thumbs.db
 .idea/
 .vscode/
 *.swp
+
+# Embedded firmware toolchain/build outputs
+body/firmware/.pio/
