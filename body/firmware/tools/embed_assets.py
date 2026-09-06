@@ -159,6 +159,7 @@ def main() -> None:
         f"constexpr int kClockCellWidth = {clock['cell_width']};",
         f"constexpr int kClockCellHeight = {clock['cell_height']};",
         f"constexpr int kClockBaseline = {clock['baseline']};",
+        f"constexpr int kClockWeight = {int(clock.get('weight', 500))};",
         f"constexpr int kClockAtlasWidth = {atlas_w};",
         f"constexpr int kClockAtlasHeight = {atlas_h};",
         f"constexpr char kClockCharacters[] = \"{clock['characters']}\";",

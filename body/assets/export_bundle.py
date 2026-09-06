@@ -19,6 +19,7 @@ from PIL import Image, ImageDraw, ImageFont, ImageOps
 SCHEMA_VERSION = 1
 SPLASH_MINIMUM_MS = 3_800
 CLOCK_CHARACTERS = "0123456789:"
+CLOCK_WEIGHT = 500  # Outfit Medium; matches simulator GlassFonts.clock
 
 
 def sha256(data: bytes) -> str:
@@ -65,20 +66,70 @@ def source_record(root: Path, path: Path) -> dict[str, object]:
     }
 
 
+def load_outfit_medium(font_path: Path, font_size: int) -> tuple[ImageFont.FreeTypeFont, dict[str, object]]:
+    """Load Outfit with wght=500 (Medium). Tabular figures if the rasteriser supports them."""
+    font = ImageFont.truetype(str(font_path), font_size)
+    try:
+        axes = font.get_variation_axes()
+    except OSError as error:
+        raise SystemExit(f"clock font is not a variable face: {error}") from error
+    values: list[float] = []
+    has_wght = False
+    for axis in axes:
+        name = axis["name"]
+        if isinstance(name, bytes):
+            name = name.decode("ascii")
+        tag = name.replace(" ", "").lower()
+        if tag in {"wght", "weight"}:
+            values.append(float(CLOCK_WEIGHT))
+            has_wght = True
+        else:
+            values.append(float(axis["default"]))
+    if not has_wght:
+        raise SystemExit("clock font has no wght axis; cannot bake Outfit Medium")
+    font.set_variation_by_axes(values)
+    return font, {
+        "weight": CLOCK_WEIGHT,
+        "weight_axis": "wght",
+        "variation_applied": True,
+        "axis_names": [
+            (axis["name"].decode("ascii") if isinstance(axis["name"], bytes) else axis["name"])
+            for axis in axes
+        ],
+    }
+
+
+def draw_clock_glyph(
+    draw: ImageDraw.ImageDraw,
+    xy: tuple[float, float],
+    character: str,
+    font: ImageFont.FreeTypeFont,
+) -> bool:
+    """Draw one atlas glyph. Prefer OpenType `tnum` when raqm/Pillow exposes it."""
+    try:
+        draw.text(xy, character, font=font, fill=255, anchor="ls", features=["tnum"])
+        return True
+    except (TypeError, ValueError):
+        draw.text(xy, character, font=font, fill=255, anchor="ls")
+        return False
+
+
 def export_clock_atlas(font_path: Path, panel_width: int) -> tuple[bytes, dict[str, object], ImageFont.FreeTypeFont]:
     import io
 
     font_size = max(8, round(panel_width * 0.05))
-    font = ImageFont.truetype(str(font_path), font_size)
+    font, variation = load_outfit_medium(font_path, font_size)
     ascent, descent = font.getmetrics()
     advances = [font.getlength(character) for character in CLOCK_CHARACTERS]
     cell_width = max(1, math.ceil(max(advances)))
     cell_height = max(1, ascent + descent)
     atlas = Image.new("L", (cell_width * len(CLOCK_CHARACTERS), cell_height), 0)
     draw = ImageDraw.Draw(atlas)
+    tabular = True
     for index, (character, advance) in enumerate(zip(CLOCK_CHARACTERS, advances, strict=True)):
         x = index * cell_width + (cell_width - advance) / 2
-        draw.text((x, ascent), character, font=font, fill=255, anchor="ls")
+        if not draw_clock_glyph(draw, (x, ascent), character, font):
+            tabular = False
     output = io.BytesIO()
     atlas.save(output, format="PNG", optimize=True)
     metadata = {
@@ -90,6 +141,8 @@ def export_clock_atlas(font_path: Path, panel_width: int) -> tuple[bytes, dict[s
         "baseline": ascent,
         "font_size": font_size,
         "color": "#ffffff",
+        "tabular_figures": tabular,
+        **variation,
     }
     return output.getvalue(), metadata, font
 

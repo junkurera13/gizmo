@@ -191,6 +191,23 @@ void copy(const Canvas& canvas, const uint16_t* source) {
   for (size_t i = 0; i < count; ++i) canvas.pixels[i] = source[i];
 }
 
+void blit_scaled(const Canvas& dest, int dx, int dy, int dw, int dh, const uint16_t* src, int sw,
+                 int sh) {
+  if (!dest.valid() || src == nullptr || dw <= 0 || dh <= 0 || sw <= 0 || sh <= 0) return;
+  for (int row = 0; row < dh; ++row) {
+    const int py = dy + row;
+    if (py < 0 || py >= dest.height) continue;
+    const int sy = row * sh / dh;
+    uint16_t* line = dest.pixels + py * dest.width;
+    const uint16_t* src_line = src + sy * sw;
+    for (int col = 0; col < dw; ++col) {
+      const int px = dx + col;
+      if (px < 0 || px >= dest.width) continue;
+      line[px] = src_line[col * sw / dw];
+    }
+  }
+}
+
 void progress(const Canvas& canvas, int x, int y, int w, int h, float fraction, uint16_t color) {
   if (w <= 2 || h <= 2) return;
   if (fraction < 0.0f) fraction = 0.0f;

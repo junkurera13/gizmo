@@ -7,23 +7,30 @@ Real board/camera bring-up firmware now lives in [`firmware/`](firmware/README.m
 Selected parts, unresolved wiring and physical acceptance checks live in
 [`hardware/`](hardware/xiao-esp32s3-sense.md). The laptop reference below is
 separate from firmware. On the board today: display, buttons, mic/speaker,
-boot/home, a local Settings menu, and PTT voice memo. Wi-Fi and the Friend
-`/ws` transport are not implemented; a successful cross-compile is not a
+boot/home, a local Settings menu, PTT voice memo, phone Wi-Fi setup, a local
+Camera world (Down / serial `d`), and a Friend `/ws` slice (health, hello, PTT
+audio up at 24 kHz, inbound PCM play-down). A successful cross-compile is not a
 hardware pass.
 
 ## Protocol Friend already understands
 
-The native simulator and the laptop reference client use JSON text messages over
-WebSocket `/ws`. Firmware does **not** open that socket yet: it is a local
-terminal OS (see [`firmware/README.md`](firmware/README.md)). When transport
-lands, firmware should use the same messages below. Python classes in
-`friend/gizmo_friend/body_protocol.py` are internal controller events; their
+The native simulator, the laptop reference client, and the XIAO firmware use
+JSON text messages over WebSocket `/ws`. Firmware still owns boot, home,
+Settings, Camera, and local memo when the socket is down; the `/ws` slice is
+health + hello + PTT audio, not the full Show/Settings overlay. Python classes
+in `friend/gizmo_friend/body_protocol.py` are internal controller events; their
 names are not necessarily the JSON names.
 
 Connect to `wss://<brain-host>/ws` with `Authorization: Bearer <device-token>` and
 `X-Gizmo-Device: <device-id>` headers. Keep the same device id across reconnects.
 Local development uses `ws://127.0.0.1:43147/ws`. The body needs the device token,
 not any provider API key.
+
+Firmware stores the brain URL and token in NVS (`F<url>` / `K<token>` over
+serial, or `GIZMO_BRAIN_URL` / `GIZMO_DEVICE_TOKEN` compile flags). The device
+id is `gizmo-` plus the Wi-Fi MAC and is kept across boots. See
+[`firmware/README.md`](firmware/README.md) for the on-device slice and what is
+still stubbed.
 
 The current wire version is **1**. Before opening the socket, read `/health` and
 require `body_protocol.version == 1`. That response also publishes the canonical
@@ -74,7 +81,9 @@ Camera policy for this v1: **PTT is audio-only.** Neither the native simulator n
 the laptop reference client activates a camera or sends `frame` when the pink
 button is pressed. The server still recognizes a bounded `frame` event as dormant
 protocol capability, but current clients do not emit it. The Mac Camera world now has Down/double-Select entry and a local viewfinder.
-The physical firmware currently exposes camera bring-up over USB serial only.
+The physical firmware opens Camera with Down (serial `d` until the ladder is
+soldered), double-Select within 320 ms, or serial `c`. Up / Select leave it.
+The viewfinder is local preview only.
 Before agent vision is connected, define frame delivery/clearing, ownership, and
 the event's relationship to voice explicitly. Do not infer camera
 activation from PTT.

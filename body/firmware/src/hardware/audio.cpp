@@ -75,6 +75,13 @@ esp_err_t Audio::begin() {
   memo_ = static_cast<int16_t*>(
       heap_caps_malloc(memo_capacity_ * sizeof(int16_t), MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT));
   if (memo_ == nullptr) return ESP_ERR_NO_MEM;
+  live_cap_ = kLiveSamples;
+  live_ = static_cast<int16_t*>(
+      heap_caps_malloc(live_cap_ * sizeof(int16_t), MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT));
+  if (live_ == nullptr) {
+    live_ = static_cast<int16_t*>(heap_caps_malloc(live_cap_ * sizeof(int16_t), MALLOC_CAP_8BIT));
+  }
+  if (live_ == nullptr) return ESP_ERR_NO_MEM;
   esp_err_t result = install_mic();
   if (result != ESP_OK) return result;
   result = install_amp();
@@ -95,6 +102,7 @@ bool Audio::start_recording() {
   warmup_left_ = kWarmupSamples;
   peak_ = 0;
   vu_ = 0;
+  capture_w_ = capture_r_ = capture_n_ = 0;
   i2s_zero_dma_buffer(kMicPort);
   if (i2s_start(kMicPort) != ESP_OK) return false;
   recording_ = true;
@@ -110,17 +118,21 @@ void Audio::stop_recording() {
 
 bool Audio::start_playback() {
   if (memo_samples_ == 0) return false;
+  stop_live();
   return start_clip(memo_, memo_samples_);
 }
 
 bool Audio::start_clip(const int16_t* samples, size_t count) {
   if (!ready_ || samples == nullptr || count == 0) return false;
   if (recording_) stop_recording();
+  stop_live();
   if (playing_) stop_playback();
+  if (!set_amp_rate(kSampleRate)) return false;
   source_ = samples;
   source_samples_ = count;
   play_cursor_ = 0;
   draining_ = false;
+  live_playing_ = false;
   peak_ = 0;
   i2s_zero_dma_buffer(kAmpPort);
   if (i2s_start(kAmpPort) != ESP_OK) return false;
@@ -130,11 +142,74 @@ bool Audio::start_clip(const int16_t* samples, size_t count) {
 }
 
 void Audio::stop_playback() {
-  if (!playing_) return;
+  if (!playing_ && !live_playing_) return;
   playing_ = false;
+  live_playing_ = false;
   draining_ = false;
+  source_ = nullptr;
+  live_n_ = live_r_ = live_w_ = 0;
   i2s_zero_dma_buffer(kAmpPort);
   i2s_stop(kAmpPort);
+}
+
+void Audio::stop_live() {
+  if (!live_playing_ && live_n_ == 0) {
+    live_n_ = live_r_ = live_w_ = 0;
+    return;
+  }
+  stop_playback();
+}
+
+bool Audio::set_amp_rate(uint32_t hz) {
+  if (hz == 0) return false;
+  if (hz == amp_rate_) return true;
+  const esp_err_t result = i2s_set_sample_rates(kAmpPort, hz);
+  if (result != ESP_OK) {
+    Serial.printf("audio: amp rate %u failed: %s\n", static_cast<unsigned>(hz), esp_err_to_name(result));
+    return false;
+  }
+  amp_rate_ = hz;
+  return true;
+}
+
+size_t Audio::take_capture(int16_t* dest, size_t cap) {
+  if (dest == nullptr || cap == 0 || capture_n_ == 0) return 0;
+  const size_t n = capture_len_[capture_r_];
+  const size_t take = n < cap ? n : cap;
+  for (size_t i = 0; i < take; ++i) dest[i] = capture_ring_[capture_r_][i];
+  capture_r_ = static_cast<uint8_t>((capture_r_ + 1) % kCaptureRingChunks);
+  --capture_n_;
+  return take;
+}
+
+bool Audio::start_live() {
+  if (!ready_ || live_ == nullptr) return false;
+  if (recording_) return false;
+  if (playing_ && !live_playing_) stop_playback();
+  if (live_playing_) return true;
+  if (!set_amp_rate(kWireSampleRate)) return false;
+  draining_ = false;
+  live_empty_since_ = millis();
+  peak_ = 0;
+  i2s_zero_dma_buffer(kAmpPort);
+  if (i2s_start(kAmpPort) != ESP_OK) return false;
+  live_playing_ = true;
+  playing_ = true;
+  source_ = nullptr;
+  return true;
+}
+
+size_t Audio::enqueue_live(const int16_t* samples, size_t count) {
+  if (samples == nullptr || count == 0 || live_ == nullptr) return 0;
+  if (recording_) return 0;
+  if (!live_playing_ && !start_live()) return 0;
+  size_t written = 0;
+  while (written < count && live_n_ < live_cap_) {
+    live_[live_w_] = samples[written++];
+    live_w_ = (live_w_ + 1) % live_cap_;
+    ++live_n_;
+  }
+  return written;
 }
 
 void Audio::track_level(const int16_t* samples, size_t count) {
@@ -170,6 +245,13 @@ void Audio::pump_recording() {
       chunk_[i] = static_cast<int16_t>(value);
     }
     track_level(chunk_, count);
+    if (capture_n_ < kCaptureRingChunks) {
+      const size_t keep = count < kChunkSamples ? count : kChunkSamples;
+      for (size_t i = 0; i < keep; ++i) capture_ring_[capture_w_][i] = chunk_[i];
+      capture_len_[capture_w_] = static_cast<uint16_t>(keep);
+      capture_w_ = static_cast<uint8_t>((capture_w_ + 1) % kCaptureRingChunks);
+      ++capture_n_;
+    }
     const size_t room = memo_capacity_ - memo_samples_;
     const size_t take = count < room ? count : room;
     for (size_t i = 0; i < take; ++i) memo_[memo_samples_ + i] = chunk_[i];
@@ -184,6 +266,10 @@ void Audio::pump_recording() {
 }
 
 void Audio::pump_playback() {
+  if (live_playing_) {
+    pump_live();
+    return;
+  }
   if (draining_) {
     if (static_cast<int32_t>(millis() - drain_until_) >= 0) stop_playback();
     return;
@@ -208,6 +294,41 @@ void Audio::pump_playback() {
     if (i2s_write(kAmpPort, stereo_, count * 2 * sizeof(int16_t), &written, 0) != ESP_OK) return;
     play_cursor_ += written / (2 * sizeof(int16_t));
     if (written < count * 2 * sizeof(int16_t)) return;  // DMA ring full for now
+  }
+}
+
+void Audio::pump_live() {
+  if (live_n_ == 0) {
+    if (live_empty_since_ == 0) live_empty_since_ = millis();
+    // Keep BCLK running briefly so a talk-turn gap does not pop; then drop clocks.
+    if (millis() - live_empty_since_ >= 280) stop_live();
+    return;
+  }
+  live_empty_since_ = 0;
+  for (int chunk = 0; chunk < kMaxChunksPerUpdate && live_playing_ && live_n_ > 0; ++chunk) {
+    const size_t count = live_n_ < kChunkSamples ? live_n_ : kChunkSamples;
+    for (size_t i = 0; i < count; ++i) {
+      chunk_[i] = live_[live_r_];
+      live_r_ = (live_r_ + 1) % live_cap_;
+    }
+    live_n_ -= count;
+    apply_volume(chunk_, count, volume_step_, volume_steps_);
+    track_level(chunk_, count);
+    for (size_t i = 0; i < count; ++i) {
+      stereo_[i * 2] = chunk_[i];
+      stereo_[i * 2 + 1] = chunk_[i];
+    }
+    size_t written = 0;
+    if (i2s_write(kAmpPort, stereo_, count * 2 * sizeof(int16_t), &written, 0) != ESP_OK) return;
+    const size_t consumed = written / (2 * sizeof(int16_t));
+    if (consumed < count) {
+      // Push unused samples back. Rare: DMA ring full.
+      for (size_t i = count; i > consumed; --i) {
+        live_r_ = (live_r_ + live_cap_ - 1) % live_cap_;
+        ++live_n_;
+      }
+      return;
+    }
   }
 }
 

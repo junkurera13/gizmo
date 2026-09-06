@@ -134,10 +134,63 @@ void render_playback_overlay(const draw::Canvas& canvas, uint8_t vu, float progr
   draw::progress(canvas, 12, canvas.height - 14, canvas.width - 24, 6, progress, draw::kWhite);
 }
 
-void render_camera_hint(const draw::Canvas& canvas) {
+void crop_viewfinder(const draw::Canvas& canvas, int view_h) {
+  if (view_h <= 0 || view_h >= canvas.height) return;
+  const int skip = (canvas.height - view_h) / 2;
+  if (skip <= 0) return;
+  // Centre-crop: move the middle `view_h` rows to the top. Forward copy is
+  // safe because skip > 0, so each destination row sits above its source.
+  for (int row = 0; row < view_h; ++row) {
+    uint16_t* dest = canvas.pixels + row * canvas.width;
+    const uint16_t* src = canvas.pixels + (row + skip) * canvas.width;
+    for (int col = 0; col < canvas.width; ++col) dest[col] = src[col];
+  }
+}
+
+void round_viewfinder_bottom(const draw::Canvas& canvas, int view_h, int radius) {
+  if (radius <= 0 || view_h <= radius) return;
+  const int r2 = radius * radius;
+  for (int y = 0; y < radius; ++y) {
+    const int py = view_h - radius + y;
+    if (py < 0 || py >= canvas.height) continue;
+    uint16_t* line = canvas.pixels + py * canvas.width;
+    const int dy = y - radius + 1;
+    for (int x = 0; x < radius; ++x) {
+      const int dx = x - radius + 1;
+      if (dx * dx + dy * dy <= r2) continue;
+      line[x] = draw::kBlack;
+      const int rx = canvas.width - 1 - x;
+      if (rx >= 0 && rx < canvas.width) line[rx] = draw::kBlack;
+    }
+  }
+}
+
+void render_camera_world(const draw::Canvas& canvas, const uint16_t* home_base, bool viewfinder_ready,
+                         const char* status) {
   if (!canvas.valid()) return;
-  draw::clear(canvas, draw::kBlack);
-  draw::text_centered(canvas, canvas.width / 2, canvas.height / 2 - 4, "CAMERA STARTING", draw::kDim, 1);
+  const int strip = camera_strip_height(canvas.height);
+  const int view_h = canvas.height - strip;
+  const int radius = static_cast<int>(static_cast<float>(canvas.width) * kCameraCornerFraction + 0.5f);
+
+  if (viewfinder_ready) {
+    crop_viewfinder(canvas, view_h);
+  } else {
+    draw::fill_rect(canvas, 0, 0, canvas.width, view_h, draw::kBlack);
+    const char* label = status && status[0] ? status : "CAMERA";
+    draw::text_centered(canvas, canvas.width / 2, view_h / 2 - 4, label, draw::kDim, 1);
+  }
+  round_viewfinder_bottom(canvas, view_h, radius);
+
+  draw::fill_rect(canvas, 0, view_h, canvas.width, strip, draw::kBlack);
+  if (home_base != nullptr) {
+    const int pad = static_cast<int>(static_cast<float>(canvas.width) * kCameraStripPadFraction + 0.5f);
+    const int char_w =
+        static_cast<int>(static_cast<float>(canvas.width) * kCameraCharacterWidthFraction + 0.5f);
+    const int char_h =
+        static_cast<int>(static_cast<float>(strip) * kCameraCharacterHeightFraction + 0.5f);
+    const int char_y = view_h + (strip - char_h) / 2;
+    draw::blit_scaled(canvas, pad, char_y, char_w, char_h, home_base, canvas.width, canvas.height);
+  }
 }
 
 void render_wifi_setup(const draw::Canvas& canvas, const char* ap_ssid, const char* detail) {

@@ -8,13 +8,16 @@ same boot and home as the Mac simulator: the Glass boot flipbook (1.25 s drop,
 blink, ODDITY wordmark, chime at 2.875 s, held to 5.05 s), the home character
 with the clock and five Minecraft-style hearts, push-to-talk voice memo into
 PSRAM with a VU meter, memo playback through the MAX98357A, and the Settings
-menu driven by UP/DOWN/SELECT. The camera bring-up path (QVGA JPEG to the
-panel over USB serial command) is kept as its own state. Wi-Fi is a one-time
-phone captive portal: the board opens an AP named `Gizmo-XXXX`, the phone
-joins it (no password), a page lists nearby networks, and the chosen
-SSID/password is stored in NVS for later boots. NTP (JST) starts after join so
-the home clock can appear. There is no Friend WebSocket yet. Backlight PWM is
-not driven: LED is tied to 3V3, so the Brightness setting is stored but has no
+menu driven by UP/DOWN/SELECT. Down from IDLE (and serial `d`) opens the local
+Camera world: 78% viewfinder + 22% character strip. Double-Select within 320 ms
+toggles it, matching the Mac simulator. Wi-Fi is a one-time phone captive portal:
+the board opens an AP named `Gizmo-XXXX`, the phone joins it (no password), a
+page lists nearby networks, and the chosen SSID/password is stored in NVS for
+later boots. NTP (JST) starts after join so the home clock can appear. After
+Wi-Fi is online and a brain URL is stored, firmware opens authenticated Friend
+`/ws` (health + hello + PTT audio up at 24 kHz + inbound PCM play-down). Local
+memo playback stays available when the socket is down. Backlight PWM is not
+driven: LED is tied to 3V3, so the Brightness setting is stored but has no
 hardware effect yet.
 
 ### Artwork pipeline
@@ -23,27 +26,32 @@ The panel shows the **export_bundle.py output**, not a redrawn copy. The bundle
 is embedded in flash so a single `pio run -t upload` carries everything:
 
 ```sh
-# 1. export the 320x240 profile from glass/ (same tool the Mac reference uses)
+# Re-export (Outfit Medium wght=500 atlas + boot/home) and embed in firmware:
 body/firmware/.venv/bin/python body/assets/export_bundle.py --width 320 --height 240 \
-    --output data/body-assets/320x240 --force
-# 2. turn it into firmware blobs + include/gizmo/assets_generated.h
+    --output data/body-assets/320x240 --force && \
 body/firmware/.venv/bin/python body/firmware/tools/embed_assets.py --bundle data/body-assets/320x240
 ```
+
+The clock atlas is baked from `glass/fonts/Outfit[wght].ttf` at **wght=500**
+(Outfit Medium, same axis the Mac simulator uses). Tabular figures (`tnum`) are
+requested when Pillow/raqm can apply them; otherwise glyphs are still centred in
+equal cells. `manifest.json` records `home.clock.weight`. `assets_generated.h`
+exposes `kClockWeight`. REC/PLAY timers still use the 5×7 draw font.
 
 `tools/embed_assets.py` writes `assets/` (15 unique boot JPEGs, `home_base.jpg`,
 hearts as RGB565+A8, the Outfit clock atlas as an 8-bit mask, the chime
 resampled 24 → 16 kHz PCM16) and rewrites the `board_build.embed_files` block
 in `platformio.ini`. All timing and layout constants (125 ms slots, 5050 ms
-minimum, 2875 ms chime, 0.045 status top, heart 12/15 px, atlas cells) come
-from `manifest.json` into `assets_generated.h`; nothing is hand-copied.
-`assets/` and the generated header are committed so a clean checkout builds.
-Rerun both steps after changing anything under `glass/`. Pillow is required
-(`pip install Pillow` into the tools venv).
+minimum, 2875 ms chime, 0.045 status top, heart layout/asset px, atlas cells, clock
+weight) come from `manifest.json` into `assets_generated.h`; nothing is
+hand-copied. `assets/` and the generated header are committed so a clean
+checkout builds. Rerun both steps after changing anything under `glass/`.
+Pillow is required (`pip install -r body/firmware/requirements.txt`).
 
 On device, JPEG frames are decoded with the camera driver's `jpg2rgb565` into
 the PSRAM framebuffer only when the 125 ms slot advances; the home base is
 decoded once and copied under the HUD. The clock is hidden until the device
-knows the time (no RTC/NTP yet; `tHH:MM` over serial sets it for now). Hearts
+knows the time (NTP after Wi-Fi join, or `tHH:MM` over serial). Hearts
 follow the battery divider in half steps; with no divider wired (USB power)
 they show full, matching the simulator's default level.
 
@@ -52,16 +60,17 @@ they show full, matching the simulator's default level.
 | State | Enter | Leave |
 | --- | --- | --- |
 | `BOOT` | power-on; Glass flipbook, chime at 2875 ms, wordmark held to 5050 ms; buttons ignored | automatically to `IDLE` |
-| `IDLE` | home: character, clock (when set), hearts | PTT down → `RECORDING`; UP → `SETTINGS`; SELECT → `PLAYBACK` (if a memo exists); serial `c` → `CAMERA` |
-| `RECORDING` | PTT held; 16 kHz PDM mic → PSRAM (20 s cap); REC band with VU over the home character | PTT up or buffer full → `IDLE` |
-| `PLAYBACK` | memo → I2S_NUM_1 at the Volume setting; PLAY band with progress over the character | end of memo or SELECT → `IDLE`; PTT → `RECORDING` |
-| `SETTINGS` | two rows, Brightness / Volume | UP/DOWN move rows, SELECT toggles adjust (UP/DOWN change the level, auto-repeat on hold), DOWN past Volume → `IDLE`. Values persist in NVS |
-| `CAMERA` | serial `c` | serial `x` or SELECT → `IDLE` |
+| `IDLE` | home: character, clock (when set), hearts | PTT down → `RECORDING` (and Friend `ptt` if `/ws` is up); UP → `SETTINGS`; Down or serial `d` → `CAMERA`; double-Select (≤320 ms) → `CAMERA`; single Select → local memo `PLAYBACK` if Friend is down, or Friend `select` if `/ws` is up |
+| `RECORDING` | PTT held; 16 kHz PDM mic → PSRAM memo (20 s cap) and, when Friend is online, resampled 24 kHz chunks on `/ws`; REC band with VU over the home character (skipped if PTT started from Camera) | PTT up or buffer full → `IDLE` (Camera stays Camera) |
+| `PLAYBACK` | memo → I2S_NUM_1 at 16 kHz and the Volume setting; PLAY band with progress over the character | end of memo or SELECT → `IDLE`; PTT → `RECORDING` |
+| `SETTINGS` | two rows, Brightness / Volume. Local menu; not yet the Friend `settings` overlay | UP/DOWN move rows, SELECT toggles adjust (UP/DOWN change the level, auto-repeat on hold), DOWN past Volume → `IDLE`. Values persist in NVS |
+| `CAMERA` | Down / serial `d` / double-Select / serial `c`. 78% viewfinder + 22% character strip. Local preview only: no Friend `navigate` or `frame` | Up, single Select, double-Select, serial `x` / `h` → `IDLE` |
 
 All inputs are polled and debounced with `millis()`; audio DMA is pumped in
 small non-blocking chunks from `loop()`; the haptic motor is timed the same way.
 Both I2S controllers are stopped whenever idle so the amplifier has no BCLK and
-stays silent.
+stays silent. Friend inbound PCM starts I2S_NUM_1 at 24 kHz, then drops the
+clocks after a short underrun so the MAX98357A still shuts down.
 
 ## Organization
 
@@ -75,6 +84,7 @@ include/gizmo/display.h    ILI9341 SPI panel interface
 include/gizmo/draw.h       RGB565 rasteriser: rects, 5x7 font, meters, alpha sprite/mask blits
 include/gizmo/haptic.h     non-blocking motor pulse
 include/gizmo/input.h      PTT GPIO + UP/DOWN/SELECT ADC ladder, debounced edge events
+include/gizmo/friend.h     Friend /ws client: health, hello, PTT audio, inbound PCM
 include/gizmo/assets.h     embedded bundle access: boot slot / home base decode, hearts, clock atlas, chime
 include/gizmo/assets_generated.h   GENERATED by tools/embed_assets.py from manifest.json
 include/gizmo/screens.h    HUD (clock + hearts) and the memo overlays
@@ -124,16 +134,54 @@ Serial keys (115200):
 
 | Key | Action |
 | --- | --- |
-| `u` / `d` / `e` | simulate UP / DOWN / SELECT (use these until the ladder is soldered) |
+| `u` / `d` / `e` | simulate UP / DOWN / SELECT (use these until the ladder is soldered). **`d` from IDLE opens Camera** |
 | `p` | toggle PTT (press, then release) |
-| `s` / `h` | open Settings / return home |
+| `s` / `h` | open Settings / return home (`h` also leaves Camera) |
 | `v` | 60 ms haptic pulse |
 | `tHH:MM` + Enter | set the home clock (e.g. `t14:07`) |
 | `g` | screen grab: `FRAME 320 240`, raw RGB565 framebuffer, `ENDFRAME` |
 | `i` | ladder mV and decoded button, PTT level, battery mV and presence |
 | `n` | Wi-Fi phase, AP name, SSID, IP |
 | `w` | forget saved Wi-Fi and reopen the setup AP |
+| `F<url>` + Enter | store Friend brain URL in NVS (`http://192.168.x.x:43147` or `https://…`) |
+| `K<token>` + Enter | store `GIZMO_DEVICE_TOKEN` in NVS (required for remote HTTPS brains) |
+| `f` | Friend phase, device id, url, hello flag |
 | `c` / `x` | camera start / stop; `r` rotate; `?` full status |
+
+`d` is the unsoldered-ladder stand-in for Down. From IDLE it must log
+`button DOWN down` then `state IDLE -> CAMERA` and paint the 78/22 layout even
+if the sensor fails (`CAMERA UNAVAILABLE`). Serial `ee` within 320 ms is
+double-Select and also toggles Camera. Up / `u` / single `e` (after 320 ms) /
+`x` leave Camera. Camera edges are not sent as Friend `navigate`.
+
+### Friend `/ws`
+
+After Wi-Fi reports `online`, firmware GET `/health` and requires
+`body_protocol.version == 1`, then opens `/ws` with `X-Gizmo-Device`,
+`X-Gizmo-Protocol: 1`, and `Authorization: Bearer <token>` when a token is
+stored. Hello must confirm protocol 1; the following `glass` snapshot is
+acknowledged and not fetched. PTT while connected sends `ptt` then 24 kHz
+`audio` chunks (mic is 16 kHz, resampled 3/2). Inbound `audio` PCM is queued
+onto MAX98357A at 24 kHz. Local memo still fills during PTT and still plays
+with Select when the socket is down.
+
+Point the board at a brain (serial, 115200):
+
+```
+Fhttp://192.168.1.10:43147
+K<the GIZMO_DEVICE_TOKEN>
+f
+```
+
+Or compile-time in `platformio.ini` `build_flags`:
+`-DGIZMO_BRAIN_URL='"https://…"'` and `-DGIZMO_DEVICE_TOKEN='"…"'`.
+NVS/serial overrides those. `?` includes `friend=` phase. HTTPS/WSS currently
+**skips TLS certificate verify** (remaining: pin the ESP32 cert bundle).
+
+Stubbed, do not treat as done: glass/show JPEG-MJPEG fetch, Friend-owned
+Settings overlay, `navigate`/`power` events, vision `frame`, wake-audio buffer
+across reconnect. Agent voice is only the PTT + PCM path above — not Show, not
+a full session UI.
 
 `g` returns exactly what was last pushed to the panel, which is how the
 2026-09-06 grabs in the hardware note were captured; the checks there are
@@ -153,13 +201,14 @@ screen is a wiring or rotation issue, not a PWM duty of zero.
 Recorded in [hardware](../hardware/xiao-esp32s3-sense.md): full header budget,
 ladder schematic, and the 2026-09-06 on-device serial evidence. Remaining:
 physical UP/DOWN/SELECT and battery divider soldering with measured mV,
-listening check of memo playback and boot chime level (`kMicGain` in `audio.cpp`
-is a fixed x4), camera world controller (Down / double-Select entry, 78% viewfinder
-+ 22% character strip), 24 kHz resampling and the authenticated Friend transport so
-`settings`/`navigate`/`select` become wire events. Phone Wi-Fi setup is on-device;
-a later app can replace the captive portal. LED stays tied to 3V3
-until a PWM pin is assigned; do not claim backlight PWM until then. Preserve
-audio-only PTT.
+listening check of memo playback, boot chime, and Friend inbound PCM
+(`kMicGain` in `audio.cpp` is a fixed x4), TLS cert bundle for `wss://`,
+Friend-owned Settings / `navigate` / Show-frame fetch / vision `frame`, and a
+wake-audio buffer across reconnect. Phone Wi-Fi setup is on-device; a later
+app can replace the captive portal. LED stays tied to 3V3 until a PWM pin is
+assigned; do not claim backlight PWM until then. Preserve audio-only PTT.
+Camera world entry and the 78/22 layout are in this firmware; agent vision is
+not.
 
 A successful compile is not hardware verification. Do not label this target the
 complete Gizmo product firmware until those integrations run on the board.

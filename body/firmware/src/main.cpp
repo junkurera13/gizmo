@@ -12,6 +12,7 @@
 #include "gizmo/camera.h"
 #include "gizmo/display.h"
 #include "gizmo/draw.h"
+#include "gizmo/friend.h"
 #include "gizmo/haptic.h"
 #include "gizmo/input.h"
 #include "gizmo/screens.h"
@@ -19,10 +20,12 @@
 #include "gizmo/wifi.h"
 
 // Operating loop for the handheld. One cooperative loop() owns every
-// peripheral; nothing blocks longer than a panel blit (~30 ms at 40 MHz).
+// peripheral; nothing blocks longer than a panel blit (~30 ms at 40 MHz)
+// except a one-shot Friend /health GET while idle.
 namespace {
 
 enum class State : uint8_t { kBoot, kIdle, kRecording, kPlayback, kSettings, kCamera };
+enum class LineCmd : uint8_t { kNone, kTime, kUrl, kToken };
 
 const char* state_name(State state) {
   switch (state) {
@@ -38,6 +41,7 @@ const char* state_name(State state) {
 
 constexpr uint32_t kLiveRedrawMs = 80;    // VU / progress refresh cadence
 constexpr uint32_t kIdleRedrawMs = 1000;  // HUD change check
+constexpr uint32_t kDoubleSelectMs = 320;  // matches the Mac simulator
 constexpr time_t kEpochKnown = 1600000000;  // clock is hidden below this
 
 gizmo::Camera camera;
@@ -47,6 +51,7 @@ gizmo::Battery battery;
 gizmo::Haptic haptic;
 gizmo::Input input;
 gizmo::WifiLink wifi;
+gizmo::FriendLink friend_link;
 Preferences prefs;
 
 uint16_t* framebuffer = nullptr;
@@ -62,12 +67,15 @@ int boot_slot_drawn = -1;
 bool boot_chimed = false;
 bool dirty = true;
 bool audio_ok = false;
+bool friend_ptt_ = false;
 gizmo::Hud last_hud;
-char time_entry[8];
-uint8_t time_entry_len = 0;
-bool time_entry_active = false;
+char line_buf[160];
+uint8_t line_len = 0;
+LineCmd line_cmd = LineCmd::kNone;
+bool select_pending = false;
+uint32_t select_armed_at = 0;
+const char* camera_status = nullptr;
 
-// Camera bring-up counters (unchanged from the previous target).
 uint32_t lastFrame = 0;
 uint32_t frames = 0;
 uint32_t lastReport = 0;
@@ -135,6 +143,15 @@ void paint_home_base() {
   gizmo::render_hud(canvas, last_hud);
 }
 
+void paint_camera(bool viewfinder_ready, const char* status) {
+  if (!ensure_framebuffer()) return;
+  ensure_home_base();
+  gizmo::render_camera_world(canvas, home_base, viewfinder_ready, status);
+  display.blit_rgb565(framebuffer, canvas.width, canvas.height);
+  last_redraw = millis();
+  dirty = false;
+}
+
 void set_clock(int hour, int minute) {
   struct tm local{};
   local.tm_year = 2026 - 1900;  // date is irrelevant; only H:mm is shown
@@ -182,6 +199,51 @@ void enter(State next) {
   dirty = true;
 }
 
+void cancel_select() { select_pending = false; }
+
+void enter_camera();
+void leave_camera();
+void start_recording();
+void finish_recording();
+void start_playback();
+void stop_playback();
+
+void enter_camera() {
+  if (state == State::kBoot || state == State::kRecording) return;
+  if (state == State::kCamera && camera.running()) {
+    Serial.println("camera: already open");
+    return;
+  }
+  if (state == State::kPlayback) audio.stop_playback();
+  if (state == State::kSettings) settings.open = false;
+  cancel_select();
+  camera_status = "CAMERA STARTING";
+  paint_camera(false, camera_status);
+  const auto result = camera.start();
+  Serial.printf("camera start: %s\n", esp_err_to_name(result));
+  if (result == ESP_OK) {
+    const auto* sensor = esp_camera_sensor_get();
+    if (sensor != nullptr) {
+      Serial.printf("sensor PID=0x%04x; QVGA JPEG; PSRAM buffers; 78/22 camera world\n", sensor->id.PID);
+    }
+    frames = failures = blit_failures = 0;
+    lastReport = millis();
+    camera_status = nullptr;
+  } else {
+    camera_status = "CAMERA UNAVAILABLE";
+    paint_camera(false, camera_status);
+  }
+  enter(State::kCamera);
+}
+
+void leave_camera() {
+  if (state != State::kCamera) return;
+  Serial.printf("camera stop: %s\n", esp_err_to_name(camera.stop()));
+  camera_status = nullptr;
+  cancel_select();
+  enter(State::kIdle);
+}
+
 void render() {
   if (!ensure_framebuffer()) {
     Serial.println("render: no framebuffer");
@@ -190,7 +252,6 @@ void render() {
   const uint32_t now = millis();
   switch (state) {
     case State::kBoot: {
-      // 24 slots at 125 ms: ten-slot drop, blink, wordmark held to 5050 ms.
       int slot = static_cast<int>((now - state_since) / gizmo::assets::kBootFramePeriodMs);
       if (slot >= gizmo::assets::kBootSlots) slot = gizmo::assets::kBootSlots - 1;
       if (slot == boot_slot_drawn) {
@@ -223,7 +284,8 @@ void render() {
       gizmo::render_settings(framebuffer, canvas.width, canvas.height, settings);
       break;
     case State::kCamera:
-      return;  // camera frames own the panel
+      paint_camera(false, camera_status ? camera_status : "CAMERA");
+      return;
   }
   display.blit_rgb565(framebuffer, canvas.width, canvas.height);
   last_redraw = now;
@@ -235,11 +297,10 @@ void start_recording() {
     Serial.println("ptt: audio not ready, recording skipped");
     return;
   }
-  if (state == State::kCamera) return;
   if (audio.start_recording()) {
     record_started = millis();
     haptic.pulse(30);
-    enter(State::kRecording);
+    if (state != State::kCamera) enter(State::kRecording);
   } else {
     Serial.println("ptt: start_recording failed");
   }
@@ -249,7 +310,7 @@ void finish_recording() {
   audio.stop_recording();
   Serial.printf("memo: %u ms, peak=%d\n", audio.memo_ms(), audio.last_peak());
   haptic.pulse(20);
-  enter(State::kIdle);
+  if (state == State::kRecording) enter(State::kIdle);
 }
 
 void start_playback() {
@@ -268,6 +329,23 @@ void start_playback() {
 void stop_playback() {
   audio.stop_playback();
   enter(State::kIdle);
+}
+
+void pump_friend_audio() {
+  int16_t buf[256];
+  if (audio.recording()) {
+    while (true) {
+      const size_t n = audio.take_capture(buf, 256);
+      if (n == 0) break;
+      if (friend_ptt_ && friend_link.ready()) friend_link.send_pcm16k(buf, n);
+    }
+  }
+  if (friend_ptt_) return;  // do not play inbound while holding PTT
+  for (int i = 0; i < 8; ++i) {
+    const size_t n = friend_link.take_speaker(buf, 256);
+    if (n == 0) break;
+    audio.enqueue_live(buf, n);
+  }
 }
 
 void settings_button(gizmo::Button button) {
@@ -298,47 +376,104 @@ void settings_button(gizmo::Button button) {
   dirty = true;
 }
 
+void resolve_single_select() {
+  if (state == State::kCamera) {
+    leave_camera();
+    return;
+  }
+  if (state != State::kIdle) return;
+  // Friend-online: Select is the interrupt/wake event, not local memo play.
+  // Disconnected: keep the local memo path Woz verified on the amp.
+  if (friend_link.ready()) {
+    friend_link.send_select();
+    return;
+  }
+  start_playback();
+}
+
 void on_button(const gizmo::InputEvent& event) {
   using gizmo::Button;
   Serial.printf("button %s %s%s\n", gizmo::button_name(event.button), event.pressed ? "down" : "up",
                 event.repeat ? " (repeat)" : "");
 
   if (event.button == Button::kPtt) {
-    if (state == State::kBoot) return;  // splash is not interruptible
-    if (event.pressed && state != State::kRecording) {
+    if (state == State::kBoot) return;
+    cancel_select();
+    if (event.pressed && !audio.recording()) {
       if (state == State::kPlayback) audio.stop_playback();
       if (state == State::kSettings) settings.open = false;
-      start_recording();
-    } else if (!event.pressed && state == State::kRecording) {
-      finish_recording();
+      audio.stop_live();
+      friend_link.interrupt_speaker();
+      if (friend_link.ready()) {
+        start_recording();
+        if (audio.recording()) {
+          friend_ptt_ = true;
+          friend_link.send_ptt(true);
+        }
+      } else {
+        friend_ptt_ = false;
+        if (state == State::kCamera) leave_camera();
+        start_recording();
+      }
+    } else if (!event.pressed && audio.recording()) {
+      if (friend_ptt_) {
+        pump_friend_audio();
+        friend_link.send_ptt(false);
+        friend_ptt_ = false;
+        finish_recording();
+      } else {
+        finish_recording();
+      }
     }
     return;
   }
 
-  if (!event.pressed) return;  // UP/DOWN/SELECT act on press and repeat
+  if (!event.pressed) return;
   if (state == State::kBoot || state == State::kRecording) return;
   if (!event.repeat) haptic.pulse(12);
 
   switch (state) {
     case State::kIdle:
       if (event.button == Button::kUp) {
+        cancel_select();
         settings.focus = 0;
         settings.adjusting = false;
         enter(State::kSettings);
+      } else if (event.button == Button::kDown) {
+        // Camera world is local. Do not forward this edge as Friend navigate.
+        cancel_select();
+        enter_camera();
       } else if (event.button == Button::kSelect) {
-        start_playback();
+        if (select_pending && millis() - select_armed_at < kDoubleSelectMs) {
+          cancel_select();
+          enter_camera();
+        } else {
+          select_pending = true;
+          select_armed_at = millis();
+        }
       }
       break;
     case State::kSettings:
+      cancel_select();
       settings_button(event.button);
       break;
     case State::kPlayback:
+      cancel_select();
       if (event.button == Button::kSelect) stop_playback();
       break;
     case State::kCamera:
-      if (event.button == Button::kSelect) {
-        Serial.printf("camera stop: %s\n", esp_err_to_name(camera.stop()));
-        enter(State::kIdle);
+      if (event.button == Button::kUp) {
+        leave_camera();
+      } else if (event.button == Button::kDown) {
+        // Consume. Camera rocker edges stay local.
+      } else if (event.button == Button::kSelect) {
+        if (select_pending && millis() - select_armed_at < kDoubleSelectMs) {
+          cancel_select();
+          leave_camera();
+        } else {
+          select_pending = true;
+          select_armed_at = millis();
+        }
       }
       break;
     default:
@@ -353,59 +488,61 @@ void simulate(gizmo::Button button, bool pressed) {
   on_button(event);
 }
 
-// `t` followed by HH:MM and Enter sets the displayed clock.
-bool collect_time(char value) {
-  if (!time_entry_active) {
-    if (value != 't') return false;
-    time_entry_active = true;
-    time_entry_len = 0;
-    return true;
+bool collect_line(char value) {
+  if (line_cmd == LineCmd::kNone) {
+    if (value == 't') {
+      line_cmd = LineCmd::kTime;
+      line_len = 0;
+      return true;
+    }
+    if (value == 'F') {
+      line_cmd = LineCmd::kUrl;
+      line_len = 0;
+      return true;
+    }
+    if (value == 'K') {
+      line_cmd = LineCmd::kToken;
+      line_len = 0;
+      return true;
+    }
+    return false;
   }
   if (value == '\r' || value == '\n') {
-    time_entry[time_entry_len] = '\0';
-    time_entry_active = false;
-    int hour = -1, minute = -1;
-    if (sscanf(time_entry, "%d:%d", &hour, &minute) == 2 && hour >= 0 && hour < 24 && minute >= 0 && minute < 60) {
-      set_clock(hour, minute);
-    } else {
-      Serial.println("clock: expected tHH:MM");
+    line_buf[line_len] = '\0';
+    const LineCmd cmd = line_cmd;
+    line_cmd = LineCmd::kNone;
+    if (cmd == LineCmd::kTime) {
+      int hour = -1, minute = -1;
+      if (sscanf(line_buf, "%d:%d", &hour, &minute) == 2 && hour >= 0 && hour < 24 && minute >= 0 &&
+          minute < 60) {
+        set_clock(hour, minute);
+      } else {
+        Serial.println("clock: expected tHH:MM");
+      }
+    } else if (cmd == LineCmd::kUrl) {
+      friend_link.set_url(line_buf);
+    } else if (cmd == LineCmd::kToken) {
+      friend_link.set_token(line_buf);
     }
     return true;
   }
-  if (value == ' ') return true;
-  if (time_entry_len < sizeof(time_entry) - 1) time_entry[time_entry_len++] = value;
+  if (value == ' ') {
+    if (line_cmd == LineCmd::kTime) return true;
+  }
+  if (line_len < sizeof(line_buf) - 1) line_buf[line_len++] = value;
   return true;
 }
 
 void command(char value) {
   using gizmo::Button;
-  if (collect_time(value)) return;
+  if (collect_line(value)) return;
   switch (value) {
-    case 'c': {
-      if (state == State::kRecording || state == State::kPlayback) {
-        Serial.println("camera: busy with audio");
-        return;
-      }
-      if (ensure_framebuffer()) {
-        gizmo::render_camera_hint(canvas);
-        display.blit_rgb565(framebuffer, canvas.width, canvas.height);
-      }
-      const auto result = camera.start();
-      Serial.printf("camera start: %s\n", esp_err_to_name(result));
-      if (result == ESP_OK) {
-        const auto* sensor = esp_camera_sensor_get();
-        Serial.printf("sensor PID=0x%04x; QVGA JPEG; PSRAM buffers\n", sensor->id.PID);
-        frames = failures = blit_failures = 0;
-        lastReport = millis();
-        enter(State::kCamera);
-      } else {
-        dirty = true;
-      }
+    case 'c':
+      enter_camera();
       break;
-    }
     case 'x':
-      Serial.printf("camera stop: %s\n", esp_err_to_name(camera.stop()));
-      if (state == State::kCamera) enter(State::kIdle);
+      if (state == State::kCamera) leave_camera();
+      else Serial.printf("camera stop: %s\n", esp_err_to_name(camera.stop()));
       break;
     case 's':
       if (state == State::kIdle) {
@@ -418,20 +555,21 @@ void command(char value) {
       if (state == State::kSettings) {
         settings.open = false;
         enter(State::kIdle);
+      } else if (state == State::kCamera) {
+        leave_camera();
       }
       break;
     case 'u': simulate(Button::kUp, true); simulate(Button::kUp, false); break;
     case 'd': simulate(Button::kDown, true); simulate(Button::kDown, false); break;
     case 'e': simulate(Button::kSelect, true); simulate(Button::kSelect, false); break;
     case 'p':
-      simulate(Button::kPtt, state != State::kRecording);
+      simulate(Button::kPtt, !audio.recording());
       break;
     case 'v':
       haptic.pulse(60);
       Serial.println("haptic: 60 ms pulse");
       break;
     case 'g':
-      // Screen grab: what the panel was last given, as raw RGB565 over USB.
       if (framebuffer != nullptr) {
         Serial.printf("FRAME %d %d\n", canvas.width, canvas.height);
         Serial.write(reinterpret_cast<const uint8_t*>(framebuffer),
@@ -455,19 +593,28 @@ void command(char value) {
       dirty = true;
       Serial.println("wifi: setup AP reopened");
       break;
+    case 'i':
       Serial.printf("inputs: ladder=%umV (%s) ptt=%s battery=%umV (%u%%%s)\n",
                     input.ladder_millivolts(), gizmo::button_name(input.ladder_button()),
                     input.held(Button::kPtt) ? "down" : "up",
                     battery.millivolts(), battery.percent(), battery.present() ? "" : ", unwired");
       break;
+    case 'f':
+      Serial.printf("friend: %s device=%s url=%s token=%s hello=%d %s\n",
+                    gizmo::friend_phase_name(friend_link.phase()), friend_link.device_id(),
+                    friend_link.brain_url()[0] ? friend_link.brain_url() : "(none)",
+                    friend_link.has_token() ? "set" : "empty", friend_link.hello_ok() ? 1 : 0,
+                    friend_link.detail());
+      break;
     case '?':
-      Serial.printf("state=%s camera=%s audio=%s memo=%ums wifi=%s display=%s rotation=%u heap=%u psram_free=%u "
-                    "backlight=%s brightness=%u volume=%u\n",
+      Serial.printf("state=%s camera=%s audio=%s memo=%ums wifi=%s friend=%s display=%s rotation=%u heap=%u "
+                    "psram_free=%u backlight=%s brightness=%u volume=%u clock_wght=%d\n",
                     state_name(state), camera.running() ? "running" : "off",
                     audio_ok ? "ready" : "failed", audio.memo_ms(), gizmo::wifi_phase_name(wifi.phase()),
+                    gizmo::friend_phase_name(friend_link.phase()),
                     display.ready() ? "commands_sent" : "off", display.rotation(),
                     ESP.getFreeHeap(), ESP.getFreePsram(), backlight_wiring(),
-                    settings.brightness, settings.volume);
+                    settings.brightness, settings.volume, gizmo::assets::kClockWeight);
       break;
     default:
       break;
@@ -475,7 +622,12 @@ void command(char value) {
 }
 
 void camera_loop() {
-  if (!camera.running() || millis() - lastFrame < 100) return;
+  if (state != State::kCamera) return;
+  if (!camera.running()) {
+    if (dirty || millis() - last_redraw >= 400) paint_camera(false, camera_status);
+    return;
+  }
+  if (millis() - lastFrame < 100) return;
   lastFrame = millis();
   auto* frame = camera.acquire();
   if (frame) {
@@ -483,7 +635,7 @@ void camera_loop() {
       ++frames;
       if (ensure_framebuffer() &&
           jpg2rgb565(frame->buf, frame->len, reinterpret_cast<uint8_t*>(framebuffer), JPG_SCALE_NONE)) {
-        display.blit_rgb565(framebuffer, static_cast<int>(frame->width), static_cast<int>(frame->height));
+        paint_camera(true, nullptr);
       } else {
         ++blit_failures;
       }
@@ -504,14 +656,10 @@ void camera_loop() {
 }  // namespace
 
 void setup() {
-  // Hold the Sense microSD chip select HIGH before any SPI or I2S clock runs:
-  // the slot shares SCK/MOSI with the panel and its MISO pad is the amp BCLK.
   pinMode(gizmo::board::sd_cs, OUTPUT);
   digitalWrite(gizmo::board::sd_cs, HIGH);
   haptic.begin();
 
-  // Panel first: the 5.05 s boot flipbook starts before the USB wait so a
-  // battery-powered boot is not delayed by a missing host.
   const auto panel = display.begin();
   state_since = millis();
   render();
@@ -520,7 +668,7 @@ void setup() {
   const auto started = millis();
   while (!Serial && millis() - started < 1500) {
     delay(10);
-    render();  // keep the drop animating while waiting for the host
+    render();
   }
   Serial.println("Gizmo / XIAO ESP32S3 Sense / terminal OS");
   Serial.printf("flash=%u psram=%u\n", ESP.getFlashChipSize(), ESP.getPsramSize());
@@ -528,11 +676,12 @@ void setup() {
                 esp_err_to_name(panel), display.width(), display.height(),
                 gizmo::board::display_sck, gizmo::board::display_mosi,
                 gizmo::board::display_cs, gizmo::board::display_dc, backlight_wiring());
-  Serial.printf("assets: boot %d slots/%d frames @%ums, chime at %ums (%u samples @%uHz), splash %ums, hearts %dpx, clock atlas %dx%d\n",
+  Serial.printf("assets: boot %d slots/%d frames @%ums, chime at %ums (%u samples @%uHz), splash %ums, hearts %dpx, "
+                "clock atlas %dx%d wght=%d\n",
                 gizmo::assets::kBootSlots, gizmo::assets::kBootUniqueFrames, gizmo::assets::kBootFramePeriodMs,
                 gizmo::assets::kBootChimeAtMs, static_cast<unsigned>(gizmo::assets::kChimeSamples),
                 gizmo::assets::kChimeSampleRate, gizmo::assets::kBootMinimumMs, gizmo::assets::kHeartAssetSide,
-                gizmo::assets::kClockAtlasWidth, gizmo::assets::kClockAtlasHeight);
+                gizmo::assets::kClockAtlasWidth, gizmo::assets::kClockAtlasHeight, gizmo::assets::kClockWeight);
 
   load_settings();
   if (gizmo::board::display_bl >= 0) {
@@ -545,10 +694,10 @@ void setup() {
   audio_ok = sound == ESP_OK;
   apply_volume();
   apply_brightness();
-  Serial.printf("audio begin: %s mic=I2S0 PDM clk=%d data=%d amp=I2S1 bclk=%d lrc=%d din=%d %uHz memo=%us\n",
+  Serial.printf("audio begin: %s mic=I2S0 PDM clk=%d data=%d amp=I2S1 bclk=%d lrc=%d din=%d %uHz memo=%us live=%uHz\n",
                 esp_err_to_name(sound), gizmo::board::microphone_clock, gizmo::board::microphone_data,
                 gizmo::board::amp_bclk, gizmo::board::amp_lrc, gizmo::board::amp_din,
-                gizmo::Audio::kSampleRate, gizmo::Audio::kCapacitySeconds);
+                gizmo::Audio::kSampleRate, gizmo::Audio::kCapacitySeconds, gizmo::Audio::kWireSampleRate);
   Serial.printf("inputs: ptt=D1/GPIO%d ladder=D4/GPIO%d battery=D5/GPIO%d haptic=D2/GPIO%d sd_cs=GPIO%d held high\n",
                 gizmo::board::ptt, gizmo::board::buttons_adc, gizmo::board::battery_adc,
                 gizmo::board::haptic, gizmo::board::sd_cs);
@@ -556,9 +705,11 @@ void setup() {
   wifi.begin();
   Serial.printf("wifi begin: %s ap=%s (plug the Sense U.FL antenna)\n", gizmo::wifi_phase_name(wifi.phase()),
                 wifi.ap_ssid());
+  friend_link.begin();
   Serial.println("keys: u/d/e = up/down/select, p = PTT toggle, s = settings, h = home, v = haptic,");
   Serial.println("      tHH:MM<enter> = set clock, i = input voltages, n = wifi, w = forget wifi / reopen portal,");
-  Serial.println("      c/x = camera, r = rotate, ? = status");
+  Serial.println("      F<url><enter> / K<token><enter> = Friend brain, f = friend status,");
+  Serial.println("      d = camera (same as Down), c/x = camera start/stop, r = rotate, ? = status");
 }
 
 void loop() {
@@ -567,12 +718,19 @@ void loop() {
   gizmo::InputEvent event;
   while (input.poll(event)) on_button(event);
 
+  if (select_pending && millis() - select_armed_at >= kDoubleSelectMs) {
+    select_pending = false;
+    resolve_single_select();
+  }
+
   audio.update();
+  pump_friend_audio();
   battery.update();
   haptic.update();
   const auto wifi_phase = wifi.phase();
   wifi.update();
   if (wifi.phase() != wifi_phase) dirty = true;
+  friend_link.update(wifi.online());
 
   const uint32_t now = millis();
   switch (state) {
@@ -586,12 +744,16 @@ void loop() {
       if (now - state_since >= gizmo::assets::kBootMinimumMs) {
         enter(State::kIdle);
       } else {
-        dirty = true;  // render() only decodes when the slot advances
+        dirty = true;
       }
       break;
     case State::kRecording:
       if (!audio.recording()) {
         Serial.println("memo: buffer full");
+        if (friend_ptt_) {
+          friend_link.send_ptt(false);
+          friend_ptt_ = false;
+        }
         finish_recording();
       } else if (now - last_redraw >= kLiveRedrawMs) {
         dirty = true;
