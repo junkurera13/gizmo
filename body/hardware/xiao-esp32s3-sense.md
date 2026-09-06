@@ -27,15 +27,93 @@ returned as physical evidence. Local USB access is not required for development.
   I2S Class-D module. Confirm A/B suffix, physical pin labels, supply and gain/SD
   strapping before implementing the audio interface. The speaker itself is unknown.
 
+## Confirmed ILI9341 wiring (2026-09-06)
+
+Builder pin table for Akizuki **116265** / MSP2807. Touch (`T_*`) and SDO/MISO
+are disconnected. RESET and LED are tied high, so firmware cannot pulse reset or
+PWM the backlight. VCC is on the XIAO **VUSB** rail.
+
+| Display label | XIAO pin / rail | ESP32-S3 GPIO |
+| --- | --- | --- |
+| VCC | VUSB | 5 V switched rail |
+| GND | GND | GND |
+| CS | D7 | 44 |
+| RESET | 3V3 | tied high (`-1`) |
+| DC | D6 | 43 |
+| SDI (MOSI) | D10 | 9 |
+| SCK | D8 | 7 |
+| LED | 3V3 | tied high (`-1`) |
+| SDO (MISO) | leave empty | `-1` |
+| All T_ pins | leave empty | unused |
+
+These pads are free of the Sense camera and PDM microphone pins.
+
+## Full header budget (breadboard, 2026-09-06)
+
+Every XIAO header pin is now assigned. `../firmware/include/gizmo/board.h` is
+the source of truth; this table mirrors it.
+
+| XIAO pin | GPIO | Function | Notes |
+| --- | --- | --- | --- |
+| D0 | 1 | MAX98357A `LRC` | I2S_NUM_1 word select. Do **not** share with a battery divider |
+| D1 | 2 | PTT (5-way centre click) | Active-LOW, internal pull-up |
+| D2 | 3 | Haptic transistor base | 1k series. Strapping pin; driven LOW first thing in `setup()` |
+| D3 | 4 | MAX98357A `DIN` | I2S_NUM_1 data |
+| D4 | 5 | UP / DOWN / SELECT ladder | ADC1_CH4, idle-low ladder below |
+| D5 | 6 | Battery divider | ADC1_CH5, battery+ → 100k → node → 100k → GND |
+| D6 | 43 | ILI9341 `DC` | UART0 TX at ROM boot; harmless |
+| D7 | 44 | ILI9341 `CS` | Keep as a real chip select; do not tie to GND |
+| D8 | 7 | ILI9341 `SCK` | Shared with the Sense microSD SCK (4.7k pull-up via J3) |
+| D9 | 8 | MAX98357A `BCLK` | Also the Sense microSD MISO pad; SD CS is held HIGH |
+| D10 | 9 | ILI9341 `SDI/MOSI` | Shared with the Sense microSD MOSI. Never route audio here |
+| B2B | 21 | Sense microSD `CS` | Firmware drives HIGH at boot; leave the slot empty |
+| B2B | 41 / 42 | PDM mic `DATA` / `CLK` | I2S_NUM_0, the only PDM-capable controller |
+
+### UP / DOWN / SELECT: one ADC ladder on D4
+
+```
+3V3 ──┬── UP switch ─────────────────────┐
+      ├── DOWN switch ── 4.7k ───────────┤
+      └── SELECT switch ── 15k ──────────┤
+                                         ├──── D4 (GPIO5)
+                          10k ───────────┤
+                          100nF ─────────┤
+GND ─────────────────────────────────────┘
+```
+
+Idle 0 V, SELECT ≈ 1.32 V, DOWN ≈ 2.24 V, UP = 3.3 V. Decode bands in
+`../firmware/src/hardware/input.cpp` leave ≥300 mV on each side with 5%
+resistors. The ladder idles **low** on purpose: the ESP-IDF ADC driver disables
+the internal pull-up on every read, so an unwired or broken ladder reads ~0 V
+and produces no phantom presses (verified on the bench: a floating D4 read
+0 mV). The 100 nF gives ~1 ms RC settle; firmware debounces 30 ms on top.
+
+### Battery divider on D5
+
+battery+ → 100k → **D5** → 100k → GND. Firmware multiplies by
+`board::battery_divider = 2.0`. Move the divider off D0: an I2S word-select
+line cannot double as an analog sense node. Until wired, D5 floats and the UI
+shows `NO BAT`.
+
+### Bus isolation rules (unchanged)
+
+- Display SPI: D7 CS, D6 DC, D8 SCK, D10 MOSI at 40 MHz. No audio on D10.
+- I2S TX for the amplifier lives on I2S_NUM_1 (D9 BCLK, D0 LRC, D3 DIN);
+  PDM RX lives on I2S_NUM_0 (GPIO41/42). Both controllers are stopped when idle
+  so the MAX98357A sees no BCLK and stays in shutdown (no idle whine).
+- GPIO21 (microSD CS) is set HIGH before any SPI or I2S clock starts because
+  the slot's MISO pad is the amplifier BCLK line.
+
 ## External hardware awaiting confirmation
 
 | Part | Required before implementation |
 | --- | --- |
-| Display | GPIO map, supply, backlight/reset wiring, physical rotation; whether touch/SD are connected |
-| Speaker and amplifier | Speaker impedance/wattage, amplifier A/B suffix, supply, I2S pins, gain/SD strapping |
-| Select, Up, Down, PTT | Switch wiring, GPIO assignment or expander |
-| Power and battery | Switch circuit, battery/charging arrangement, voltage sensing |
-| Storage | Whether the Sense microSD slot will be used for character/media assets |
+| Display rotation / mount | Physical 320×240 landscape orientation on the assembled shell; `r` cycles firmware rotation |
+| Speaker and amplifier | Speaker impedance/wattage, amplifier A/B suffix, supply, gain/SD strapping; pins above are the breadboard set |
+| Select, Up, Down | Ladder above is designed, not yet soldered; confirm decoded mV with the `i` serial key |
+| Power and battery | Switch circuit, battery/charging arrangement; divider moves to D5 |
+| Storage | Sense microSD slot is reserved but unused; GPIO8 is taken by BCLK so the slot cannot be used with audio |
+| Backlight PWM | LED is currently tied to 3V3; a GPIO is required before `backlight_duty` can drive hardware |
 
 Do not assign external pins from a generic ESP32 diagram. Check camera, PDM,
 microSD, flash/PSRAM, USB, and boot-strapping reservations before approving the
@@ -53,6 +131,13 @@ Xtensa toolchain 8.4.0+2021r2-patch5 and esptool 4.9.0. The linker reported
 22,820 bytes static RAM and 314,649 bytes application flash. These figures
 exclude runtime camera/PSRAM allocations and are not a frame-rate or memory
 stress test. The binary has not been flashed or tested on hardware.
+
+2026-09-06 (Windows, COM6): the terminal OS build flashed and booted on the
+assembled breadboard. Serial evidence: `display begin: ESP_OK`, `audio begin:
+ESP_OK` for both I2S controllers, PDM recording produced non-zero peaks and
+the memo played back through I2S_NUM_1, settings persisted across reset in
+NVS, and the unwired D4 ladder decoded as `NONE`. Panel contents were not
+inspected from here; button hardware was not yet installed.
 
 First connected-board check: flash the bring-up target, record detected flash,
 PSRAM and sensor PID; start capture with `c`, stop with `x`; repeat and check

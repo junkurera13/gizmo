@@ -3,26 +3,87 @@
 Target: **Seeed Studio XIAO ESP32S3 Sense**. This folder contains code compiled
 for the actual ESP32-S3; the Mac simulator remains in `../../simulator/`.
 
-Current scope is **board/camera bring-up**, not complete device firmware. It
-initializes the onboard camera on explicit USB serial command, captures bounded
-QVGA JPEG frames into PSRAM, returns every frame to the driver, reports capture
-health, and deinitializes the camera on exit. It does not implement a screen,
-physical controls, microphone/speaker playback, Wi-Fi, or Friend connection yet.
-Those are not represented by fake success adapters.
+Current scope is a **local terminal OS** on the breadboard hardware showing the
+same boot and home as the Mac simulator: the Glass boot flipbook (1.25 s drop,
+blink, ODDITY wordmark, chime at 2.875 s, held to 5.05 s), the home character
+with the clock and five Minecraft-style hearts, push-to-talk voice memo into
+PSRAM with a VU meter, memo playback through the MAX98357A, and the Settings
+menu driven by UP/DOWN/SELECT. The camera bring-up path (QVGA JPEG to the
+panel over USB serial command) is kept as its own state. Wi-Fi and the Friend
+WebSocket transport are not implemented and are not faked. Backlight PWM is
+not driven: LED is tied to 3V3, so the Brightness setting is stored but has no
+hardware effect yet.
+
+### Artwork pipeline
+
+The panel shows the **export_bundle.py output**, not a redrawn copy. The bundle
+is embedded in flash so a single `pio run -t upload` carries everything:
+
+```sh
+# 1. export the 320x240 profile from glass/ (same tool the Mac reference uses)
+body/firmware/.venv/bin/python body/assets/export_bundle.py --width 320 --height 240 \
+    --output data/body-assets/320x240 --force
+# 2. turn it into firmware blobs + include/gizmo/assets_generated.h
+body/firmware/.venv/bin/python body/firmware/tools/embed_assets.py --bundle data/body-assets/320x240
+```
+
+`tools/embed_assets.py` writes `assets/` (15 unique boot JPEGs, `home_base.jpg`,
+hearts as RGB565+A8, the Outfit clock atlas as an 8-bit mask, the chime
+resampled 24 → 16 kHz PCM16) and rewrites the `board_build.embed_files` block
+in `platformio.ini`. All timing and layout constants (125 ms slots, 5050 ms
+minimum, 2875 ms chime, 0.045 status top, heart 12/15 px, atlas cells) come
+from `manifest.json` into `assets_generated.h`; nothing is hand-copied.
+`assets/` and the generated header are committed so a clean checkout builds.
+Rerun both steps after changing anything under `glass/`. Pillow is required
+(`pip install Pillow` into the tools venv).
+
+On device, JPEG frames are decoded with the camera driver's `jpg2rgb565` into
+the PSRAM framebuffer only when the 125 ms slot advances; the home base is
+decoded once and copied under the HUD. The clock is hidden until the device
+knows the time (no RTC/NTP yet; `tHH:MM` over serial sets it for now). Hearts
+follow the battery divider in half steps; with no divider wired (USB power)
+they show full, matching the simulator's default level.
+
+### OS states
+
+| State | Enter | Leave |
+| --- | --- | --- |
+| `BOOT` | power-on; Glass flipbook, chime at 2875 ms, wordmark held to 5050 ms; buttons ignored | automatically to `IDLE` |
+| `IDLE` | home: character, clock (when set), hearts | PTT down → `RECORDING`; UP → `SETTINGS`; SELECT → `PLAYBACK` (if a memo exists); serial `c` → `CAMERA` |
+| `RECORDING` | PTT held; 16 kHz PDM mic → PSRAM (20 s cap); REC band with VU over the home character | PTT up or buffer full → `IDLE` |
+| `PLAYBACK` | memo → I2S_NUM_1 at the Volume setting; PLAY band with progress over the character | end of memo or SELECT → `IDLE`; PTT → `RECORDING` |
+| `SETTINGS` | two rows, Brightness / Volume | UP/DOWN move rows, SELECT toggles adjust (UP/DOWN change the level, auto-repeat on hold), DOWN past Volume → `IDLE`. Values persist in NVS |
+| `CAMERA` | serial `c` | serial `x` or SELECT → `IDLE` |
+
+All inputs are polled and debounced with `millis()`; audio DMA is pumped in
+small non-blocking chunks from `loop()`; the haptic motor is timed the same way.
+Both I2S controllers are stopped whenever idle so the amplifier has no BCLK and
+stays silent.
 
 ## Organization
 
 ```
-platformio.ini            pinned toolchain and exact board target
-include/gizmo/board.h     verified onboard pin mapping
-include/gizmo/camera.h    camera ownership/lifetime interface
-include/gizmo/settings.h  Settings snapshot, RGB565 renderer, backlight/volume helpers
-src/hardware/camera.cpp  ESP32 camera driver adapter
-src/ui/settings.cpp      320×240 Settings overlay (no display GPIO yet)
-src/main.cpp             USB serial camera bring-up; `s` exercises the Settings renderer
-../hardware/             selected parts, wiring and hardware acceptance evidence
-../assets/               existing character/boot export tools
-../reference/            laptop protocol reference; not firmware
+platformio.ini             pinned toolchain and exact board target
+include/gizmo/board.h      every pin: camera, mic, ILI9341, amp, PTT, ladder, battery, haptic, SD CS
+include/gizmo/audio.h      PDM mic (I2S_NUM_0) + MAX98357A (I2S_NUM_1) + PSRAM memo
+include/gizmo/battery.h    divider ADC on D5 with presence detection
+include/gizmo/camera.h     camera ownership/lifetime interface
+include/gizmo/display.h    ILI9341 SPI panel interface
+include/gizmo/draw.h       RGB565 rasteriser: rects, 5x7 font, meters, alpha sprite/mask blits
+include/gizmo/haptic.h     non-blocking motor pulse
+include/gizmo/input.h      PTT GPIO + UP/DOWN/SELECT ADC ladder, debounced edge events
+include/gizmo/assets.h     embedded bundle access: boot slot / home base decode, hearts, clock atlas, chime
+include/gizmo/assets_generated.h   GENERATED by tools/embed_assets.py from manifest.json
+include/gizmo/screens.h    HUD (clock + hearts) and the memo overlays
+include/gizmo/settings.h   Settings snapshot, renderer, backlight/volume helpers
+assets/                    GENERATED blobs embedded via board_build.embed_files
+tools/embed_assets.py      bundle -> assets/ + assets_generated.h + platformio.ini list
+src/hardware/*.cpp         drivers for the above
+src/ui/*.cpp               renderers and asset access
+src/main.cpp               the OS loop and serial diagnostics
+../hardware/               selected parts, full pin budget, ladder schematic, acceptance evidence
+../assets/                 export_bundle.py, the source of every on-device image
+../reference/              laptop protocol reference; not firmware
 ```
 
 The board pin map belongs to Body, character source artwork belongs to Glass,
@@ -52,22 +113,49 @@ body/firmware/.venv/bin/pio run -d body/firmware -t upload --upload-port /dev/cu
 body/firmware/.venv/bin/pio device monitor -b 115200 -p /dev/cu.YOUR_BOARD
 ```
 
-`c` starts capture, `x` stops it, `?` reports state and free memory. No images are
-saved or transmitted; USB prints counters only. The camera begins off. Repeated
-start/stop must recover memory and report zero failed captures before proceeding.
-Use the reported sensor PID to confirm which camera revision is installed.
+On Windows the same commands are `body\firmware\.venv\Scripts\pio.exe ... --upload-port COM6`.
+Close the Arduino IDE Serial Monitor first; an open monitor holds the port and
+the upload fails with "Access is denied".
+
+Serial keys (115200):
+
+| Key | Action |
+| --- | --- |
+| `u` / `d` / `e` | simulate UP / DOWN / SELECT (use these until the ladder is soldered) |
+| `p` | toggle PTT (press, then release) |
+| `s` / `h` | open Settings / return home |
+| `v` | 60 ms haptic pulse |
+| `tHH:MM` + Enter | set the home clock (e.g. `t14:07`) |
+| `g` | screen grab: `FRAME 320 240`, raw RGB565 framebuffer, `ENDFRAME` |
+| `i` | ladder mV and decoded button, PTT level, battery mV and presence |
+| `c` / `x` | camera start / stop; `r` rotate; `?` full status |
+
+`g` returns exactly what was last pushed to the panel, which is how the
+2026-09-06 grabs in the hardware note were captured; the checks there are
+against the export bundle's own preview, not against a description.
+
+Every button edge and state change is logged (`button UP down`, `state IDLE ->
+SETTINGS`). After wiring the ladder, press each button and check `i` reports
+SELECT ≈ 1300 mV, DOWN ≈ 2200 mV, UP ≥ 2900 mV, idle ≈ 0 mV.
+
+The camera begins off. Repeated start/stop must recover memory and report zero
+failed captures before proceeding. Use the reported sensor PID to confirm which
+camera revision is installed. LED/RESET are hard-wired to 3V3, so a blank
+screen is a wiring or rotation issue, not a PWM duty of zero.
 
 ## Remaining integration
 
-After [hardware confirmation](../hardware/xiao-esp32s3-sense.md): implement the
-panel driver and blit the existing Settings RGB565 renderer (`src/ui/settings.cpp`)
-onto the ILI9341, plus character/caption rendering, physical button inputs and
-camera world controller, PDM microphone and amplifier output, authenticated Friend
-transport and explicit vision lifecycle. Friend already owns the Settings menu
-(`type: settings`); firmware paints the snapshot and applies backlight PWM /
-PCM gain. Preserve audio-only PTT. Match the
-agreed Camera layout (78% viewfinder, 22% persistent character strip, no Vision
-label) and Down/double-Select entry with on-device acceptance evidence.
+Recorded in [hardware](../hardware/xiao-esp32s3-sense.md): full header budget,
+ladder schematic, and the 2026-09-06 on-device serial evidence. Remaining:
+physical UP/DOWN/SELECT and battery divider soldering with measured mV,
+listening check of memo playback and boot chime level (`kMicGain` in `audio.cpp`
+is a fixed x4), a real time source for the home clock (NTP or the Friend hello
+once Wi-Fi exists; until then the clock stays hidden unless set over serial),
+camera world controller (Down / double-Select entry, 78% viewfinder + 22%
+character strip), 24 kHz resampling and the authenticated Friend transport so
+`settings`/`navigate`/`select` become wire events. LED stays tied to 3V3
+until a PWM pin is assigned; do not claim backlight PWM until then. Preserve
+audio-only PTT.
 
 A successful compile is not hardware verification. Do not label this target the
 complete Gizmo product firmware until those integrations run on the board.
