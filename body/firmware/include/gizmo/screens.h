@@ -23,4 +23,7 @@ void render_recording_overlay(const draw::Canvas& canvas, uint8_t vu, uint32_t e
 void render_playback_overlay(const draw::Canvas& canvas, uint8_t vu, float progress, uint32_t memo_ms);
 void render_camera_hint(const draw::Canvas& canvas);
 
+// Setup card over home while the open AP / captive portal is up.
+void render_wifi_setup(const draw::Canvas& canvas, const char* ap_ssid, const char* detail);
+
 }  // namespace gizmo

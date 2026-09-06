@@ -16,6 +16,7 @@
 #include "gizmo/input.h"
 #include "gizmo/screens.h"
 #include "gizmo/settings.h"
+#include "gizmo/wifi.h"
 
 // Operating loop for the handheld. One cooperative loop() owns every
 // peripheral; nothing blocks longer than a panel blit (~30 ms at 40 MHz).
@@ -45,6 +46,7 @@ gizmo::Audio audio;
 gizmo::Battery battery;
 gizmo::Haptic haptic;
 gizmo::Input input;
+gizmo::WifiLink wifi;
 Preferences prefs;
 
 uint16_t* framebuffer = nullptr;
@@ -204,6 +206,9 @@ void render() {
     }
     case State::kIdle:
       paint_home_base();
+      if (wifi.portal() || wifi.phase() == gizmo::WifiPhase::kConnecting) {
+        gizmo::render_wifi_setup(canvas, wifi.ap_ssid(), wifi.detail());
+      }
       break;
     case State::kRecording:
       paint_home_base();
@@ -441,17 +446,25 @@ void command(char value) {
       Serial.printf("display rotation=%u %dx%d\n", display.rotation(), display.width(), display.height());
       break;
     }
-    case 'i':
+    case 'n':
+      Serial.printf("wifi: %s ap=%s ssid=%s ip=%s %s\n", gizmo::wifi_phase_name(wifi.phase()), wifi.ap_ssid(),
+                    wifi.sta_ssid(), wifi.ip().toString().c_str(), wifi.detail());
+      break;
+    case 'w':
+      wifi.forget();
+      dirty = true;
+      Serial.println("wifi: setup AP reopened");
+      break;
       Serial.printf("inputs: ladder=%umV (%s) ptt=%s battery=%umV (%u%%%s)\n",
                     input.ladder_millivolts(), gizmo::button_name(input.ladder_button()),
                     input.held(Button::kPtt) ? "down" : "up",
                     battery.millivolts(), battery.percent(), battery.present() ? "" : ", unwired");
       break;
     case '?':
-      Serial.printf("state=%s camera=%s audio=%s memo=%ums display=%s rotation=%u heap=%u psram_free=%u backlight=%s "
-                    "brightness=%u volume=%u\n",
+      Serial.printf("state=%s camera=%s audio=%s memo=%ums wifi=%s display=%s rotation=%u heap=%u psram_free=%u "
+                    "backlight=%s brightness=%u volume=%u\n",
                     state_name(state), camera.running() ? "running" : "off",
-                    audio_ok ? "ready" : "failed", audio.memo_ms(),
+                    audio_ok ? "ready" : "failed", audio.memo_ms(), gizmo::wifi_phase_name(wifi.phase()),
                     display.ready() ? "commands_sent" : "off", display.rotation(),
                     ESP.getFreeHeap(), ESP.getFreePsram(), backlight_wiring(),
                     settings.brightness, settings.volume);
@@ -540,8 +553,12 @@ void setup() {
                 gizmo::board::ptt, gizmo::board::buttons_adc, gizmo::board::battery_adc,
                 gizmo::board::haptic, gizmo::board::sd_cs);
   Serial.printf("settings: brightness=%u volume=%u (nvs)\n", settings.brightness, settings.volume);
+  wifi.begin();
+  Serial.printf("wifi begin: %s ap=%s (plug the Sense U.FL antenna)\n", gizmo::wifi_phase_name(wifi.phase()),
+                wifi.ap_ssid());
   Serial.println("keys: u/d/e = up/down/select, p = PTT toggle, s = settings, h = home, v = haptic,");
-  Serial.println("      tHH:MM<enter> = set clock, i = input voltages, c/x = camera, r = rotate, ? = status");
+  Serial.println("      tHH:MM<enter> = set clock, i = input voltages, n = wifi, w = forget wifi / reopen portal,");
+  Serial.println("      c/x = camera, r = rotate, ? = status");
 }
 
 void loop() {
@@ -553,6 +570,9 @@ void loop() {
   audio.update();
   battery.update();
   haptic.update();
+  const auto wifi_phase = wifi.phase();
+  wifi.update();
+  if (wifi.phase() != wifi_phase) dirty = true;
 
   const uint32_t now = millis();
   switch (state) {
@@ -586,7 +606,11 @@ void loop() {
       }
       break;
     case State::kIdle:
-      if (now - last_redraw >= kIdleRedrawMs && hud_changed(current_hud(), last_hud)) dirty = true;
+      if (wifi.portal() || wifi.phase() == gizmo::WifiPhase::kConnecting) {
+        if (now - last_redraw >= 400) dirty = true;
+      } else if (now - last_redraw >= kIdleRedrawMs && hud_changed(current_hud(), last_hud)) {
+        dirty = true;
+      }
       break;
     case State::kCamera:
       camera_loop();

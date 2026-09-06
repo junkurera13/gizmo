@@ -140,4 +140,16 @@ void render_camera_hint(const draw::Canvas& canvas) {
   draw::text_centered(canvas, canvas.width / 2, canvas.height / 2 - 4, "CAMERA STARTING", draw::kDim, 1);
 }
 
+void render_wifi_setup(const draw::Canvas& canvas, const char* ap_ssid, const char* detail) {
+  if (!canvas.valid()) return;
+  const int h = 78;
+  const int y = canvas.height - h;
+  draw::fill_rect(canvas, 0, y, canvas.width, h, draw::kBlack);
+  draw::fill_rect(canvas, 0, y, canvas.width, 1, draw::kFaint);
+  draw::text_centered(canvas, canvas.width / 2, y + 10, "OPEN PHONE WIFI", draw::kDim, 1);
+  draw::text_centered(canvas, canvas.width / 2, y + 26, ap_ssid ? ap_ssid : "GIZMO", draw::kWhite, 2);
+  draw::text_centered(canvas, canvas.width / 2, y + 52, detail && detail[0] ? detail : "WAITING FOR PHONE", draw::kDim,
+                      1);
+}
+
 }  // namespace gizmo
