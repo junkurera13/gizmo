@@ -2,7 +2,7 @@ import AVFoundation
 import CoreImage
 import Foundation
 
-/// Dormant one-shot adapter for a future explicit See interaction.
+/// Live camera adapter owned exclusively by the Camera world.
 /// Pink push-to-talk does not construct or call this adapter.
 /// All AVFoundation state belongs to `queue`; callbacks never touch the UI.
 final class CameraFeed: NSObject, @unchecked Sendable {
@@ -32,6 +32,7 @@ final class CameraFeed: NSObject, @unchecked Sendable {
     private let context = CIContext()
     private var configured = false
     private var readyAfter = ContinuousClock.now
+    private var lastFrameAt = ContinuousClock.now
     private var requestID: UUID?
     private var completion: (@Sendable (Result<Snapshot, CaptureError>) -> Void)?
 
@@ -75,7 +76,7 @@ final class CameraFeed: NSObject, @unchecked Sendable {
         // A missing/busy camera must never keep capturing indefinitely.
         queue.asyncAfter(deadline: .now() + 5) {
             guard self.requestID == id else { return }
-            self.finish(.failure(.timedOut))
+            if self.lastFrameAt < self.readyAfter { self.finish(.failure(.timedOut)) }
         }
         session.startRunning()
         // Give camera exposure a brief warm-up. The eventual body sensor needs
@@ -123,7 +124,10 @@ extension CameraFeed: AVCaptureVideoDataOutputSampleBufferDelegate {
         from connection: AVCaptureConnection
     ) {
         guard requestID != nil, ContinuousClock.now >= readyAfter,
+              ContinuousClock.now - lastFrameAt >= .milliseconds(83),
               let pixelBuffer = CMSampleBufferGetImageBuffer(sampleBuffer) else { return }
+
+        lastFrameAt = .now
 
         // Camera context is independent of the undecided display aspect.
         // Preserve the full frame (and book text), bounded to VGA / 128 KiB.
@@ -137,7 +141,7 @@ extension CameraFeed: AVCaptureVideoDataOutputSampleBufferDelegate {
                 of: image, colorSpace: colorSpace,
                 options: [CIImageRepresentationOption(rawValue: kCGImageDestinationLossyCompressionQuality as String): quality]
             ), jpeg.count <= 128 * 1024 {
-                finish(.success(Snapshot(jpeg: jpeg, width: Int(image.extent.width), height: Int(image.extent.height))))
+                completion?(.success(Snapshot(jpeg: jpeg, width: Int(image.extent.width), height: Int(image.extent.height))))
                 return
             }
         }

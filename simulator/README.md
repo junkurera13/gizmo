@@ -15,8 +15,12 @@ Each install mints a device id on first launch (kept in user defaults, shown in 
 
 The pink PTT button is audio-only: pressing it opens the Mac microphone, streams
 PCM while held, and releasing it ends the turn. It never activates the camera or
-sends a visual frame. Camera input remains unwired until See gets its own explicit
-interaction design. Allow Gizmo Simulator's Microphone permission when macOS asks.
+sends a visual frame. Open the Camera world with Down from home or a double Select press (within
+320 ms). Up, single Select, or double Select returns home. Its live Mac camera
+viewfinder reserves a bottom strip for the character; speech text appears only
+while talking. Power-off, sleep, disconnect, and app exit stop capture. Camera
+permission is requested on first entry. The viewfinder is local preview only;
+agent vision/frame transmission is not wired in this UI pass. Allow Gizmo Simulator's Microphone permission when macOS asks.
 Launch the `.app` with `open` so macOS attributes that permission to Gizmo rather
 than the parent terminal application.
 

@@ -112,7 +112,9 @@ private struct DeviceView: View {
         ZStack {
             Color.black
 
-            if let screenImage = model.screenImage, model.viewingStill {
+            if model.cameraOpen {
+                CameraWorldView(model: model)
+            } else if let screenImage = model.screenImage, model.viewingStill {
                 Image(nsImage: screenImage)
                     .resizable()
                     .scaledToFill()
@@ -299,11 +301,11 @@ private struct DeviceView: View {
     private func helpText(for control: DeviceControl) -> String {
         switch control.shortAction {
         case "navigateUp":
-            return "Navigate up."
+            return "Move up to Home."
         case "navigateDown":
-            return "Navigate down."
+            return "Move down to Camera."
         case "select":
-            return "Select."
+            return "Select. Double-press to open Camera; press to return home."
         case "ptt":
             return "Hold to talk. Wakes him if he's asleep."
         default:

@@ -31,6 +31,8 @@
     </dict>
     <key>NSHighResolutionCapable</key>
     <true/>
+    <key>NSCameraUsageDescription</key>
+    <string>Gizmo uses the Mac camera for the live viewfinder when you open the Camera world.</string>
     <key>NSMicrophoneUsageDescription</key>
     <string>Gizmo Simulator uses the Mac microphone to emulate the device microphone.</string>
 </dict>

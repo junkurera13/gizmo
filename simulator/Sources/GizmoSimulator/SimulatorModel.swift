@@ -106,6 +106,12 @@ final class SimulatorModel: ObservableObject {
     private var launchedBackend = false
     private var hasStarted = false
     private var isShuttingDown = false
+    @Published private(set) var cameraOpen = false
+    @Published private(set) var cameraImage: NSImage?
+    @Published private(set) var cameraError: String?
+    private let camera = CameraFeed()
+    private var cameraID = UUID()
+    private var selectTask: Task<Void, Never>?
     private let microphone = MicrophoneCapture()
     private let speaker = SpeakerPlayback()
 
@@ -128,6 +134,7 @@ final class SimulatorModel: ObservableObject {
     }
 
     func reconnect() {
+        closeCamera()
         stopMicrophone()
         sendTask?.cancel()
         reconnectTask?.cancel()
@@ -144,6 +151,7 @@ final class SimulatorModel: ObservableObject {
 
     func shutdown() {
         isShuttingDown = true
+        closeCamera()
         clearShow()
         reconnectTask?.cancel()
         reconnectTask = nil
@@ -166,11 +174,52 @@ final class SimulatorModel: ObservableObject {
 
     func select() {
         DeviceHaptics.controlTick()
-        // The body reports every press; the brain decides what it means
-        // (while asleep, any button simply wakes him).
-        guard !poweredOff else { return }
-        if viewingStill { clearShow() }
-        send(["type": "select"])
+        guard !poweredOff, !splashHolding else { return }
+        if selectTask != nil {
+            selectTask?.cancel()
+            selectTask = nil
+            if cameraOpen { closeCamera() } else { openCamera() }
+            return
+        }
+        selectTask = Task { @MainActor [weak self] in
+            try? await Task.sleep(for: .milliseconds(320))
+            guard let self, !Task.isCancelled else { return }
+            self.selectTask = nil
+            if self.cameraOpen { self.closeCamera() }
+            if self.viewingStill { self.clearShow() }
+            self.send(["type": "select"])
+        }
+    }
+
+    private func openCamera() {
+        guard !poweredOff, !splashHolding, screenOn, deviceState != "asleep" else { return }
+        clearShow()
+        cameraOpen = true
+        cameraImage = nil
+        cameraError = nil
+        let id = UUID()
+        cameraID = id
+        appendEvent("camera", "Opened camera world")
+        camera.capture(id: id) { [weak self] result in
+            Task { @MainActor in
+                guard let self, self.cameraOpen, self.cameraID == id else { return }
+                switch result {
+                case .success(let snapshot): self.cameraImage = NSImage(data: snapshot.jpeg)
+                case .failure(let error): self.cameraError = error.message
+                }
+            }
+        }
+    }
+
+    private func closeCamera() {
+        selectTask?.cancel()
+        selectTask = nil
+        cameraID = UUID()
+        camera.cancel()
+        if cameraOpen { appendEvent("camera", "Closed camera world") }
+        cameraOpen = false
+        cameraImage = nil
+        cameraError = nil
     }
 
     /// Ding lands when the final boot frame (the wordmark) first appears, not on power-on.
@@ -268,6 +317,7 @@ final class SimulatorModel: ObservableObject {
     private func applyPowerOff(_ off: Bool) {
         poweredOff = off
         if off {
+            closeCamera()
             clearShow()
             speaker.interrupt()
             stopBootSound()
@@ -367,6 +417,12 @@ final class SimulatorModel: ObservableObject {
         guard ["up", "down"].contains(direction) else { return }
         DeviceHaptics.controlTick()
         guard !poweredOff else { return }
+        selectTask?.cancel()
+        selectTask = nil
+        if !splashHolding, screenOn, deviceState != "asleep" {
+            if direction == "down", !cameraOpen { openCamera() }
+            else if direction == "up", cameraOpen { closeCamera() }
+        }
         send(["type": "navigate", "direction": direction])
     }
 
@@ -551,6 +607,7 @@ final class SimulatorModel: ObservableObject {
 
     private func markDisconnected(_ detail: String) {
         guard !isShuttingDown else { return }
+        closeCamera()
         stopMicrophone()
         sendTask?.cancel()
         speaker.interrupt()
@@ -621,6 +678,7 @@ final class SimulatorModel: ObservableObject {
             deviceState = "powered_off"
             refreshGlassState()
         } else if let state = object["state"] as? String {
+            if state == "talking", deviceState != "talking" { spokenLine = "" }
             deviceState = state
             if isPushToTalking, ["asleep", "booting"].contains(state) {
                 stopMicrophone()
@@ -640,6 +698,7 @@ final class SimulatorModel: ObservableObject {
         if let isOn = object["screen"] as? Bool {
             screenOn = poweredOff ? false : isOn
         }
+        if poweredOff || !screenOn || deviceState == "asleep" { closeCamera() }
         if poweredOff || !screenOn || deviceState == "asleep" || deviceState == "booting"
             || object["viewing"] as? Bool == false {
             clearShow()
@@ -649,6 +708,8 @@ final class SimulatorModel: ObservableObject {
             guard !poweredOff, screenOn, !isPushToTalking else { return }
             do { try speaker.enqueue(data) }
             catch { appendEvent("speaker error", error.localizedDescription) }
+        } else if type == "transcript_delta" {
+            spokenLine += object["text"] as? String ?? ""
         } else if type == "transcript", object["role"] as? String == "gizmo" {
             spokenLine = object["text"] as? String ?? ""
             appendConversation(role: .gizmo, text: spokenLine)
