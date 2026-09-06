@@ -3,9 +3,8 @@
 #include <stddef.h>
 #include <stdint.h>
 
-// Friend owns the Settings menu. Firmware paints this snapshot on the glass
-// and applies the two analog outputs. Display GPIO is not assigned yet;
-// render into a caller-supplied RGB565 buffer and blit once the panel is wired.
+// Friend owns the Settings menu. Firmware paints this snapshot on the glass.
+// Panel SPI is in board.h. LED is tied to 3V3, so backlight PWM is not driven.
 namespace gizmo {
 
 struct SettingsSnapshot {
