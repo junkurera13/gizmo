@@ -4,7 +4,7 @@ A wizard in a kid's pocket. One face, one voice, one coat. Kids 9–14. Dry, a l
 
 This repo is the device: GizmoSession (brain), Body (XIAO firmware bring-up), Glass (device renderer), and the native emulator. The public site lives in `web/`.
 
-**v1 runs on a laptop.** The existing emulator connects to the same WebSocket contract the eventual ESP32-S3 body will use. Gemini 3.1 Flash Live handles realtime voice and vision; Gemini 3.1 Flash-Lite silently chooses words, still, motion, or animate; Memobase supplies persistent user memory; Gemini 3.7 Flash is available only through `deep_think()`.
+**v1 runs on a laptop.** The Mac emulator speaks the same WebSocket contract firmware will use. The XIAO already runs a local terminal OS (boot, home, Settings, voice memo) without that socket; Wi-Fi and Friend transport are still to come. Gemini 3.1 Flash Live handles realtime voice and vision; Gemini 3.1 Flash-Lite silently chooses words, still, motion, or animate; Memobase supplies persistent user memory; Gemini 3.7 Flash is available only through `deep_think()`.
 
 ## Tree
 
@@ -20,7 +20,7 @@ friend/           GizmoSession, providers, Gemini transport, and server
 body/             XIAO ESP32S3 Sense firmware, hardware notes, protocol reference
 glass/            device renderer assets
 simulator/        native macOS emulator
-web/              public site (empty until we design it)
+web/              public site (Next.js on Vercel, /gizmo)
 ```
 
 ## Run (Mac / Linux)
@@ -48,7 +48,7 @@ Or: `python -m gizmo_friend` from a venv with this repo installed.
 
 ### Talk to him
 
-**Native emulator:** launch `Gizmo Simulator.app`. **Power on** cold-boots Gizmo. Hold **PTT** while talking; release to send. Use **Up**, **Down**, and **Select** for device UI. The pink button sends only 24 kHz microphone PCM over the body WebSocket; the backend resamples it to Gemini's 16 kHz input. The Mac camera world opens with Down or double Select; its live viewfinder is local preview only. Real XIAO camera bring-up is in `body/firmware/`, with hardware integration tracked in `body/hardware/`.
+**Native emulator:** launch `Gizmo Simulator.app`. **Power on** cold-boots Gizmo. Hold **PTT** while talking; release to send. **Up** from home opens Settings (brightness and volume); Friend owns that menu so every protocol body paints the same snapshot. Down from home opens the Mac camera world; its live viewfinder is local preview only. The pink button sends only 24 kHz microphone PCM over the body WebSocket; the backend resamples it to Gemini's 16 kHz input. XIAO firmware, including a local Settings/memo OS that does not yet speak `/ws`, is in `body/firmware/`. Pins and acceptance notes are in `body/hardware/`.
 
 Gizmo waits silently after power-on or wake. He sleeps on his own after two idle minutes; any button wakes him, and a PTT press from sleep wakes him *and* captures that first spoken turn. There is no sleep gesture. The conversation panel shows microphone status and any permission/input errors.
 
@@ -91,9 +91,9 @@ Gemini Live can call only `deep_think(question)` and the placeholder `set_expres
 | | |
 | --- | --- |
 | GizmoSession | session lifecycle, identity, transcripts, memory, tools, and recovery in `friend/` |
-| Body | XIAO ESP32S3 Sense camera bring-up firmware, hardware configuration and protocol reference |
+| Body | XIAO ESP32S3 Sense firmware (local terminal OS today; Friend `/ws` next), hardware notes, protocol reference |
 | Glass | character display renderer |
 | Memobase | persistent user memory, self-hosted on Railway |
-| Web | public site in `web/`; not the device |
+| Web | public site in `web/` on Vercel; not the device |
 
 Frozen prompt is in `friend/gizmo_friend/prompt.py` and `docs/FRIEND.md`. Do not invent a second personality.

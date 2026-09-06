@@ -1,5 +1,11 @@
 # Sprint — Blueprint II application, due Sep 14
 
+Written Sep 3 for that window. The tree has moved: XIAO firmware is a local
+terminal OS, Friend owns a Settings overlay on the protocol path, Show is
+wired, and `web/` is on Vercel. This file is the application plan of that
+week, not the current hardware or Settings contract. Current firmware:
+`body/firmware/README.md`. Current wire: `body/README.md`.
+
 Founders, Inc. Blueprint II. Hardware and frontier tech, 3 months in SF starting
 Sep 30, $150k for 5%. Applications close **Sep 14, 11:59 PM PST**
 (that is 3:59 PM Sep 15 in Tokyo). Rolling review — earlier is better; hear back by Sep 20.

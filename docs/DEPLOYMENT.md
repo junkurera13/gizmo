@@ -10,6 +10,8 @@ Deploy the committed repository with `npx @railway/cli up --service gizmo-brain`
 
 The native simulator uses the ignored repository `.env` for `GIZMO_BRAIN_URL` and `GIZMO_DEVICE_TOKEN`. API keys are backend credentials, not client configuration. The current local env file is permission mode 600 and is not tracked by Git.
 
+The public site is a separate Vercel project (`gizmo`, Oddware team) with root directory `web/`. It is not the brain. Hobby Git deploys require the commit author to be the team owner.
+
 ## Verified on 2026-09-02
 
 - Railway health checks for all four services.

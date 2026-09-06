@@ -3,8 +3,11 @@
 #include <stddef.h>
 #include <stdint.h>
 
-// Friend owns the Settings menu. Firmware paints this snapshot on the glass.
-// Panel SPI is in board.h. LED is tied to 3V3, so backlight PWM is not driven.
+// Target: Friend owns the Settings menu; firmware paints this snapshot.
+// Today the local terminal OS in main.cpp owns the menu and NVS until /ws
+// exists. Keep this struct aligned with friend/gizmo_friend/settings.py
+// (open focus = volume, default step = 8). Panel SPI is in board.h. LED is
+// tied to 3V3, so backlight PWM is not driven.
 namespace gizmo {
 
 struct SettingsSnapshot {

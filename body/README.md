@@ -6,14 +6,19 @@ ESP32-S3 handheld: top power toggle, pink push-to-talk button, up/down rocker, c
 Real board/camera bring-up firmware now lives in [`firmware/`](firmware/README.md).
 Selected parts, unresolved wiring and physical acceptance checks live in
 [`hardware/`](hardware/xiao-esp32s3-sense.md). The laptop reference below is
-separate from firmware. Display, physical controls, audio and network integration
-are still pending; a successful cross-compile is not a hardware pass.
+separate from firmware. On the board today: display, buttons, mic/speaker,
+boot/home, a local Settings menu, and PTT voice memo. Wi-Fi and the Friend
+`/ws` transport are not implemented; a successful cross-compile is not a
+hardware pass.
 
 ## Protocol Friend already understands
 
-The native simulator uses JSON text messages over WebSocket `/ws`. Firmware uses
-the same wire messages below. Python classes in `friend/gizmo_friend/body_protocol.py`
-are internal controller events; their names are not necessarily the JSON names.
+The native simulator and the laptop reference client use JSON text messages over
+WebSocket `/ws`. Firmware does **not** open that socket yet: it is a local
+terminal OS (see [`firmware/README.md`](firmware/README.md)). When transport
+lands, firmware should use the same messages below. Python classes in
+`friend/gizmo_friend/body_protocol.py` are internal controller events; their
+names are not necessarily the JSON names.
 
 Connect to `wss://<brain-host>/ws` with `Authorization: Bearer <device-token>` and
 `X-Gizmo-Device: <device-id>` headers. Keep the same device id across reconnects.
@@ -22,8 +27,9 @@ not any provider API key.
 
 The current wire version is **1**. Before opening the socket, read `/health` and
 require `body_protocol.version == 1`. That response also publishes the canonical
-events, audio format, the reserved visual-frame ceiling, and Show-frame route limits. It intentionally
-does not claim a panel size: no screen has been selected. Send
+events, audio format, the reserved visual-frame ceiling, and Show-frame route limits. It
+does not publish a panel size: each body picks its own profile. The selected
+module is Akizuki 116265, 320 × 240. Send
 `X-Gizmo-Protocol: 1` on the WebSocket handshake. An explicit unsupported version
 is closed with WebSocket code `1002`; clients from before this version header was
 introduced may temporarily omit it.

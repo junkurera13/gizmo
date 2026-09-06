@@ -1,13 +1,14 @@
 # Gizmo brain
 
-`GizmoSession` is the central controller between Oddity OS/the existing emulator and all cloud providers. UI and hardware code know only the body WebSocket events; provider lifecycle and agent policy stay in `friend/`.
+`GizmoSession` is the central controller between Oddity OS/the existing emulator and all cloud providers. UI and hardware code know only the body WebSocket events; provider lifecycle, Settings, and agent policy stay in `friend/`. The XIAO firmware is a local terminal OS until it speaks that socket; it must not become a second brain.
 
 ## Runtime path
 
 ```text
-ESP32-S3 or native emulator
+ESP32-S3 (local OS today) or native emulator (protocol body)
   └─ Power / PTT / up / down / select / 24 kHz PCM
-       └─ GizmoSession
+       └─ GizmoSession  (emulator and reference client only, until firmware /ws)
+            ├─ DeviceSettings (brightness / volume overlay)
             ├─ Gemini 3.1 Flash Live
             │    ├─ realtime voice
             │    ├─ staged Show-image context
@@ -23,7 +24,7 @@ ESP32-S3 or native emulator
 
 The active Live model is `gemini-3.1-flash-live-preview`. It receives mono PCM16 at 16 kHz; `GeminiLiveTransport` statefully resamples Gizmo's existing 24 kHz mic stream. Gemini audio returns at 24 kHz and passes through the existing speaker path unchanged.
 
-PTT uses explicit activity-start/activity-end events with Gemini automatic activity detection disabled. The button has one meaning: down, he listens; up, he answers. There is no tap gesture and no sleep button.
+PTT uses explicit activity-start/activity-end events with Gemini automatic activity detection disabled. The button has one meaning on the protocol path: down, he listens; up, he answers. There is no tap gesture and no sleep button. Firmware currently uses PTT as a local 16 kHz voice memo until the same wire exists.
 
 The JSON wire contract is in `body/README.md`: microphone input and speaker output
 both use `type:"audio"` with base64 PCM in `pcm`; input `mic` is accepted only as a
@@ -31,10 +32,19 @@ compatibility alias. The socket that presses PTT owns that hold's audio and
 release. If it disconnects, the hold is cancelled without committing it; an
 unrelated observer disconnect does not interrupt capture.
 
+Friend owns Settings so every protocol body shares one menu. The body reports
+raw `navigate` / `select`. `DeviceSettings` in `gizmo_friend/settings.py` opens
+on Up from home with focus on Volume, Select toggles adjust, and Down past
+Volume returns home. It persists `brightness` and `volume` (0–10, default 8)
+per device id and emits `settings` snapshots on `hello` and after each change.
+Bodies paint the overlay and apply backlight and speaker gain. The XIAO
+currently duplicates that menu in NVS with different open-focus and default
+volume; those must match this contract when `/ws` lands.
+
 `/health` publishes body protocol v1 and its wire/media limits without inventing
 a panel size. Version-aware bodies send `X-Gizmo-Protocol: 1`; an explicit mismatch
 opens only long enough to close with WebSocket protocol-error code `1002`. The
-`hello` repeats the selected version. `body/reference/gizmo_body.py` is the
+`hello` repeats the selected version and the current `settings` object. `body/reference/gizmo_body.py` is the
 checkpoint-2 authenticated laptop client for compatibility, identity, controls,
 real macOS microphone/speaker I/O, and authenticated still/MJPEG fetches.
 It keeps up to ten seconds of wake audio locally and sends a fresh PTT edge before
@@ -60,8 +70,9 @@ The server keeps one `GizmoSession` per device. A body identifies itself with th
 - tool validation and execution
 - startup memory context and background memory ingestion
 - device state transitions and idle sleep
+- DeviceSettings: brightness/volume overlay, persisted per device
 
-The emulator protocol and controls are unchanged.
+The emulator protocol and controls are unchanged. Firmware does not yet consume `settings` events.
 
 ### Connection lifecycle
 

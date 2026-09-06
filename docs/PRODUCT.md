@@ -41,23 +41,23 @@ These are not features and not a menu. They are what he can reach for, and he re
 | **Make** | They want to keep it. | He keeps a **card**: the still, and a line if they wrote one together. Tomorrow he still has it; they can ask and it comes back on the glass. Not a document, not a website, not a stack of screens. A kept object, not a session of play. |
 | **Play** | They want to do something, not watch. | Something interactive he invents for this moment. Rocker and Select are the controls. No library, no levels menu. In the product; after Show can conjure. |
 
-**Status:** Talk and Think are live. See is not wired yet; the pink PTT button is audio-only, and camera activation waits for the viewfinder-plus-head interaction to be designed. Show is being built (`docs/SHOW.md`). Make follows Show. Play waits until Show is real. Until each is wired, the prompt says so.
+**Status:** Talk and Think are live. Show is wired in Friend (`docs/SHOW.md`): a silent director chooses words, still, or motion. See is not wired yet; the pink PTT button is audio-only, and camera activation waits for the viewfinder-plus-head interaction to be designed. Make follows Show. Play waits until Show is real. Until each is wired, the prompt says so.
 
-The rule for the screen: no UI he didn't conjure for this moment. His face is home. Anything else on the glass exists because he decided this kid needed it, and it goes away when they're done. No grid, no launcher, no settings page, no "want to watch another."
+The rule for the screen: no UI he didn't conjure for this moment. His face is home. Anything else on the glass exists because he decided this kid needed it, and it goes away when they're done. No grid, no launcher, no settings *app*, no "want to watch another." Brightness and volume are a two-row device overlay opened with Up from home — hardware, not a page of options.
 
 Google Search is a quiet grounding tool when a current or accuracy-sensitive answer needs it. He never talks like a search result.
 
 ## Kid line / parent line
 
-**Kid.** A pocket someone. Turn him on with the top switch. Hold the pink button to talk; that's all it does. He dozes off on his own and any button wakes him. Use up/down and Select when he's put something in front of you to choose or play. His face is home.
+**Kid.** A pocket someone. Turn him on with the top switch. Hold the pink button to talk; that's all it does. He dozes off on his own and any button wakes him. Up from his face is brightness and volume. Use up/down and Select when he's put something in front of you to choose or play. His face is home.
 
 **Parent.** You are not in the conversation, and he does not call you. A later parent view — cards they kept, what he helped with, a transcript if you want one — is a real surface. It is not v1, and it is not a second Gizmo. Safety is a prompt that refuses plainly, model content filters, and no personal details asked for or repeated. You should be able to inspect that, not be asked to trust it. The model can still fail.
 
 ## Body
 
-ESP32-S3, top power toggle, pink PTT, up/down rocker, Select, mic, speaker, a 69 × 50 mm landscape glass (69∶50, about 1.38∶1), world camera. The body reports every press; the brain decides what it means.
+ESP32-S3, top power toggle, pink PTT, up/down rocker, Select, mic, speaker, a 69 × 50 mm landscape glass (69∶50, about 1.38∶1), world camera. On the protocol path, the body reports every press and the brain decides what it means.
 
-Today the body is the native macOS emulator (`simulator/`), which speaks the same protocol the hardware will. The brain runs on Railway. Firmware lives in `body/` when we build it.
+Today the protocol body is the native macOS emulator (`simulator/`). The brain runs on Railway. Selected hardware is the Seeed XIAO ESP32S3 Sense with an Akizuki 320 × 240 ILI9341. Firmware in `body/firmware/` is a local terminal OS (boot, home, Settings, voice memo, serial camera) and does not yet open the Friend WebSocket; when it does, it should use the same messages as the emulator.
 
 ## Glass
 
@@ -67,9 +67,9 @@ Today the body is the native macOS emulator (`simulator/`), which speaks the sam
 
 | Tree | Owner | What |
 | --- | --- | --- |
-| `friend/` | Brain | Realtime talk, memory, tools, Railway runtime |
-| `simulator/` | Body (for now) | Native macOS emulator speaking the body protocol |
-| `body/` | Hardware | ESP32-S3 firmware, power / PTT / up-down / Select / mic / speaker / camera protocol |
+| `friend/` | Brain | Realtime talk, memory, tools, Settings menu logic, Railway runtime |
+| `simulator/` | Body (protocol) | Native macOS emulator speaking the body protocol |
+| `body/` | Hardware | XIAO firmware (local OS today), pins, protocol reference, laptop client |
 | `glass/` | Jun | Face, see-head, and card art for the 69∶50 glass |
-| `web/` | Public site | Landing. Not the glass. Not a second personality |
+| `web/` | Public site | Landing on Vercel. Not the glass. Not a second personality |
 | `docs/` | Shared | This file, Friend architecture, v1 scope |
