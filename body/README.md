@@ -9,7 +9,7 @@ Selected parts, unresolved wiring and physical acceptance checks live in
 separate from firmware. On the board today: display, buttons, mic/speaker,
 boot/home, a local Settings menu, PTT voice memo, phone Wi-Fi setup, a local
 Camera world (Down / serial `d`), and a Friend `/ws` slice (health, hello, PTT
-audio up at 24 kHz, inbound PCM play-down). A successful cross-compile is not a
+audio 16→24 on send / 24→16 on play, device I2S stays 16 kHz). A successful cross-compile is not a
 hardware pass.
 
 ## Protocol Friend already understands

@@ -333,6 +333,7 @@ void stop_playback() {
 
 void pump_friend_audio() {
   int16_t buf[256];
+  if (friend_link.take_barge_in()) audio.stop_live();
   if (audio.recording()) {
     while (true) {
       const size_t n = audio.take_capture(buf, 256);
@@ -694,10 +695,10 @@ void setup() {
   audio_ok = sound == ESP_OK;
   apply_volume();
   apply_brightness();
-  Serial.printf("audio begin: %s mic=I2S0 PDM clk=%d data=%d amp=I2S1 bclk=%d lrc=%d din=%d %uHz memo=%us live=%uHz\n",
+  Serial.printf("audio begin: %s mic=I2S0 PDM clk=%d data=%d amp=I2S1 bclk=%d lrc=%d din=%d device=%uHz memo=%us wire=%uHz (resample on body)\n",
                 esp_err_to_name(sound), gizmo::board::microphone_clock, gizmo::board::microphone_data,
                 gizmo::board::amp_bclk, gizmo::board::amp_lrc, gizmo::board::amp_din,
-                gizmo::Audio::kSampleRate, gizmo::Audio::kCapacitySeconds, gizmo::Audio::kWireSampleRate);
+                gizmo::Audio::kSampleRate, gizmo::Audio::kCapacitySeconds, gizmo::FriendLink::kWireSampleRate);
   Serial.printf("inputs: ptt=D1/GPIO%d ladder=D4/GPIO%d battery=D5/GPIO%d haptic=D2/GPIO%d sd_cs=GPIO%d held high\n",
                 gizmo::board::ptt, gizmo::board::buttons_adc, gizmo::board::battery_adc,
                 gizmo::board::haptic, gizmo::board::sd_cs);

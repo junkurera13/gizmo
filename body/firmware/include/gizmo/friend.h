@@ -5,7 +5,8 @@
 
 // Authenticated body → Friend WebSocket (`/ws`, protocol v1).
 // Happy path this slice: /health version check, connect with Bearer + device
-// headers, hello, PTT audio up at 24 kHz, inbound PCM play-down.
+// headers, hello, PTT audio (mic 16 kHz upsampled to 24 kHz on the wire),
+// inbound 24 kHz PCM downsampled to 16 kHz before the amp.
 // Not in this slice: glass/show fetch, Friend-owned Settings, navigate/select
 // forwarding, power events, vision `frame`, wake-audio reconnect buffer.
 namespace gizmo {
@@ -40,12 +41,14 @@ class FriendLink {
 
   bool send_ptt(bool active);
   // Sense mic is 16 kHz; resampled to 24 kHz mono PCM16 on the wire.
+  // Odd leftover samples are held until the next chunk or PTT-up flush.
   bool send_pcm16k(const int16_t* samples, size_t count);
   bool send_select();
 
   size_t take_speaker(int16_t* dest, size_t cap);
   void interrupt_speaker();
   bool speaker_pending() const { return speaker_n_ > 0; }
+  bool take_barge_in();
 
   void on_socket_event(int type, uint8_t* payload, size_t length);
 
@@ -79,12 +82,17 @@ class FriendLink {
   char detail_[56] = "";
   char extra_headers_[280] = "";
 
-  static constexpr size_t kSpeakerCap = 24000 * 3 / 4;
+  static constexpr size_t kSpeakerCap = 16000 * 3 / 4;  // 16 kHz after 24→16
   int16_t* speaker_ = nullptr;
   size_t speaker_cap_ = 0;
   size_t speaker_w_ = 0;
   size_t speaker_r_ = 0;
   size_t speaker_n_ = 0;
+  int16_t up_hold_ = 0;
+  bool up_hold_valid_ = false;
+  int16_t down_hold_[2] = {};
+  uint8_t down_n_ = 0;
+  bool barge_in_ = false;
 };
 
 const char* friend_phase_name(FriendPhase phase);

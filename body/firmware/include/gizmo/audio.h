@@ -14,7 +14,6 @@ namespace gizmo {
 class Audio {
  public:
   static constexpr uint32_t kSampleRate = 16000;
-  static constexpr uint32_t kWireSampleRate = 24000;  // Friend /ws PCM
   static constexpr uint32_t kCapacitySeconds = 20;
 
   esp_err_t begin();
@@ -35,8 +34,9 @@ class Audio {
   bool playing() const { return playing_; }
   bool playing_memo() const { return playing_ && source_ == memo_ && !live_playing_; }
   bool live_playing() const { return live_playing_; }
-  // Queue Friend-inbound 24 kHz mono PCM16 onto I2S_NUM_1. Starts the amp at
-  // 24 kHz on first samples; local memo/chime stay at 16 kHz.
+  // Queue already-downsampled 16 kHz mono PCM16 (Friend wire is 24 kHz; the
+  // body resamples before this). Amp clocks start only while the ring has
+  // samples so idle MAX98357A has no BCLK.
   size_t enqueue_live(const int16_t* samples, size_t count);
   void stop_live();
 
@@ -58,22 +58,20 @@ class Audio {
   void pump_playback();
   void pump_live();
   void track_level(const int16_t* samples, size_t count);
-  bool set_amp_rate(uint32_t hz);
-  bool start_live();
+  bool arm_live();
 
   static constexpr size_t kChunkSamples = 256;
   static constexpr size_t kWarmupSamples = kSampleRate / 8;  // 125 ms discarded on record start
   static constexpr size_t kCaptureRingChunks = 8;
-  static constexpr size_t kLiveSamples = kWireSampleRate * 3 / 4;  // ~0.75 s inbound
+  static constexpr size_t kLiveSamples = kSampleRate * 3 / 4;  // ~0.75 s inbound at 16 kHz
 
   bool ready_ = false;
   bool recording_ = false;
   bool playing_ = false;
-  bool live_playing_ = false;
+  bool live_armed_ = false;    // accepting inbound PCM; amp may be stopped
+  bool live_playing_ = false;  // I2S_NUM_1 clocks running for live
   bool draining_ = false;   // last samples queued, waiting for DMA to finish
   uint32_t drain_until_ = 0;
-  uint32_t amp_rate_ = kSampleRate;
-  uint32_t live_empty_since_ = 0;
   int16_t* memo_ = nullptr;
   size_t memo_capacity_ = 0;
   size_t memo_samples_ = 0;

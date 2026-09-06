@@ -127,12 +127,12 @@ bool Audio::start_clip(const int16_t* samples, size_t count) {
   if (recording_) stop_recording();
   stop_live();
   if (playing_) stop_playback();
-  if (!set_amp_rate(kSampleRate)) return false;
   source_ = samples;
   source_samples_ = count;
   play_cursor_ = 0;
   draining_ = false;
   live_playing_ = false;
+  live_armed_ = false;
   peak_ = 0;
   i2s_zero_dma_buffer(kAmpPort);
   if (i2s_start(kAmpPort) != ESP_OK) return false;
@@ -142,34 +142,23 @@ bool Audio::start_clip(const int16_t* samples, size_t count) {
 }
 
 void Audio::stop_playback() {
-  if (!playing_ && !live_playing_) return;
+  if (!playing_ && !live_playing_ && !live_armed_) return;
   playing_ = false;
   live_playing_ = false;
+  live_armed_ = false;
   draining_ = false;
   source_ = nullptr;
   live_n_ = live_r_ = live_w_ = 0;
   i2s_zero_dma_buffer(kAmpPort);
-  i2s_stop(kAmpPort);
+  i2s_stop(kAmpPort);  // no BCLK: MAX98357A sits in shutdown
 }
 
 void Audio::stop_live() {
-  if (!live_playing_ && live_n_ == 0) {
+  if (!live_armed_ && !live_playing_ && live_n_ == 0) {
     live_n_ = live_r_ = live_w_ = 0;
     return;
   }
   stop_playback();
-}
-
-bool Audio::set_amp_rate(uint32_t hz) {
-  if (hz == 0) return false;
-  if (hz == amp_rate_) return true;
-  const esp_err_t result = i2s_set_sample_rates(kAmpPort, hz);
-  if (result != ESP_OK) {
-    Serial.printf("audio: amp rate %u failed: %s\n", static_cast<unsigned>(hz), esp_err_to_name(result));
-    return false;
-  }
-  amp_rate_ = hz;
-  return true;
 }
 
 size_t Audio::take_capture(int16_t* dest, size_t cap) {
@@ -182,27 +171,23 @@ size_t Audio::take_capture(int16_t* dest, size_t cap) {
   return take;
 }
 
-bool Audio::start_live() {
+bool Audio::arm_live() {
   if (!ready_ || live_ == nullptr) return false;
   if (recording_) return false;
-  if (playing_ && !live_playing_) stop_playback();
-  if (live_playing_) return true;
-  if (!set_amp_rate(kWireSampleRate)) return false;
+  if (playing_ && !live_playing_ && !live_armed_) stop_playback();
+  if (live_armed_) return true;
   draining_ = false;
-  live_empty_since_ = millis();
   peak_ = 0;
-  i2s_zero_dma_buffer(kAmpPort);
-  if (i2s_start(kAmpPort) != ESP_OK) return false;
-  live_playing_ = true;
-  playing_ = true;
   source_ = nullptr;
+  live_armed_ = true;
+  // Amp clocks stay down until pump_live sees samples (no idle BCLK / whine).
   return true;
 }
 
 size_t Audio::enqueue_live(const int16_t* samples, size_t count) {
   if (samples == nullptr || count == 0 || live_ == nullptr) return 0;
   if (recording_) return 0;
-  if (!live_playing_ && !start_live()) return 0;
+  if (!live_armed_ && !arm_live()) return 0;
   size_t written = 0;
   while (written < count && live_n_ < live_cap_) {
     live_[live_w_] = samples[written++];
@@ -266,7 +251,7 @@ void Audio::pump_recording() {
 }
 
 void Audio::pump_playback() {
-  if (live_playing_) {
+  if (live_armed_ || live_playing_ || live_n_ > 0) {
     pump_live();
     return;
   }
@@ -299,12 +284,21 @@ void Audio::pump_playback() {
 
 void Audio::pump_live() {
   if (live_n_ == 0) {
-    if (live_empty_since_ == 0) live_empty_since_ = millis();
-    // Keep BCLK running briefly so a talk-turn gap does not pop; then drop clocks.
-    if (millis() - live_empty_since_ >= 280) stop_live();
+    // Idle: drop I2S_NUM_1 clocks so MAX98357A has no BCLK (silence, no whine).
+    if (live_playing_) {
+      i2s_zero_dma_buffer(kAmpPort);
+      i2s_stop(kAmpPort);
+      live_playing_ = false;
+      playing_ = false;
+    }
     return;
   }
-  live_empty_since_ = 0;
+  if (!live_playing_) {
+    i2s_zero_dma_buffer(kAmpPort);
+    if (i2s_start(kAmpPort) != ESP_OK) return;
+    live_playing_ = true;
+    playing_ = true;
+  }
   for (int chunk = 0; chunk < kMaxChunksPerUpdate && live_playing_ && live_n_ > 0; ++chunk) {
     const size_t count = live_n_ < kChunkSamples ? live_n_ : kChunkSamples;
     for (size_t i = 0; i < count; ++i) {
@@ -335,7 +329,7 @@ void Audio::pump_live() {
 void Audio::update() {
   if (!ready_) return;
   if (recording_) pump_recording();
-  if (playing_) pump_playback();
+  if (playing_ || live_armed_ || live_n_ > 0) pump_playback();
   const uint32_t now = millis();
   if (now - last_vu_decay_ >= kVuDecayMs) {
     last_vu_decay_ = now;

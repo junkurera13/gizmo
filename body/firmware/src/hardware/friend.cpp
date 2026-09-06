@@ -135,6 +135,24 @@ size_t resample_16k_to_24k(const int16_t* in, size_t in_n, int16_t* out, size_t 
   return out_n;
 }
 
+// 3 wire samples at 24 kHz → 2 device samples at 16 kHz. Caller holds leftovers.
+size_t resample_24k_to_16k(const int16_t* in, size_t in_n, int16_t* out, size_t out_cap) {
+  if (in == nullptr || out == nullptr || in_n < 3 || out_cap < 2) return 0;
+  const size_t groups = in_n / 3;
+  const size_t max_groups = out_cap / 2;
+  const size_t use = groups < max_groups ? groups : max_groups;
+  size_t out_n = 0;
+  for (size_t g = 0; g < use; ++g) {
+    const int16_t a = in[g * 3];
+    const int16_t b = in[g * 3 + 1];
+    const int16_t c = in[g * 3 + 2];
+    out[out_n++] = a;
+    const int32_t mid = (static_cast<int32_t>(b) + static_cast<int32_t>(c)) / 2;
+    out[out_n++] = static_cast<int16_t>(mid);
+  }
+  return out_n;
+}
+
 void socket_event(WStype_t type, uint8_t* payload, size_t length) {
   if (g_link == nullptr) return;
   g_link->on_socket_event(static_cast<int>(type), payload, length);
@@ -338,6 +356,9 @@ void FriendLink::disconnect() {
   hello_ok_ = false;
   glass_seen_ = false;
   speaker_n_ = speaker_r_ = speaker_w_ = 0;
+  down_n_ = 0;
+  up_hold_valid_ = false;
+  barge_in_ = true;
   if (ws_used_) {
     ws.disconnect();
   }
@@ -466,12 +487,31 @@ void FriendLink::on_socket_event(int type, uint8_t* payload, size_t length) {
 
 void FriendLink::enqueue_speaker(const int16_t* samples, size_t count) {
   if (speaker_ == nullptr || samples == nullptr || count == 0) return;
-  for (size_t i = 0; i < count; ++i) {
-    if (speaker_n_ >= speaker_cap_) break;
-    speaker_[speaker_w_] = samples[i];
+  int16_t group[3];
+  size_t have = down_n_;
+  for (size_t i = 0; i < down_n_; ++i) group[i] = down_hold_[i];
+  down_n_ = 0;
+  auto push16 = [this](int16_t sample) {
+    if (speaker_n_ >= speaker_cap_) return;
+    speaker_[speaker_w_] = sample;
     speaker_w_ = (speaker_w_ + 1) % speaker_cap_;
     ++speaker_n_;
+  };
+  auto emit_group = [&](const int16_t* g) {
+    int16_t out[2];
+    if (resample_24k_to_16k(g, 3, out, 2) != 2) return;
+    push16(out[0]);
+    push16(out[1]);
+  };
+  for (size_t i = 0; i < count; ++i) {
+    group[have++] = samples[i];
+    if (have == 3) {
+      emit_group(group);
+      have = 0;
+    }
   }
+  down_n_ = static_cast<uint8_t>(have);
+  for (size_t i = 0; i < have; ++i) down_hold_[i] = group[i];
 }
 
 size_t FriendLink::take_speaker(int16_t* dest, size_t cap) {
@@ -487,6 +527,14 @@ size_t FriendLink::take_speaker(int16_t* dest, size_t cap) {
 
 void FriendLink::interrupt_speaker() {
   speaker_n_ = speaker_r_ = speaker_w_ = 0;
+  down_n_ = 0;
+  barge_in_ = true;
+}
+
+bool FriendLink::take_barge_in() {
+  if (!barge_in_) return false;
+  barge_in_ = false;
+  return true;
 }
 
 void FriendLink::on_message(const char* json, size_t len) {
@@ -552,6 +600,11 @@ bool FriendLink::send_json(const char* json) {
 }
 
 bool FriendLink::send_ptt(bool active) {
+  if (!active && up_hold_valid_) {
+    const int16_t pad[2] = {up_hold_, up_hold_};
+    up_hold_valid_ = false;
+    send_pcm16k(pad, 2);
+  }
   char json[40];
   snprintf(json, sizeof(json), "{\"type\":\"ptt\",\"active\":%s}", active ? "true" : "false");
   const bool ok = send_json(json);
@@ -565,16 +618,28 @@ bool FriendLink::send_select() {
 
 bool FriendLink::send_pcm16k(const int16_t* samples, size_t count) {
   if (samples == nullptr || count == 0 || !ready()) return false;
-  int16_t resampled[384];
-  const size_t out_n = resample_16k_to_24k(samples, count, resampled, 384);
+  int16_t inbuf[258];
+  size_t in_n = 0;
+  if (up_hold_valid_) {
+    inbuf[in_n++] = up_hold_;
+    up_hold_valid_ = false;
+  }
+  for (size_t i = 0; i < count && in_n < 257; ++i) inbuf[in_n++] = samples[i];
+  if ((in_n % 2) == 1) {
+    up_hold_ = inbuf[--in_n];
+    up_hold_valid_ = true;
+  }
+  if (in_n == 0) return true;
+  int16_t resampled[390];
+  const size_t out_n = resample_16k_to_24k(inbuf, in_n, resampled, 390);
   if (out_n == 0) return false;
-  unsigned char b64[1024];
+  unsigned char b64[1104];
   size_t b64_len = 0;
   const int rc = mbedtls_base64_encode(b64, sizeof(b64) - 1, &b64_len,
                                        reinterpret_cast<const unsigned char*>(resampled), out_n * 2);
   if (rc != 0 || b64_len == 0) return false;
   b64[b64_len] = '\0';
-  char json[1100];
+  char json[1200];
   const int n = snprintf(json, sizeof(json), "{\"type\":\"audio\",\"pcm\":\"%s\"}", b64);
   if (n < 0 || static_cast<size_t>(n) >= sizeof(json)) return false;
   return send_json(json);

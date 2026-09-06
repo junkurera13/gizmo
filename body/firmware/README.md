@@ -15,7 +15,8 @@ the board opens an AP named `Gizmo-XXXX`, the phone joins it (no password), a
 page lists nearby networks, and the chosen SSID/password is stored in NVS for
 later boots. NTP (JST) starts after join so the home clock can appear. After
 Wi-Fi is online and a brain URL is stored, firmware opens authenticated Friend
-`/ws` (health + hello + PTT audio up at 24 kHz + inbound PCM play-down). Local
+`/ws` (health + hello + PTT audio: 16 kHz mic upsampled to 24 kHz on the wire,
+inbound 24 kHz PCM downsampled to 16 kHz before the amp). Local
 memo playback stays available when the socket is down. Backlight PWM is not
 driven: LED is tied to 3V3, so the Brightness setting is stored but has no
 hardware effect yet.
@@ -69,8 +70,9 @@ they show full, matching the simulator's default level.
 All inputs are polled and debounced with `millis()`; audio DMA is pumped in
 small non-blocking chunks from `loop()`; the haptic motor is timed the same way.
 Both I2S controllers are stopped whenever idle so the amplifier has no BCLK and
-stays silent. Friend inbound PCM starts I2S_NUM_1 at 24 kHz, then drops the
-clocks after a short underrun so the MAX98357A still shuts down.
+stays silent. Friend inbound PCM is downsampled 24→16 on the body, then played
+through the existing 16 kHz I2S_NUM_1 path. Amp clocks drop as soon as the live
+ring is empty so the MAX98357A shuts down.
 
 ## Organization
 
@@ -161,9 +163,9 @@ After Wi-Fi reports `online`, firmware GET `/health` and requires
 `X-Gizmo-Protocol: 1`, and `Authorization: Bearer <token>` when a token is
 stored. Hello must confirm protocol 1; the following `glass` snapshot is
 acknowledged and not fetched. PTT while connected sends `ptt` then 24 kHz
-`audio` chunks (mic is 16 kHz, resampled 3/2). Inbound `audio` PCM is queued
-onto MAX98357A at 24 kHz. Local memo still fills during PTT and still plays
-with Select when the socket is down.
+`audio` chunks (mic stays 16 kHz; body resamples 3/2). Inbound `audio` PCM is
+downsampled 24→16 and queued onto the 16 kHz MAX98357A path. Local memo still
+fills during PTT and still plays with Select when the socket is down.
 
 Point the board at a brain (serial, 115200):
 
