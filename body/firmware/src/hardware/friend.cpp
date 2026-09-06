@@ -1,6 +1,4 @@
-#define WEBSOCKETS_MAX_DATA_SIZE (8 * 1024)
-
-include "gizmo/friend.h"
+#include "gizmo/friend.h"
 
 #include <Arduino.h>
 #include <HTTPClient.h>
