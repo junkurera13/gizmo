@@ -2,7 +2,7 @@
 
 The public site. Not the device. Not Friend. Not the glass.
 
-Next.js app under `/gizmo`: landing, About, Oddware header. Copy and tone still come from `docs/PRODUCT.md`. Do not invent a second personality.
+Next.js app under `/gizmo`: landing, Manifesto, Oddware header. Copy and tone still come from `docs/PRODUCT.md`. Do not invent a second personality.
 
 ## Background
 

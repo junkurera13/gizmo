@@ -16,6 +16,11 @@ const nextConfig: NextConfig = {
         destination: "/",
         permanent: false,
       },
+      {
+        source: "/about",
+        destination: "/manifesto",
+        permanent: false,
+      },
     ];
   },
 };

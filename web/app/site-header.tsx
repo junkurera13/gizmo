@@ -41,17 +41,17 @@ function InstagramLogo() {
 }
 
 export function SiteHeader() {
-  const onAbout = usePathname() === "/about";
+  const onManifesto = usePathname() === "/manifesto";
 
   return (
     <nav className="topbar">
       <div className="nav-left">
-        {onAbout ? (
+        {onManifesto ? (
           <Link className="nav-link" href="/">
             Home
           </Link>
         ) : (
-          <Link className="nav-link" href="/about">
+          <Link className="nav-link" href="/manifesto">
             Manifesto
           </Link>
         )}

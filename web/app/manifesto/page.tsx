@@ -4,15 +4,15 @@ import aboutPoster from "../../public/about.jpg";
 import { SiteHeader } from "../site-header";
 
 export const metadata: Metadata = {
-  title: "About",
+  title: "Manifesto",
   description: "A rocketship for the mind.",
 };
 
-export default function AboutPage() {
+export default function ManifestoPage() {
   return (
     <main className="about-page">
       <SiteHeader />
-      <h1 className="sr-only">About</h1>
+      <h1 className="sr-only">Manifesto</h1>
       <div className="about-grid">
         <Image
           src={aboutPoster}
