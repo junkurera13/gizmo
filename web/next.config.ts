@@ -11,6 +11,11 @@ const nextConfig: NextConfig = {
         permanent: false,
         basePath: false,
       },
+      {
+        source: "/v2",
+        destination: "/",
+        permanent: false,
+      },
     ];
   },
 };
