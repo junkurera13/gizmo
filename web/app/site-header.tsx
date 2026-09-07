@@ -52,7 +52,7 @@ export function SiteHeader() {
           </Link>
         ) : (
           <Link className="nav-link" href="/about">
-            About
+            Manifesto
           </Link>
         )}
         <a className="nav-link" href="mailto:parkjundk@gmail.com?subject=Careers">
