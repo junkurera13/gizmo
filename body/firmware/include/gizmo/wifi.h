@@ -21,6 +21,8 @@ class WifiLink {
   void begin();
   void update();          // DNS + HTTP + STA state; call from loop()
   void forget();          // erase saved credentials and reopen the portal
+  // Blocking scan+AP. Call after the boot animation so setup() cannot skip it.
+  void start_portal_if_unconfigured();
   WifiPhase phase() const { return phase_; }
   bool portal() const { return phase_ == WifiPhase::kPortal; }
   bool online() const { return phase_ == WifiPhase::kOnline; }
@@ -38,6 +40,9 @@ class WifiLink {
   void handle_join();
   void poll_scan();
   void build_scan_html();
+  void save_credentials();
+  bool load_credentials();
+  void clear_credentials();
 
   WifiPhase phase_ = WifiPhase::kOff;
   bool portal_up_ = false;
@@ -52,6 +57,7 @@ class WifiLink {
   char sta_pass_[65] = "";
   char detail_[48] = "";
   String scan_html_;
+  bool join_from_portal_ = false;
 };
 
 const char* wifi_phase_name(WifiPhase phase);

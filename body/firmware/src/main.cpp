@@ -203,9 +203,9 @@ void cancel_select() { select_pending = false; }
 void enter_camera();
 void leave_camera();
 void start_recording();
-void finish_recording();
 void start_playback();
 void stop_playback();
+void finish_recording(bool replay);
 
 void enter_camera() {
   if (state == State::kBoot || state == State::kRecording) return;
@@ -305,23 +305,25 @@ void start_recording() {
   }
 }
 
-void finish_recording() {
+void finish_recording(bool replay) {
   audio.stop_recording();
   Serial.printf("memo: %u ms, peak=%d\n", audio.memo_ms(), audio.last_peak());
   haptic.pulse(20);
+  if (state != State::kRecording) return;
+  if (replay) start_playback();
   if (state == State::kRecording) enter(State::kIdle);
 }
 
 void start_playback() {
   if (!audio.has_memo()) {
-    Serial.println("select: no memo to play");
+    Serial.println("playback: no memo to play");
     return;
   }
   if (audio.start_playback()) {
     haptic.pulse(20);
     enter(State::kPlayback);
   } else {
-    Serial.println("select: start_playback failed");
+    Serial.println("playback: start failed");
   }
 }
 
@@ -415,15 +417,14 @@ void on_button(const gizmo::InputEvent& event) {
         start_recording();
       }
     } else if (!event.pressed && (audio.recording() || friend_ptt_)) {
+      const bool replay = !friend_ptt_;
       audio.stop_recording();  // capture DMA tail before committing the turn
       if (friend_ptt_) {
         pump_friend_audio();
         friend_link.send_ptt(false);
         friend_ptt_ = false;
-        finish_recording();
-      } else {
-        finish_recording();
       }
+      finish_recording(replay);
     }
     return;
   }
@@ -675,7 +676,6 @@ void setup() {
   const auto started = millis();
   while (!Serial && millis() - started < 1500) {
     delay(10);
-    render();
   }
   Serial.println("Gizmo / XIAO ESP32S3 Sense / terminal OS");
   Serial.printf("flash=%u psram=%u\n", ESP.getFlashChipSize(), ESP.getPsramSize());
@@ -717,6 +717,12 @@ void setup() {
   Serial.println("      tHH:MM<enter> = set clock, i = input voltages, n = wifi, w = forget wifi / reopen portal,");
   Serial.println("      F<url><enter> / K<token><enter> = Friend brain, f = friend status,");
   Serial.println("      d = camera (same as Down), c/x = camera start/stop, r = rotate, ? = status");
+  // Boot clock starts here. A blocking Wi-Fi scan in setup() used to eat the
+  // 5 s flipbook, so the eyes-between-hands frames never reached the panel.
+  state_since = millis();
+  boot_slot_drawn = -1;
+  boot_chimed = false;
+  dirty = true;
 }
 
 void loop() {
@@ -737,7 +743,7 @@ void loop() {
   if (friend_ptt_ && !audio.recording()) {
     friend_link.send_ptt(false);
     friend_ptt_ = false;
-    finish_recording();
+    finish_recording(false);
   }
   battery.update();
   haptic.update();
@@ -756,6 +762,7 @@ void loop() {
       }
       if (now - state_since >= gizmo::assets::kBootMinimumMs) {
         enter(State::kIdle);
+        wifi.start_portal_if_unconfigured();
       } else {
         dirty = true;
       }
@@ -763,11 +770,12 @@ void loop() {
     case State::kRecording:
       if (!audio.recording()) {
         Serial.println("memo: buffer full");
+        const bool replay = !friend_ptt_;
         if (friend_ptt_) {
           friend_link.send_ptt(false);
           friend_ptt_ = false;
         }
-        finish_recording();
+        finish_recording(replay);
       } else if (now - last_redraw >= kLiveRedrawMs) {
         dirty = true;
       }
