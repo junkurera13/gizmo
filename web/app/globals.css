@@ -187,8 +187,12 @@ body:has(.about-page) {
     transform: scale(1.06) translateX(1.05%);
   }
 
+  .topbar {
+    top: 2.2rem;
+  }
+
   .v2-caption {
-    bottom: 3.45rem;
+    bottom: 2.55rem;
   }
 
   .v2-caption .hero-line {
