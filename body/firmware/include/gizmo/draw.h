@@ -54,4 +54,8 @@ void blit_mask(const Canvas& canvas, int x, int y, const uint8_t* mask, int stri
 // Copy a same-size RGB565 image over the whole canvas.
 void copy(const Canvas& canvas, const uint16_t* source);
 
+// Nearest-neighbour scale of an RGB565 `sw`×`sh` image into a destination rect.
+void blit_scaled(const Canvas& dest, int dx, int dy, int dw, int dh, const uint16_t* src, int sw,
+                 int sh);
+
 }  // namespace gizmo::draw

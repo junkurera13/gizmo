@@ -25,7 +25,11 @@ offline timing without a brain connection:
   data/body-assets/320x240 --realtime
 ```
 
-This bundle establishes delivery and bounded encoded storage. The selected board
-still needs a JPEG decoder, display driver, audio output, dynamic clock/battery
-rendering, and measured memory/timing. Source drawings remain in `glass/` and are
-never rewritten by the exporter.
+The home clock atlas is Outfit **Medium (wght=500)**, matching the Mac simulator.
+Re-export and embed in one line from the repository root:
+
+```bash
+body/firmware/.venv/bin/python body/assets/export_bundle.py --width 320 --height 240 \
+    --output data/body-assets/320x240 --force && \
+body/firmware/.venv/bin/python body/firmware/tools/embed_assets.py --bundle data/body-assets/320x240
+```

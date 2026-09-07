@@ -9,12 +9,12 @@ namespace gizmo {
 namespace {
 constexpr i2s_port_t kMicPort = I2S_NUM_0;  // PDM RX exists only on controller 0
 constexpr i2s_port_t kAmpPort = I2S_NUM_1;
-constexpr int kDmaBuffers = 8;
+constexpr int kDmaBuffers = 12;
 constexpr int kDmaFrames = 256;
 // PDM output from the Sense microphone is quiet; a fixed digital gain keeps
 // the memo audible without touching the amplifier's GAIN strap.
 constexpr int32_t kMicGain = 4;
-constexpr int kMaxChunksPerUpdate = 8;
+constexpr int kMaxChunksPerUpdate = 16;
 constexpr uint32_t kVuDecayMs = 60;
 
 i2s_config_t base_config(i2s_mode_t mode, i2s_channel_fmt_t channels) {
@@ -75,6 +75,13 @@ esp_err_t Audio::begin() {
   memo_ = static_cast<int16_t*>(
       heap_caps_malloc(memo_capacity_ * sizeof(int16_t), MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT));
   if (memo_ == nullptr) return ESP_ERR_NO_MEM;
+  live_cap_ = kLiveSamples;
+  live_ = static_cast<int16_t*>(
+      heap_caps_malloc(live_cap_ * sizeof(int16_t), MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT));
+  if (live_ == nullptr) {
+    live_ = static_cast<int16_t*>(heap_caps_malloc(live_cap_ * sizeof(int16_t), MALLOC_CAP_8BIT));
+  }
+  if (live_ == nullptr) return ESP_ERR_NO_MEM;
   esp_err_t result = install_mic();
   if (result != ESP_OK) return result;
   result = install_amp();
@@ -95,6 +102,7 @@ bool Audio::start_recording() {
   warmup_left_ = kWarmupSamples;
   peak_ = 0;
   vu_ = 0;
+  capture_w_ = capture_r_ = capture_n_ = 0;
   i2s_zero_dma_buffer(kMicPort);
   if (i2s_start(kMicPort) != ESP_OK) return false;
   recording_ = true;
@@ -110,17 +118,21 @@ void Audio::stop_recording() {
 
 bool Audio::start_playback() {
   if (memo_samples_ == 0) return false;
+  stop_live();
   return start_clip(memo_, memo_samples_);
 }
 
 bool Audio::start_clip(const int16_t* samples, size_t count) {
   if (!ready_ || samples == nullptr || count == 0) return false;
   if (recording_) stop_recording();
+  stop_live();
   if (playing_) stop_playback();
   source_ = samples;
   source_samples_ = count;
   play_cursor_ = 0;
   draining_ = false;
+  live_playing_ = false;
+  live_armed_ = false;
   peak_ = 0;
   i2s_zero_dma_buffer(kAmpPort);
   if (i2s_start(kAmpPort) != ESP_OK) return false;
@@ -130,11 +142,60 @@ bool Audio::start_clip(const int16_t* samples, size_t count) {
 }
 
 void Audio::stop_playback() {
-  if (!playing_) return;
+  if (!playing_ && !live_playing_ && !live_armed_) return;
   playing_ = false;
+  live_playing_ = false;
+  live_armed_ = false;
   draining_ = false;
+  source_ = nullptr;
+  live_n_ = live_r_ = live_w_ = 0;
   i2s_zero_dma_buffer(kAmpPort);
-  i2s_stop(kAmpPort);
+  i2s_stop(kAmpPort);  // no BCLK: MAX98357A sits in shutdown
+}
+
+void Audio::stop_live() {
+  if (!live_armed_ && !live_playing_ && live_n_ == 0) {
+    live_n_ = live_r_ = live_w_ = 0;
+    return;
+  }
+  stop_playback();
+}
+
+size_t Audio::take_capture(int16_t* dest, size_t cap) {
+  if (dest == nullptr || cap == 0 || capture_n_ == 0) return 0;
+  const size_t n = capture_len_[capture_r_];
+  const size_t take = n < cap ? n : cap;
+  for (size_t i = 0; i < take; ++i) dest[i] = capture_ring_[capture_r_][i];
+  capture_r_ = static_cast<uint8_t>((capture_r_ + 1) % kCaptureRingChunks);
+  --capture_n_;
+  return take;
+}
+
+bool Audio::arm_live() {
+  if (!ready_ || live_ == nullptr) return false;
+  if (recording_) return false;
+  if (playing_ && !live_playing_ && !live_armed_) stop_playback();
+  if (live_armed_) return true;
+  draining_ = false;
+  peak_ = 0;
+  source_ = nullptr;
+  live_armed_ = true;
+  // Amp clocks stay down until pump_live sees samples (no idle BCLK / whine).
+  return true;
+}
+
+size_t Audio::enqueue_live(const int16_t* samples, size_t count) {
+  if (samples == nullptr || count == 0 || live_ == nullptr) return 0;
+  if (recording_) return 0;
+  if (!live_armed_ && !arm_live()) return 0;
+  if (live_n_ == 0) live_wait_since_ = millis();
+  size_t written = 0;
+  while (written < count && live_n_ < live_cap_) {
+    live_[live_w_] = samples[written++];
+    live_w_ = (live_w_ + 1) % live_cap_;
+    ++live_n_;
+  }
+  return written;
 }
 
 void Audio::track_level(const int16_t* samples, size_t count) {
@@ -170,6 +231,13 @@ void Audio::pump_recording() {
       chunk_[i] = static_cast<int16_t>(value);
     }
     track_level(chunk_, count);
+    if (capture_n_ < kCaptureRingChunks) {
+      const size_t keep = count < kChunkSamples ? count : kChunkSamples;
+      for (size_t i = 0; i < keep; ++i) capture_ring_[capture_w_][i] = chunk_[i];
+      capture_len_[capture_w_] = static_cast<uint16_t>(keep);
+      capture_w_ = static_cast<uint8_t>((capture_w_ + 1) % kCaptureRingChunks);
+      ++capture_n_;
+    }
     const size_t room = memo_capacity_ - memo_samples_;
     const size_t take = count < room ? count : room;
     for (size_t i = 0; i < take; ++i) memo_[memo_samples_ + i] = chunk_[i];
@@ -184,6 +252,10 @@ void Audio::pump_recording() {
 }
 
 void Audio::pump_playback() {
+  if (live_armed_ || live_playing_ || live_n_ > 0) {
+    pump_live();
+    return;
+  }
   if (draining_) {
     if (static_cast<int32_t>(millis() - drain_until_) >= 0) stop_playback();
     return;
@@ -211,10 +283,59 @@ void Audio::pump_playback() {
   }
 }
 
+void Audio::pump_live() {
+  if (live_n_ == 0) {
+    // Empty software ring does not mean the I2S DMA has played its tail.
+    // Keep clocks running for at least the entire DMA ring after the last
+    // successful write, then stop them to silence the idle amplifier.
+    if (live_playing_ && static_cast<int32_t>(millis() - live_drain_until_) >= 0) {
+      i2s_stop(kAmpPort);
+      i2s_zero_dma_buffer(kAmpPort);
+      live_playing_ = false;
+      playing_ = false;
+    }
+    return;
+  }
+  if (!live_playing_) {
+    // ~200 ms prebuffer so the first WS jitter does not underrun later.
+    constexpr size_t kPrebuffer = kSampleRate / 5;
+    if (live_n_ < kPrebuffer && millis() - live_wait_since_ < 250) return;
+    i2s_zero_dma_buffer(kAmpPort);
+    if (i2s_start(kAmpPort) != ESP_OK) return;
+    live_playing_ = true;
+    playing_ = true;
+  }
+  for (int chunk = 0; chunk < kMaxChunksPerUpdate && live_n_ > 0; ++chunk) {
+    const size_t count = live_n_ < kChunkSamples ? live_n_ : kChunkSamples;
+    for (size_t i = 0; i < count; ++i) chunk_[i] = live_[(live_r_ + i) % live_cap_];
+    apply_volume(chunk_, count, volume_step_, volume_steps_);
+    for (size_t i = 0; i < count; ++i) {
+      stereo_[i * 2] = chunk_[i];
+      stereo_[i * 2 + 1] = chunk_[i];
+    }
+    size_t written = 0;
+    const auto result = i2s_write(kAmpPort, stereo_, count * 2 * sizeof(int16_t), &written, 0);
+    const size_t consumed = written / (2 * sizeof(int16_t));
+    live_r_ = (live_r_ + consumed) % live_cap_;
+    live_n_ -= consumed;
+    if (consumed) {
+      track_level(chunk_, consumed);
+      constexpr uint32_t drain_ms =
+          (kDmaBuffers * kDmaFrames * 1000 + kSampleRate - 1) / kSampleRate + 2;
+      // Keep BCLK running across Gemini chunk gaps so the tail does not
+      // restart the amp (that restart is the late-reply “glitch”).
+      live_drain_until_ = millis() + drain_ms + 300;
+    }
+    // ESP-IDF may return timeout with a partial write. Keep every unwritten
+    // sample in the ring, in its original (unscaled) form, for the next pump.
+    if (result != ESP_OK || consumed < count) return;
+  }
+}
+
 void Audio::update() {
   if (!ready_) return;
   if (recording_) pump_recording();
-  if (playing_) pump_playback();
+  if (playing_ || live_armed_ || live_n_ > 0) pump_playback();
   const uint32_t now = millis();
   if (now - last_vu_decay_ >= kVuDecayMs) {
     last_vu_decay_ = now;

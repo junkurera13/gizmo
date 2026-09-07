@@ -1,1 +1,2 @@
+Pillow>=10.0.0
 platformio==6.1.18

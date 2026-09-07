@@ -1,6 +1,7 @@
 #include "gizmo/wifi.h"
 #include <Arduino.h>
 #include <DNSServer.h>
+#include <Preferences.h>
 #include <WebServer.h>
 #include <WiFi.h>
 
@@ -62,8 +63,9 @@ const char* wifi_phase_name(WifiPhase phase) {
     case WifiPhase::kConnecting: return "connecting";
     case WifiPhase::kPortal: return "portal";
     case WifiPhase::kOnline: return "online";
-    default: return "off";
+    case WifiPhase::kOff: return "off";
   }
+  return "off";
 }
 
 void WifiLink::send_portal() {
@@ -215,46 +217,84 @@ void WifiLink::start_sta(const char* ssid, const char* pass, bool from_portal) {
     sta_pass_[sizeof(sta_pass_) - 1] = '\0';
   }
   phase_ = WifiPhase::kConnecting;
+  join_from_portal_ = from_portal;
   connect_started_ = millis();
   snprintf(detail_, sizeof(detail_), "JOINING %s", sta_ssid_);
-  WiFi.persistent(true);
+  // Own the credentials in Preferences. Do not use the SDK Wi-Fi NVS slot:
+  // leftover SSIDs from other sketches used to skip our portal.
+  WiFi.persistent(false);
   WiFi.mode(from_portal ? WIFI_AP_STA : WIFI_STA);
   WiFi.setHostname("gizmo");
-  if (sta_pass_[0]) {
-    WiFi.begin(sta_ssid_, sta_pass_);
-  } else if (from_portal) {
-    WiFi.begin(sta_ssid_, nullptr);
-  } else {
-    WiFi.begin();
-  }
+  WiFi.begin(sta_ssid_, sta_pass_);
   Serial.printf("wifi sta: joining \"%s\"\n", sta_ssid_);
 }
 
 void WifiLink::finish_online() {
   ip_ = WiFi.localIP();
   phase_ = WifiPhase::kOnline;
+  join_from_portal_ = false;
+  strncpy(sta_ssid_, WiFi.SSID().c_str(), sizeof(sta_ssid_) - 1);
+  sta_ssid_[sizeof(sta_ssid_) - 1] = '\0';
+  save_credentials();
   stop_portal();
   WiFi.mode(WIFI_STA);
   snprintf(detail_, sizeof(detail_), "ONLINE %s", ip_.toString().c_str());
   configTzTime("JST-9", "pool.ntp.org", "time.google.com");
-  Serial.printf("wifi online: ssid=\"%s\" ip=%s\n", WiFi.SSID().c_str(), ip_.toString().c_str());
+  Serial.printf("wifi online: ssid=\"%s\" ip=%s (saved)\n", sta_ssid_, ip_.toString().c_str());
+}
+
+void WifiLink::save_credentials() {
+  Preferences store;
+  store.begin("gizmo-wifi", false);
+  store.putString("ssid", sta_ssid_);
+  store.putString("pass", sta_pass_);
+  store.end();
+}
+
+bool WifiLink::load_credentials() {
+  sta_ssid_[0] = '\0';
+  sta_pass_[0] = '\0';
+  Preferences store;
+  store.begin("gizmo-wifi", true);
+  store.getString("ssid", sta_ssid_, sizeof(sta_ssid_));
+  store.getString("pass", sta_pass_, sizeof(sta_pass_));
+  store.end();
+  return sta_ssid_[0] != '\0';
+}
+
+void WifiLink::clear_credentials() {
+  sta_ssid_[0] = '\0';
+  sta_pass_[0] = '\0';
+  Preferences store;
+  store.begin("gizmo-wifi", false);
+  store.clear();
+  store.end();
 }
 
 void WifiLink::begin() {
   uint8_t mac[6] = {};
   WiFi.macAddress(mac);
   snprintf(ap_ssid_, sizeof(ap_ssid_), "Gizmo-%02X%02X", mac[4], mac[5]);
-  // Always open the setup AP first. A leftover NVS SSID from another sketch
-  // used to skip the AP entirely, which looks like "Gizmo Wi-Fi missing".
-  Serial.printf("wifi: opening setup AP \"%s\"\n", ap_ssid_);
-  start_portal();
+  if (load_credentials()) {
+    Serial.printf("wifi: rejoining saved \"%s\"\n", sta_ssid_);
+    start_sta(sta_ssid_, sta_pass_, false);
+  } else {
+    phase_ = WifiPhase::kOff;
+    strncpy(detail_, "WAITING FOR BOOT", sizeof(detail_) - 1);
+    detail_[sizeof(detail_) - 1] = '\0';
+    Serial.printf("wifi: no saved network; portal after boot on \"%s\"\n", ap_ssid_);
+  }
+}
+
+void WifiLink::start_portal_if_unconfigured() {
+  if (phase_ == WifiPhase::kOff) start_portal();
 }
 
 void WifiLink::forget() {
   Serial.println("wifi: forgetting saved network");
-  sta_ssid_[0] = '\0';
-  sta_pass_[0] = '\0';
+  clear_credentials();
   ip_ = IPAddress();
+  join_from_portal_ = false;
   WiFi.disconnect(true, true);
   start_portal();
 }
@@ -269,17 +309,23 @@ void WifiLink::update() {
   if (phase_ == WifiPhase::kConnecting) {
     if (WiFi.status() == WL_CONNECTED) {
       strncpy(sta_ssid_, WiFi.SSID().c_str(), sizeof(sta_ssid_) - 1);
+      sta_ssid_[sizeof(sta_ssid_) - 1] = '\0';
       finish_online();
     } else if (millis() - connect_started_ >= kConnectTimeoutMs) {
-      Serial.println("wifi: join timed out");
-      strncpy(detail_, "WRONG PASSWORD OR TIMEOUT", sizeof(detail_) - 1);
-      WiFi.disconnect(false, false);
-      start_portal();
+      if (join_from_portal_) {
+        Serial.println("wifi: join timed out");
+        strncpy(detail_, "WRONG PASSWORD OR TIMEOUT", sizeof(detail_) - 1);
+        WiFi.disconnect(false, false);
+        start_portal();
+      } else {
+        Serial.printf("wifi: join timed out, retrying \"%s\"\n", sta_ssid_);
+        start_sta(sta_ssid_, sta_pass_, false);
+      }
     }
   } else if (phase_ == WifiPhase::kOnline) {
     if (WiFi.status() != WL_CONNECTED) {
       Serial.println("wifi: dropped, reconnecting");
-      start_sta(sta_ssid_, sta_pass_[0] ? sta_pass_ : nullptr, false);
+      start_sta(sta_ssid_, sta_pass_, false);
     }
   }
 
