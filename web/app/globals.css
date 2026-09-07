@@ -224,6 +224,10 @@ body:has(.about-page) {
     top: 2.2rem;
   }
 
+  .nav-oddity {
+    display: none;
+  }
+
   .oddity-page::before {
     height: 5.4rem;
   }

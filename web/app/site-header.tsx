@@ -55,7 +55,7 @@ export function SiteHeader() {
             Manifesto
           </Link>
         )}
-        <Link className="nav-link" href="/oddity">
+        <Link className="nav-link nav-oddity" href="/oddity">
           Oddity 1.0
         </Link>
         <a className="nav-link" href="mailto:parkjundk@gmail.com?subject=Careers">
