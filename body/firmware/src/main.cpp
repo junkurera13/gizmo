@@ -1,6 +1,7 @@
 #include <Arduino.h>
 #include <Preferences.h>
 #include <esp_heap_caps.h>
+#include <string.h>
 #include <sys/time.h>
 #include <time.h>
 #include "esp_jpg_decode.h"
@@ -74,6 +75,11 @@ LineCmd line_cmd = LineCmd::kNone;
 bool select_pending = false;
 uint32_t select_armed_at = 0;
 const char* camera_status = nullptr;
+constexpr size_t kVisionMax = 48 * 1024;
+uint8_t* vision_jpeg = nullptr;
+size_t vision_jpeg_len = 0;
+uint32_t last_vision_send = 0;
+uint32_t last_camera_blit = 0;
 
 uint32_t lastFrame = 0;
 uint32_t frames = 0;
@@ -199,6 +205,14 @@ void enter(State next) {
 }
 
 void cancel_select() { select_pending = false; }
+
+void offer_vision(bool force) {
+  if (!friend_link.ready() || vision_jpeg == nullptr || vision_jpeg_len == 0) return;
+  const uint32_t now = millis();
+  const uint32_t gap = friend_ptt_ ? 400 : 900;
+  if (!force && last_vision_send != 0 && now - last_vision_send < gap) return;
+  if (friend_link.send_jpeg(vision_jpeg, vision_jpeg_len)) last_vision_send = now;
+}
 
 void enter_camera();
 void leave_camera();
@@ -341,7 +355,7 @@ void pump_friend_audio() {
     if (friend_ptt_ && friend_link.ready()) friend_link.send_pcm16k(buf, n);
   }
   if (friend_ptt_) return;  // do not play inbound while holding PTT
-  for (int i = 0; i < 8; ++i) {
+  for (int i = 0; i < 24; ++i) {
     const size_t room = audio.live_capacity_left();
     if (room == 0 || audio.recording()) break;
     const size_t n = friend_link.take_speaker(buf, room < 256 ? room : 256);
@@ -407,6 +421,7 @@ void on_button(const gizmo::InputEvent& event) {
       audio.stop_live();
       friend_link.interrupt_speaker();
       if (friend_link.ready()) {
+        offer_vision(true);
         start_recording();
         if (audio.recording()) {
           friend_ptt_ = friend_link.send_ptt(true);
@@ -634,12 +649,21 @@ void camera_loop() {
   if (frame) {
     if (frame->format == PIXFORMAT_JPEG && frame->len > 0 && frame->len <= 128 * 1024) {
       ++frames;
-      if (frame->width == gizmo::assets::kPanelWidth && frame->height == gizmo::assets::kPanelHeight &&
+      if (vision_jpeg != nullptr && frame->len <= kVisionMax) {
+        memcpy(vision_jpeg, frame->buf, frame->len);
+        vision_jpeg_len = frame->len;
+        offer_vision(false);
+      }
+      const bool blit_now = !audio.live_playing() || millis() - last_camera_blit >= 250;
+      if (blit_now && frame->width == gizmo::assets::kPanelWidth && frame->height == gizmo::assets::kPanelHeight &&
           ensure_framebuffer() &&
           jpg2rgb565(frame->buf, frame->len, reinterpret_cast<uint8_t*>(framebuffer), JPG_SCALE_NONE)) {
         camera_status = nullptr;
         paint_camera(true, nullptr);
+        last_camera_blit = millis();
         if (frames == 1) Serial.printf("camera first JPEG: %ux%u, %u bytes\n", frame->width, frame->height, frame->len);
+      } else if (!blit_now) {
+        camera_status = nullptr;
       } else {
         ++blit_failures;
         camera_status = "CAMERA FRAME ERROR";
@@ -713,6 +737,9 @@ void setup() {
   Serial.printf("wifi begin: %s ap=%s (plug the Sense U.FL antenna)\n", gizmo::wifi_phase_name(wifi.phase()),
                 wifi.ap_ssid());
   friend_link.begin();
+  vision_jpeg = static_cast<uint8_t*>(heap_caps_malloc(kVisionMax, MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT));
+  if (vision_jpeg == nullptr) vision_jpeg = static_cast<uint8_t*>(heap_caps_malloc(kVisionMax, MALLOC_CAP_8BIT));
+  Serial.printf("vision jpeg buffer: %s\n", vision_jpeg ? "ready" : "unavailable");
   Serial.println("keys: u/d/e = up/down/select, p = PTT toggle, s = settings, h = home, v = haptic,");
   Serial.println("      tHH:MM<enter> = set clock, i = input voltages, n = wifi, w = forget wifi / reopen portal,");
   Serial.println("      F<url><enter> / K<token><enter> = Friend brain, f = friend status,");

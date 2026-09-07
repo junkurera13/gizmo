@@ -33,6 +33,8 @@ class FriendConnection {
   // Odd leftover samples are held until the next chunk or PTT-up flush.
   bool send_pcm16k(const int16_t* samples, size_t count);
   bool send_select();
+  // Latest camera JPEG. Brain limit is 128 KiB; the WS frame budget is smaller.
+  bool send_frame(const uint8_t* jpeg, size_t length);
 
   size_t take_speaker(int16_t* dest, size_t cap);
   void interrupt_speaker();
@@ -73,7 +75,7 @@ class FriendConnection {
   char detail_[56] = "";
   char extra_headers_[280] = "";
 
-  static constexpr size_t kSpeakerCap = 16000 * 3 / 4;  // 16 kHz after 24→16
+  static constexpr size_t kSpeakerCap = 16000 * 3;  // 16 kHz after 24→16
   int16_t* speaker_ = nullptr;
   size_t speaker_cap_ = 0;
   size_t speaker_w_ = 0;

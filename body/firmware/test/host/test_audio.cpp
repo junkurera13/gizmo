@@ -12,17 +12,18 @@ int main() {
   audio.set_volume(5,10);
   int16_t pcm[256];for(auto& p:pcm)p=1000;
   audio.enqueue_live(pcm,256);
-  audio.update();assert(!audio.playing()); // short packet waits for jitter deadline
-  mock_now+=60;audio.update();assert(audio.playing());
+  audio.update();assert(!audio.playing()); // short packet waits for prebuffer deadline
+  mock_now+=249;audio.update();assert(!audio.playing());
+  mock_now+=1;audio.update();assert(audio.playing());
   const int cleared=mock_dma_clears,stopped=mock_amp_stops;
   mock_now+=2;audio.update();assert(mock_dma_clears==cleared&&mock_amp_stops==stopped);
-  mock_now+=127;audio.update();assert(audio.playing());
-  mock_now+=1;audio.update();assert(!audio.playing());
+  mock_now+=491;audio.update();assert(audio.playing());
+  mock_now+=2;audio.update();assert(!audio.playing());
   assert(mock_written.size()==512);
   for(auto p:mock_written)assert(p==500);
   // A timeout can still have accepted half a chunk. No lost or duplicate PCM.
   mock_written.clear();mock_write_limit=128*4;
-  audio.enqueue_live(pcm,256);mock_now+=60;audio.update();
+  audio.enqueue_live(pcm,256);mock_now+=250;audio.update();
   assert(mock_written.size()==256);
   mock_write_limit=SIZE_MAX;audio.update();
   assert(mock_written.size()==512);

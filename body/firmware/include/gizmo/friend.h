@@ -28,6 +28,7 @@ class FriendLink {
   bool send_ptt(bool active);
   bool send_select();
   bool send_pcm16k(const int16_t* samples, size_t count);
+  bool send_jpeg(const uint8_t* jpeg, size_t length);
   size_t take_speaker(int16_t* dest, size_t cap);
   void interrupt_speaker();
   bool take_barge_in();
@@ -60,6 +61,13 @@ class FriendLink {
   QueueHandle_t statuses_ = nullptr;
   std::atomic<bool> wifi_online_{false};
   std::atomic<bool> overflow_{false};
+  static constexpr size_t kJpegMax = 48 * 1024;
+  uint8_t* jpeg_slot_[2] = {};
+  size_t jpeg_len_[2] = {};
+  std::atomic<int> jpeg_published_{-1};
+  std::atomic<int> jpeg_sending_{-1};
+  std::atomic<uint32_t> jpeg_generation_{0};
+  uint32_t jpeg_seen_ = 0;
   Status status_;
   uint32_t seen_interrupt_ = 0;
   Speaker pending_{};

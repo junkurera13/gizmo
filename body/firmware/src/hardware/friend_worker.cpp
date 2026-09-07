@@ -2,15 +2,22 @@
 #include "gizmo/friend_connection.h"
 #include <Arduino.h>
 #include <string.h>
+#include <esp_heap_caps.h>
 #include <freertos/task.h>
 
 namespace gizmo {
 void FriendLink::begin() {
   commands_ = xQueueCreate(32, sizeof(Command));
-  speaker_ = xQueueCreate(48, sizeof(Speaker));
+  speaker_ = xQueueCreate(80, sizeof(Speaker));
   statuses_ = xQueueCreate(1, sizeof(Status));
-  if (!commands_ || !speaker_ || !statuses_ ||
-      xTaskCreate(task, "friend-net", 12288, this, 1, nullptr) != pdPASS) {
+  for (int i = 0; i < 2; ++i) {
+    jpeg_slot_[i] = static_cast<uint8_t*>(heap_caps_malloc(kJpegMax, MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT));
+    if (jpeg_slot_[i] == nullptr) {
+      jpeg_slot_[i] = static_cast<uint8_t*>(heap_caps_malloc(kJpegMax, MALLOC_CAP_8BIT));
+    }
+  }
+  if (!commands_ || !speaker_ || !statuses_ || jpeg_slot_[0] == nullptr || jpeg_slot_[1] == nullptr ||
+      xTaskCreate(task, "friend-net", 16384, this, 1, nullptr) != pdPASS) {
     if (commands_) vQueueDelete(commands_);
     if (speaker_) vQueueDelete(speaker_);
     if (statuses_) vQueueDelete(statuses_);
@@ -49,6 +56,23 @@ bool FriendLink::send_ptt(bool active) {
   return queue(active ? Kind::kPttDown : Kind::kPttUp);
 }
 bool FriendLink::send_select() { return ready() && queue(Kind::kSelect); }
+bool FriendLink::send_jpeg(const uint8_t* jpeg, size_t length) {
+  if (!ready() || jpeg == nullptr || length == 0 || length > kJpegMax || jpeg_slot_[0] == nullptr ||
+      jpeg_slot_[1] == nullptr) {
+    return false;
+  }
+  const int sending = jpeg_sending_.load();
+  const int published = jpeg_published_.load();
+  int wr = 0;
+  if (sending == 0) wr = 1;
+  else if (sending == 1) wr = 0;
+  else wr = published == 0 ? 1 : 0;
+  memcpy(jpeg_slot_[wr], jpeg, length);
+  jpeg_len_[wr] = length;
+  jpeg_published_.store(wr, std::memory_order_release);
+  jpeg_generation_.fetch_add(1, std::memory_order_release);
+  return true;
+}
 bool FriendLink::send_pcm16k(const int16_t* samples, size_t count) {
   if (!commands_ || !ready() || !samples || count == 0 || count > 256) return false;
   // Reserve control slots so release/interrupt cannot be crowded out by PCM.
@@ -122,6 +146,18 @@ void FriendLink::run() {
         }
         if (!ok) { connection.abort(); ptt = false; }
       }
+    }
+    const uint32_t jpeg_gen = jpeg_generation_.load(std::memory_order_acquire);
+    if (jpeg_gen != jpeg_seen_) {
+      const int idx = jpeg_published_.load(std::memory_order_acquire);
+      if (idx == 0 || idx == 1) {
+        jpeg_sending_.store(idx, std::memory_order_release);
+        if (!connection.send_frame(jpeg_slot_[idx], jpeg_len_[idx])) {
+          Serial.println("friend vision: send failed");
+        }
+        jpeg_sending_.store(-1, std::memory_order_release);
+      }
+      jpeg_seen_ = jpeg_gen;
     }
     connection.update(wifi_online_.load());
     if (connection.ready() != was_ready) {

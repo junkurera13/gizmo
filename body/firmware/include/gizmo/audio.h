@@ -64,7 +64,7 @@ class Audio {
   static constexpr size_t kChunkSamples = 256;
   static constexpr size_t kWarmupSamples = kSampleRate / 8;  // 125 ms discarded on record start
   static constexpr size_t kCaptureRingChunks = 8;
-  static constexpr size_t kLiveSamples = kSampleRate * 3 / 4;  // ~0.75 s inbound at 16 kHz
+  static constexpr size_t kLiveSamples = kSampleRate * 3;  // 3 s inbound at 16 kHz
 
   bool ready_ = false;
   bool recording_ = false;

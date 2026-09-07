@@ -9,12 +9,12 @@ namespace gizmo {
 namespace {
 constexpr i2s_port_t kMicPort = I2S_NUM_0;  // PDM RX exists only on controller 0
 constexpr i2s_port_t kAmpPort = I2S_NUM_1;
-constexpr int kDmaBuffers = 8;
+constexpr int kDmaBuffers = 12;
 constexpr int kDmaFrames = 256;
 // PDM output from the Sense microphone is quiet; a fixed digital gain keeps
 // the memo audible without touching the amplifier's GAIN strap.
 constexpr int32_t kMicGain = 4;
-constexpr int kMaxChunksPerUpdate = 8;
+constexpr int kMaxChunksPerUpdate = 16;
 constexpr uint32_t kVuDecayMs = 60;
 
 i2s_config_t base_config(i2s_mode_t mode, i2s_channel_fmt_t channels) {
@@ -297,8 +297,9 @@ void Audio::pump_live() {
     return;
   }
   if (!live_playing_) {
-    // 40 ms jitter cushion, with a 60 ms deadline for very short replies.
-    if (live_n_ < kSampleRate / 25 && millis() - live_wait_since_ < 60) return;
+    // ~200 ms prebuffer so the first WS jitter does not underrun later.
+    constexpr size_t kPrebuffer = kSampleRate / 5;
+    if (live_n_ < kPrebuffer && millis() - live_wait_since_ < 250) return;
     i2s_zero_dma_buffer(kAmpPort);
     if (i2s_start(kAmpPort) != ESP_OK) return;
     live_playing_ = true;
@@ -319,8 +320,11 @@ void Audio::pump_live() {
     live_n_ -= consumed;
     if (consumed) {
       track_level(chunk_, consumed);
-      constexpr uint32_t drain_ms = (kDmaBuffers * kDmaFrames * 1000 + kSampleRate - 1) / kSampleRate + 2;
-      live_drain_until_ = millis() + drain_ms;
+      constexpr uint32_t drain_ms =
+          (kDmaBuffers * kDmaFrames * 1000 + kSampleRate - 1) / kSampleRate + 2;
+      // Keep BCLK running across Gemini chunk gaps so the tail does not
+      // restart the amp (that restart is the late-reply “glitch”).
+      live_drain_until_ = millis() + drain_ms + 300;
     }
     // ESP-IDF may return timeout with a partial write. Keep every unwritten
     // sample in the ring, in its original (unscaled) form, for the next pump.

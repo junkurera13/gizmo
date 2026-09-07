@@ -58,6 +58,36 @@ size_t resample_16k_to_24k(const int16_t* in, size_t in_n, int16_t* out, size_t 
 }
 
 // 3 wire samples at 24 kHz → 2 device samples at 16 kHz. Caller holds leftovers.
+const char* skip_json_ws(const char* p, const char* end) {
+  while (p < end && (*p == ' ' || *p == '\n' || *p == '\r' || *p == '\t')) ++p;
+  return p;
+}
+
+bool json_string_field(const char* json, size_t len, const char* key, const char** out, size_t* out_len) {
+  if (json == nullptr || key == nullptr || out == nullptr || out_len == nullptr) return false;
+  const char* end = json + len;
+  const size_t klen = strlen(key);
+  for (const char* p = json; p + klen + 3 < end; ++p) {
+    if (*p != '"') continue;
+    if (memcmp(p + 1, key, klen) != 0 || p[1 + klen] != '"') continue;
+    const char* q = skip_json_ws(p + 2 + klen, end);
+    if (q >= end || *q != ':') continue;
+    q = skip_json_ws(q + 1, end);
+    if (q >= end || *q != '"') continue;
+    const char* start = q + 1;
+    const char* r = start;
+    while (r < end && *r != '"') {
+      if (*r == '\\' && r + 1 < end) r += 2;
+      else ++r;
+    }
+    if (r >= end) return false;
+    *out = start;
+    *out_len = static_cast<size_t>(r - start);
+    return true;
+  }
+  return false;
+}
+
 size_t resample_24k_to_16k(const int16_t* in, size_t in_n, int16_t* out, size_t out_cap) {
   if (in == nullptr || out == nullptr || in_n < 3 || out_cap < 2) return 0;
   const size_t groups = in_n / 3;
@@ -422,8 +452,12 @@ void FriendConnection::enqueue_speaker(const int16_t* samples, size_t count) {
   size_t have = down_n_;
   for (size_t i = 0; i < down_n_; ++i) group[i] = down_hold_[i];
   down_n_ = 0;
-  auto push16 = [this](int16_t sample) {
-    if (speaker_n_ >= speaker_cap_) return;
+  size_t dropped = 0;
+  auto push16 = [this, &dropped](int16_t sample) {
+    if (speaker_n_ >= speaker_cap_) {
+      ++dropped;
+      return;
+    }
     speaker_[speaker_w_] = sample;
     speaker_w_ = (speaker_w_ + 1) % speaker_cap_;
     ++speaker_n_;
@@ -443,6 +477,7 @@ void FriendConnection::enqueue_speaker(const int16_t* samples, size_t count) {
   }
   down_n_ = static_cast<uint8_t>(have);
   for (size_t i = 0; i < have; ++i) down_hold_[i] = group[i];
+  if (dropped) Serial.printf("friend speaker: dropped %u samples (ring full)\n", static_cast<unsigned>(dropped));
 }
 
 size_t FriendConnection::take_speaker(int16_t* dest, size_t cap) {
@@ -488,12 +523,42 @@ void FriendConnection::accept_session_state(const char* state) {
 }
 
 void FriendConnection::on_message(const char* json, size_t len) {
-  if (len > 15 * 1024) return;  // matches the bounded WebSocket frame ceiling
+  if (len > 98304) {
+    Serial.printf("friend: ws message %u dropped (too large)\n", static_cast<unsigned>(len));
+    return;
+  }
+  const char* type = nullptr;
+  size_t type_len = 0;
+  if (json_string_field(json, len, "type", &type, &type_len) && type_len == 5 && memcmp(type, "audio", 5) == 0) {
+    const char* b64 = nullptr;
+    size_t b64_len = 0;
+    if (!json_string_field(json, len, "pcm", &b64, &b64_len) || b64_len == 0) return;
+    size_t decoded_len = 0;
+    const size_t bound = (b64_len * 3) / 4 + 4;
+    uint8_t* decoded = static_cast<uint8_t*>(
+        heap_caps_malloc(bound, MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT));
+    if (decoded == nullptr) decoded = static_cast<uint8_t*>(heap_caps_malloc(bound, MALLOC_CAP_8BIT));
+    if (decoded == nullptr) {
+      Serial.println("friend speaker: decode alloc failed");
+      return;
+    }
+    const int rc =
+        mbedtls_base64_decode(decoded, bound, &decoded_len, reinterpret_cast<const unsigned char*>(b64), b64_len);
+    if (rc == 0 && decoded_len >= 2 && (decoded_len % 2) == 0) {
+      if (speaker_n_ == 0) {
+        Serial.printf("friend speaker: start %u pcm bytes\n", static_cast<unsigned>(decoded_len));
+      }
+      enqueue_speaker(reinterpret_cast<const int16_t*>(decoded), decoded_len / 2);
+    }
+    free(decoded);
+    return;
+  }
+
   StaticJsonDocument<192> filter;
-  for (const char* key : {"type", "state", "protocol_version", "pcm"}) filter[key] = true;
-  DynamicJsonDocument document(len + 512);
+  for (const char* key : {"type", "state", "protocol_version"}) filter[key] = true;
+  DynamicJsonDocument document(len > 2048 ? 2048 : len + 512);
   if (deserializeJson(document, json, len, DeserializationOption::Filter(filter))) return;
-  const char* type = document["type"] | "";
+  type = document["type"] | "";
 
   if (strcmp(type, "hello") == 0) {
     const int version = document["protocol_version"] | -1;
@@ -536,23 +601,6 @@ void FriendConnection::on_message(const char* json, size_t len) {
     return;
   }
 
-  if (strcmp(type, "audio") == 0) {
-    const char* b64 = document["pcm"];
-    if (b64 == nullptr || b64[0] == '\0') return;
-    const size_t b64_len = strlen(b64);
-    size_t decoded_len = 0;
-    const size_t bound = (b64_len * 3) / 4 + 4;
-    uint8_t* decoded = static_cast<uint8_t*>(heap_caps_malloc(bound, MALLOC_CAP_8BIT));
-    if (decoded == nullptr) return;
-    const int rc =
-        mbedtls_base64_decode(decoded, bound, &decoded_len, reinterpret_cast<const unsigned char*>(b64), b64_len);
-    if (rc == 0 && decoded_len >= 2 && (decoded_len % 2) == 0) {
-      enqueue_speaker(reinterpret_cast<const int16_t*>(decoded), decoded_len / 2);
-    }
-    free(decoded);
-    return;
-  }
-
   if (strcmp(type, "interrupted") == 0) {
     interrupt_speaker();
     return;
@@ -563,6 +611,37 @@ void FriendConnection::on_message(const char* json, size_t len) {
 bool FriendConnection::send_json(const char* json) {
   if (json == nullptr || !ws_used_ || !ws.isConnected()) return false;
   return ws.sendTXT(json);
+}
+
+bool FriendConnection::send_frame(const uint8_t* jpeg, size_t length) {
+  if (jpeg == nullptr || length == 0 || length > 48 * 1024 || !ready()) return false;
+  if (!ws_used_ || !ws.isConnected()) return false;
+  const size_t b64_cap = 4 * ((length + 2) / 3) + 1;
+  const char prefix[] = "{\"type\":\"frame\",\"image\":\"";
+  const char suffix[] = "\"}";
+  const size_t prefix_len = sizeof(prefix) - 1;
+  const size_t suffix_len = sizeof(suffix) - 1;
+  const size_t total = prefix_len + b64_cap + suffix_len;
+  char* json = static_cast<char*>(heap_caps_malloc(total + 8, MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT));
+  if (json == nullptr) json = static_cast<char*>(heap_caps_malloc(total + 8, MALLOC_CAP_8BIT));
+  if (json == nullptr) {
+    Serial.println("friend vision: json alloc failed");
+    return false;
+  }
+  memcpy(json, prefix, prefix_len);
+  size_t b64_len = 0;
+  const int rc = mbedtls_base64_encode(reinterpret_cast<unsigned char*>(json + prefix_len), b64_cap, &b64_len,
+                                       jpeg, length);
+  if (rc != 0 || b64_len == 0) {
+    free(json);
+    Serial.println("friend vision: base64 failed");
+    return false;
+  }
+  memcpy(json + prefix_len + b64_len, suffix, suffix_len + 1);
+  const bool ok = ws.sendTXT(reinterpret_cast<uint8_t*>(json), prefix_len + b64_len + suffix_len);
+  free(json);
+  Serial.printf("friend vision: %s %u jpeg bytes\n", ok ? "sent" : "dropped", static_cast<unsigned>(length));
+  return ok;
 }
 
 bool FriendConnection::send_ptt(bool active) {
