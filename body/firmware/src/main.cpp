@@ -20,8 +20,7 @@
 #include "gizmo/wifi.h"
 
 // Operating loop for the handheld. One cooperative loop() owns every
-// peripheral; nothing blocks longer than a panel blit (~30 ms at 40 MHz)
-// except a one-shot Friend /health GET while idle.
+// peripheral. Friend HTTP/TLS/WebSocket operations run in their own task.
 namespace {
 
 enum class State : uint8_t { kBoot, kIdle, kRecording, kPlayback, kSettings, kCamera };
@@ -334,16 +333,16 @@ void stop_playback() {
 void pump_friend_audio() {
   int16_t buf[256];
   if (friend_link.take_barge_in()) audio.stop_live();
-  if (audio.recording()) {
-    while (true) {
-      const size_t n = audio.take_capture(buf, 256);
-      if (n == 0) break;
-      if (friend_ptt_ && friend_link.ready()) friend_link.send_pcm16k(buf, n);
-    }
+  while (true) {
+    const size_t n = audio.take_capture(buf, 256);
+    if (n == 0) break;
+    if (friend_ptt_ && friend_link.ready()) friend_link.send_pcm16k(buf, n);
   }
   if (friend_ptt_) return;  // do not play inbound while holding PTT
   for (int i = 0; i < 8; ++i) {
-    const size_t n = friend_link.take_speaker(buf, 256);
+    const size_t room = audio.live_capacity_left();
+    if (room == 0 || audio.recording()) break;
+    const size_t n = friend_link.take_speaker(buf, room < 256 ? room : 256);
     if (n == 0) break;
     audio.enqueue_live(buf, n);
   }
@@ -408,15 +407,15 @@ void on_button(const gizmo::InputEvent& event) {
       if (friend_link.ready()) {
         start_recording();
         if (audio.recording()) {
-          friend_ptt_ = true;
-          friend_link.send_ptt(true);
+          friend_ptt_ = friend_link.send_ptt(true);
         }
       } else {
         friend_ptt_ = false;
         if (state == State::kCamera) leave_camera();
         start_recording();
       }
-    } else if (!event.pressed && audio.recording()) {
+    } else if (!event.pressed && (audio.recording() || friend_ptt_)) {
+      audio.stop_recording();  // capture DMA tail before committing the turn
       if (friend_ptt_) {
         pump_friend_audio();
         friend_link.send_ptt(false);
@@ -429,7 +428,7 @@ void on_button(const gizmo::InputEvent& event) {
     return;
   }
 
-  if (!event.pressed) return;
+  if (!event.pressed || (event.button == Button::kSelect && event.repeat)) return;
   if (state == State::kBoot || state == State::kRecording) return;
   if (!event.repeat) haptic.pulse(12);
 
@@ -634,11 +633,16 @@ void camera_loop() {
   if (frame) {
     if (frame->format == PIXFORMAT_JPEG && frame->len > 0 && frame->len <= 128 * 1024) {
       ++frames;
-      if (ensure_framebuffer() &&
+      if (frame->width == gizmo::assets::kPanelWidth && frame->height == gizmo::assets::kPanelHeight &&
+          ensure_framebuffer() &&
           jpg2rgb565(frame->buf, frame->len, reinterpret_cast<uint8_t*>(framebuffer), JPG_SCALE_NONE)) {
+        camera_status = nullptr;
         paint_camera(true, nullptr);
+        if (frames == 1) Serial.printf("camera first JPEG: %ux%u, %u bytes\n", frame->width, frame->height, frame->len);
       } else {
         ++blit_failures;
+        camera_status = "CAMERA FRAME ERROR";
+        paint_camera(false, camera_status);
       }
     } else {
       ++failures;
@@ -646,6 +650,8 @@ void camera_loop() {
     camera.release();
   } else {
     ++failures;
+    camera_status = "CAMERA NO FRAMES";
+    paint_camera(false, camera_status);
   }
   if (millis() - lastReport >= 2000) {
     Serial.printf("frames=%u failures=%u blit_failures=%u heap=%u psram_free=%u\n",
@@ -724,14 +730,20 @@ void loop() {
     resolve_single_select();
   }
 
+  friend_link.update(wifi.online());
   audio.update();
   pump_friend_audio();
+  // The memo limit also applies while the camera owns the visible state.
+  if (friend_ptt_ && !audio.recording()) {
+    friend_link.send_ptt(false);
+    friend_ptt_ = false;
+    finish_recording();
+  }
   battery.update();
   haptic.update();
   const auto wifi_phase = wifi.phase();
   wifi.update();
   if (wifi.phase() != wifi_phase) dirty = true;
-  friend_link.update(wifi.online());
 
   const uint32_t now = millis();
   switch (state) {

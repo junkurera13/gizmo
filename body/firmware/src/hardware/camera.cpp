@@ -1,11 +1,15 @@
 #include "gizmo/camera.h"
 #include "gizmo/board.h"
 #include <esp32-hal-psram.h>
+#include <Arduino.h>
 
 namespace gizmo {
 esp_err_t Camera::start() {
   if (running_) return ESP_OK;
-  if (!psramFound()) return ESP_ERR_NO_MEM;
+  if (!psramFound()) {
+    Serial.println("camera: PSRAM unavailable; check board/PSRAM configuration");
+    return ESP_ERR_NO_MEM;
+  }
   camera_config_t config{};
   config.pin_pwdn = -1;
   config.pin_reset = -1;

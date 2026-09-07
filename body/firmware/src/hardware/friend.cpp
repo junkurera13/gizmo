@@ -1,6 +1,7 @@
-#include "gizmo/friend.h"
+#include "gizmo/friend_connection.h"
 
 #include <Arduino.h>
+#include <ArduinoJson.h>
 #include <HTTPClient.h>
 #include <Preferences.h>
 #include <WebSocketsClient.h>
@@ -11,6 +12,8 @@
 #include <mbedtls/base64.h>
 #include <stdlib.h>
 #include <string.h>
+#include <time.h>
+#include "gizmo/trust_roots.h"
 
 #ifndef GIZMO_BRAIN_URL
 #define GIZMO_BRAIN_URL ""
@@ -23,7 +26,7 @@ namespace gizmo {
 namespace {
 
 WebSocketsClient ws;
-FriendLink* g_link = nullptr;
+FriendConnection* g_link = nullptr;
 bool ws_used_ = false;
 
 bool is_host_char(char c) {
@@ -34,87 +37,6 @@ bool is_host_char(char c) {
 bool is_local_host(const char* host) {
   return strcmp(host, "127.0.0.1") == 0 || strcmp(host, "localhost") == 0 ||
          strcmp(host, "::1") == 0;
-}
-
-const char* skip_ws(const char* p, const char* end) {
-  while (p < end && (*p == ' ' || *p == '\t' || *p == '\n' || *p == '\r')) ++p;
-  return p;
-}
-
-const char* find_key(const char* json, size_t n, const char* key) {
-  if (json == nullptr || key == nullptr) return nullptr;
-  const char* end = json + n;
-  const size_t key_len = strlen(key);
-  const char* p = json;
-  while (p + key_len + 2 < end) {
-    const char* found = static_cast<const char*>(memchr(p, '"', static_cast<size_t>(end - p)));
-    if (found == nullptr) return nullptr;
-    if (found + 1 + key_len < end && memcmp(found + 1, key, key_len) == 0 &&
-        found[1 + key_len] == '"') {
-      return found;
-    }
-    p = found + 1;
-  }
-  return nullptr;
-}
-
-bool json_string(const char* json, size_t n, const char* key, char* out, size_t cap) {
-  if (out == nullptr || cap == 0) return false;
-  out[0] = '\0';
-  const char* key_at = find_key(json, n, key);
-  if (key_at == nullptr) return false;
-  const char* end = json + n;
-  const char* p = skip_ws(key_at + strlen(key) + 2, end);
-  if (p >= end || *p != ':') return false;
-  p = skip_ws(p + 1, end);
-  if (p >= end || *p != '"') return false;
-  ++p;
-  size_t w = 0;
-  while (p < end && *p != '"' && w + 1 < cap) {
-    if (*p == '\\' && p + 1 < end) ++p;
-    out[w++] = *p++;
-  }
-  out[w] = '\0';
-  return p < end && *p == '"';
-}
-
-bool json_string_ref(const char* json, size_t n, const char* key, const char** start, size_t* len) {
-  if (start == nullptr || len == nullptr) return false;
-  *start = nullptr;
-  *len = 0;
-  const char* key_at = find_key(json, n, key);
-  if (key_at == nullptr) return false;
-  const char* end = json + n;
-  const char* p = skip_ws(key_at + strlen(key) + 2, end);
-  if (p >= end || *p != ':') return false;
-  p = skip_ws(p + 1, end);
-  if (p >= end || *p != '"') return false;
-  ++p;
-  const char* begin = p;
-  while (p < end && *p != '"') {
-    if (*p == '\\' && p + 1 < end) ++p;
-    ++p;
-  }
-  if (p >= end || *p != '"') return false;
-  *start = begin;
-  *len = static_cast<size_t>(p - begin);
-  return true;
-}
-
-bool json_int(const char* json, size_t n, const char* key, int* out) {
-  if (out == nullptr) return false;
-  const char* key_at = find_key(json, n, key);
-  if (key_at == nullptr) return false;
-  const char* end = json + n;
-  const char* p = skip_ws(key_at + strlen(key) + 2, end);
-  if (p >= end || *p != ':') return false;
-  p = skip_ws(p + 1, end);
-  if (p >= end) return false;
-  char* parsed = nullptr;
-  const long value = strtol(p, &parsed, 10);
-  if (parsed == p) return false;
-  *out = static_cast<int>(value);
-  return true;
 }
 
 size_t resample_16k_to_24k(const int16_t* in, size_t in_n, int16_t* out, size_t out_cap) {
@@ -171,7 +93,7 @@ const char* friend_phase_name(FriendPhase phase) {
   }
 }
 
-void FriendLink::begin() {
+void FriendConnection::begin() {
   g_link = this;
   speaker_cap_ = kSpeakerCap;
   speaker_ = static_cast<int16_t*>(
@@ -192,7 +114,7 @@ void FriendLink::begin() {
                 token_[0] ? "set" : "empty");
 }
 
-void FriendLink::load() {
+void FriendConnection::load() {
   Preferences prefs;
   prefs.begin("gizmo", true);
   if (prefs.getString("device_id", device_id_, sizeof(device_id_)) == 0 || device_id_[0] == '\0') {
@@ -217,7 +139,7 @@ void FriendLink::load() {
   }
 }
 
-void FriendLink::save_credentials() {
+void FriendConnection::save_credentials() {
   Preferences prefs;
   prefs.begin("gizmo", false);
   prefs.putString("brain_url", url_);
@@ -226,7 +148,7 @@ void FriendLink::save_credentials() {
   prefs.end();
 }
 
-bool FriendLink::parse_url() {
+bool FriendConnection::parse_url() {
   tls_ = false;
   port_ = 80;
   host_[0] = '\0';
@@ -275,7 +197,7 @@ bool FriendLink::parse_url() {
   return host_[0] != '\0';
 }
 
-void FriendLink::build_headers() {
+void FriendConnection::build_headers() {
   extra_headers_[0] = '\0';
   char* p = extra_headers_;
   size_t left = sizeof(extra_headers_);
@@ -293,7 +215,7 @@ void FriendLink::build_headers() {
   }
 }
 
-bool FriendLink::set_url(const char* url) {
+bool FriendConnection::set_url(const char* url) {
   if (url == nullptr || url[0] == '\0' || strlen(url) >= sizeof(url_)) {
     Serial.println("friend: url must be http(s)://host 1–159 chars");
     return false;
@@ -318,7 +240,7 @@ bool FriendLink::set_url(const char* url) {
   return true;
 }
 
-bool FriendLink::set_token(const char* token) {
+bool FriendConnection::set_token(const char* token) {
   if (token == nullptr) token = "";
   if (strlen(token) >= sizeof(token_)) {
     Serial.println("friend: token too long");
@@ -342,7 +264,7 @@ bool FriendLink::set_token(const char* token) {
   return true;
 }
 
-void FriendLink::forget() {
+void FriendConnection::forget() {
   url_[0] = '\0';
   token_[0] = '\0';
   save_credentials();
@@ -352,8 +274,9 @@ void FriendLink::forget() {
   Serial.println("friend: url and token cleared");
 }
 
-void FriendLink::disconnect() {
+void FriendConnection::disconnect() {
   hello_ok_ = false;
+  session_ready_ = false;
   glass_seen_ = false;
   speaker_n_ = speaker_r_ = speaker_w_ = 0;
   down_n_ = 0;
@@ -367,8 +290,9 @@ void FriendLink::disconnect() {
   }
 }
 
-void FriendLink::schedule_backoff() {
+void FriendConnection::schedule_backoff() {
   hello_ok_ = false;
+  session_ready_ = false;
   glass_seen_ = false;
   phase_ = FriendPhase::kBackoff;
   backoff_until_ = millis() + backoff_ms_;
@@ -377,7 +301,7 @@ void FriendLink::schedule_backoff() {
   if (backoff_ms_ > 4000) backoff_ms_ = 4000;
 }
 
-bool FriendLink::inspect_health() {
+bool FriendConnection::inspect_health() {
   if (!parse_url()) {
     strncpy(detail_, "BAD BRAIN URL", sizeof(detail_) - 1);
     phase_ = FriendPhase::kNeedConfig;
@@ -388,6 +312,10 @@ bool FriendLink::inspect_health() {
     phase_ = FriendPhase::kNeedConfig;
     return false;
   }
+  if (tls_ && time(nullptr) < 1735689600) {
+    strncpy(detail_, "WAITING FOR NETWORK TIME", sizeof(detail_) - 1);
+    return false;
+  }
   char health_url[192];
   snprintf(health_url, sizeof(health_url), "%s://%s:%u%s/health", tls_ ? "https" : "http", host_,
            port_, (path_prefix_[0] && strcmp(path_prefix_, "/") != 0) ? path_prefix_ : "");
@@ -396,13 +324,12 @@ bool FriendLink::inspect_health() {
 
   HTTPClient http;
   http.setTimeout(2500);
+  http.setConnectTimeout(2500);
   bool begun = false;
   WiFiClientSecure tls_client;
   WiFiClient plain;
   if (tls_) {
-    // Remaining: pin the ESP32 cert bundle. Skip-verify is enough for the
-    // overnight happy path against a known Railway/local brain.
-    tls_client.setInsecure();
+    tls_client.setCACert(kFriendRootCAs);
     begun = http.begin(tls_client, health_url);
   } else {
     begun = http.begin(plain, health_url);
@@ -420,10 +347,11 @@ bool FriendLink::inspect_health() {
     Serial.printf("friend health: HTTP %d\n", code);
     return false;
   }
-  const int proto = body.indexOf("body_protocol");
-  const int ver_at = proto >= 0 ? body.indexOf("\"version\"", proto) : -1;
-  const int colon = ver_at >= 0 ? body.indexOf(':', ver_at) : -1;
-  const int version = colon >= 0 ? body.substring(colon + 1).toInt() : -1;
+  StaticJsonDocument<128> filter;
+  filter["body_protocol"]["version"] = true;
+  StaticJsonDocument<256> health;
+  const auto parsed = deserializeJson(health, body.c_str(), DeserializationOption::Filter(filter));
+  const int version = parsed ? -1 : (health["body_protocol"]["version"] | -1);
   if (version != static_cast<int>(kProtocolVersion)) {
     snprintf(detail_, sizeof(detail_), "PROTOCOL %d != %u", version,
              static_cast<unsigned>(kProtocolVersion));
@@ -434,37 +362,40 @@ bool FriendLink::inspect_health() {
   return true;
 }
 
-bool FriendLink::open_socket() {
+bool FriendConnection::open_socket() {
   if (!parse_url()) return false;
   build_headers();
   if (ws_used_) ws.disconnect();
   ws.onEvent(socket_event);
-  ws.setReconnectInterval(600000);
+  ws.setReconnectInterval(0);  // update() owns backoff; first attempt must be immediate
   ws.setExtraHeaders(extra_headers_);
   if (tls_) {
-    // Same skip-verify as /health. See README remaining.
-    ws.beginSSL(host_, port_, ws_path_);
+    ws.beginSslWithCA(host_, port_, ws_path_, kFriendRootCAs);
   } else {
     ws.begin(host_, port_, ws_path_);
   }
   ws_used_ = true;
   hello_ok_ = false;
+  session_ready_ = false;
   glass_seen_ = false;
   phase_ = FriendPhase::kConnecting;
+  last_try_ = millis();
   strncpy(detail_, "WS HANDSHAKE", sizeof(detail_) - 1);
   Serial.printf("friend ws: %s://%s:%u%s\n", tls_ ? "wss" : "ws", host_, port_, ws_path_);
   return true;
 }
 
-void FriendLink::on_socket_event(int type, uint8_t* payload, size_t length) {
+void FriendConnection::on_socket_event(int type, uint8_t* payload, size_t length) {
   switch (static_cast<WStype_t>(type)) {
     case WStype_DISCONNECTED:
+      interrupt_speaker();
       Serial.println("friend ws: disconnected");
       if (phase_ == FriendPhase::kOnline || phase_ == FriendPhase::kConnecting) {
         strncpy(detail_, "WS DROPPED", sizeof(detail_) - 1);
         schedule_backoff();
       }
       hello_ok_ = false;
+  session_ready_ = false;
       glass_seen_ = false;
       break;
     case WStype_CONNECTED:
@@ -485,7 +416,7 @@ void FriendLink::on_socket_event(int type, uint8_t* payload, size_t length) {
   }
 }
 
-void FriendLink::enqueue_speaker(const int16_t* samples, size_t count) {
+void FriendConnection::enqueue_speaker(const int16_t* samples, size_t count) {
   if (speaker_ == nullptr || samples == nullptr || count == 0) return;
   int16_t group[3];
   size_t have = down_n_;
@@ -514,7 +445,7 @@ void FriendLink::enqueue_speaker(const int16_t* samples, size_t count) {
   for (size_t i = 0; i < have; ++i) down_hold_[i] = group[i];
 }
 
-size_t FriendLink::take_speaker(int16_t* dest, size_t cap) {
+size_t FriendConnection::take_speaker(int16_t* dest, size_t cap) {
   if (dest == nullptr || cap == 0 || speaker_n_ == 0) return 0;
   const size_t take = speaker_n_ < cap ? speaker_n_ : cap;
   for (size_t i = 0; i < take; ++i) {
@@ -525,25 +456,47 @@ size_t FriendLink::take_speaker(int16_t* dest, size_t cap) {
   return take;
 }
 
-void FriendLink::interrupt_speaker() {
+void FriendConnection::interrupt_speaker() {
   speaker_n_ = speaker_r_ = speaker_w_ = 0;
   down_n_ = 0;
   barge_in_ = true;
 }
 
-bool FriendLink::take_barge_in() {
+bool FriendConnection::take_barge_in() {
   if (!barge_in_) return false;
   barge_in_ = false;
   return true;
 }
 
-void FriendLink::on_message(const char* json, size_t len) {
-  char type[24];
-  if (!json_string(json, len, "type", type, sizeof(type))) return;
+void FriendConnection::accept_session_state(const char* state) {
+  Serial.printf("friend state: %s\n", state);
+  if (strcmp(state, "booting") == 0) last_try_ = millis();
+  session_ready_ = strcmp(state, "listening") == 0 || strcmp(state, "talking") == 0 ||
+                   strcmp(state, "thinking") == 0 || strcmp(state, "asleep") == 0;
+  if (strcmp(state, "powered_off") == 0) {
+    // A new device identity starts powered off. Never cold-boot an already
+    // powered session just because the Wi-Fi socket reconnected.
+    send_json("{\"type\":\"power\",\"on\":true}");
+  }
+  if (!session_ready_) {
+    phase_ = FriendPhase::kConnecting;
+    strncpy(detail_, "WAITING FOR BRAIN BOOT", sizeof(detail_) - 1);
+  } else if (hello_ok_ && glass_seen_) {
+    phase_ = FriendPhase::kOnline;
+    strncpy(detail_, "ONLINE", sizeof(detail_) - 1);
+  }
+}
+
+void FriendConnection::on_message(const char* json, size_t len) {
+  if (len > 15 * 1024) return;  // matches the bounded WebSocket frame ceiling
+  StaticJsonDocument<192> filter;
+  for (const char* key : {"type", "state", "protocol_version", "pcm"}) filter[key] = true;
+  DynamicJsonDocument document(len + 512);
+  if (deserializeJson(document, json, len, DeserializationOption::Filter(filter))) return;
+  const char* type = document["type"] | "";
 
   if (strcmp(type, "hello") == 0) {
-    int version = -1;
-    json_int(json, len, "protocol_version", &version);
+    const int version = document["protocol_version"] | -1;
     if (version != static_cast<int>(kProtocolVersion)) {
       Serial.printf("friend hello: protocol %d rejected\n", version);
       strncpy(detail_, "HELLO PROTOCOL", sizeof(detail_) - 1);
@@ -552,6 +505,13 @@ void FriendLink::on_message(const char* json, size_t len) {
       return;
     }
     hello_ok_ = true;
+    const char* state = document["state"];
+    if (state == nullptr) {
+      disconnect();
+      schedule_backoff();
+      return;
+    }
+    accept_session_state(state);
     backoff_ms_ = 250;
     strncpy(detail_, "HELLO", sizeof(detail_) - 1);
     Serial.println("friend hello: protocol 1");
@@ -560,7 +520,7 @@ void FriendLink::on_message(const char* json, size_t len) {
 
   if (strcmp(type, "glass") == 0) {
     glass_seen_ = true;
-    if (hello_ok_) {
+    if (hello_ok_ && session_ready_) {
       phase_ = FriendPhase::kOnline;
       strncpy(detail_, "ONLINE", sizeof(detail_) - 1);
       Serial.println("friend: online (hello + glass)");
@@ -570,10 +530,16 @@ void FriendLink::on_message(const char* json, size_t len) {
 
   if (!hello_ok_) return;
 
+  if (strcmp(type, "state") == 0) {
+    const char* state = document["state"];
+    if (state != nullptr) accept_session_state(state);
+    return;
+  }
+
   if (strcmp(type, "audio") == 0) {
-    const char* b64 = nullptr;
-    size_t b64_len = 0;
-    if (!json_string_ref(json, len, "pcm", &b64, &b64_len) || b64_len == 0) return;
+    const char* b64 = document["pcm"];
+    if (b64 == nullptr || b64[0] == '\0') return;
+    const size_t b64_len = strlen(b64);
     size_t decoded_len = 0;
     const size_t bound = (b64_len * 3) / 4 + 4;
     uint8_t* decoded = static_cast<uint8_t*>(heap_caps_malloc(bound, MALLOC_CAP_8BIT));
@@ -591,15 +557,15 @@ void FriendLink::on_message(const char* json, size_t len) {
     interrupt_speaker();
     return;
   }
-  // settings / state / glass media: stubbed. Local Settings still owns the menu.
+  // settings / glass media: stubbed. Local Settings still owns the menu.
 }
 
-bool FriendLink::send_json(const char* json) {
+bool FriendConnection::send_json(const char* json) {
   if (json == nullptr || !ws_used_ || !ws.isConnected()) return false;
   return ws.sendTXT(json);
 }
 
-bool FriendLink::send_ptt(bool active) {
+bool FriendConnection::send_ptt(bool active) {
   if (!active && up_hold_valid_) {
     const int16_t pad[2] = {up_hold_, up_hold_};
     up_hold_valid_ = false;
@@ -612,11 +578,11 @@ bool FriendLink::send_ptt(bool active) {
   return ok;
 }
 
-bool FriendLink::send_select() {
+bool FriendConnection::send_select() {
   return send_json("{\"type\":\"select\"}");
 }
 
-bool FriendLink::send_pcm16k(const int16_t* samples, size_t count) {
+bool FriendConnection::send_pcm16k(const int16_t* samples, size_t count) {
   if (samples == nullptr || count == 0 || !ready()) return false;
   int16_t inbuf[258];
   size_t in_n = 0;
@@ -645,8 +611,9 @@ bool FriendLink::send_pcm16k(const int16_t* samples, size_t count) {
   return send_json(json);
 }
 
-void FriendLink::update(bool wifi_online) {
-  if (ws_used_) ws.loop();
+void FriendConnection::update(bool wifi_online) {
+  if (wifi_online && ws_used_ &&
+      (phase_ == FriendPhase::kConnecting || phase_ == FriendPhase::kOnline)) ws.loop();
 
   if (!wifi_online) {
     if (phase_ != FriendPhase::kNeedConfig && phase_ != FriendPhase::kOff) {
@@ -668,7 +635,7 @@ void FriendLink::update(bool wifi_online) {
     phase_ = FriendPhase::kOff;
   }
 
-  if (phase_ == FriendPhase::kConnecting && hello_ok_ && glass_seen_) {
+  if (phase_ == FriendPhase::kConnecting && hello_ok_ && glass_seen_ && session_ready_) {
     phase_ = FriendPhase::kOnline;
     strncpy(detail_, "ONLINE", sizeof(detail_) - 1);
   }
@@ -686,7 +653,7 @@ void FriendLink::update(bool wifi_online) {
   phase_ = FriendPhase::kHealth;
   last_try_ = now;
   if (!inspect_health()) {
-    schedule_backoff();
+    if (phase_ != FriendPhase::kNeedConfig) schedule_backoff();
     return;
   }
   if (!open_socket()) {

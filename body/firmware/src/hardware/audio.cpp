@@ -188,6 +188,7 @@ size_t Audio::enqueue_live(const int16_t* samples, size_t count) {
   if (samples == nullptr || count == 0 || live_ == nullptr) return 0;
   if (recording_) return 0;
   if (!live_armed_ && !arm_live()) return 0;
+  if (live_n_ == 0) live_wait_since_ = millis();
   size_t written = 0;
   while (written < count && live_n_ < live_cap_) {
     live_[live_w_] = samples[written++];
@@ -284,45 +285,46 @@ void Audio::pump_playback() {
 
 void Audio::pump_live() {
   if (live_n_ == 0) {
-    // Idle: drop I2S_NUM_1 clocks so MAX98357A has no BCLK (silence, no whine).
-    if (live_playing_) {
-      i2s_zero_dma_buffer(kAmpPort);
+    // Empty software ring does not mean the I2S DMA has played its tail.
+    // Keep clocks running for at least the entire DMA ring after the last
+    // successful write, then stop them to silence the idle amplifier.
+    if (live_playing_ && static_cast<int32_t>(millis() - live_drain_until_) >= 0) {
       i2s_stop(kAmpPort);
+      i2s_zero_dma_buffer(kAmpPort);
       live_playing_ = false;
       playing_ = false;
     }
     return;
   }
   if (!live_playing_) {
+    // 40 ms jitter cushion, with a 60 ms deadline for very short replies.
+    if (live_n_ < kSampleRate / 25 && millis() - live_wait_since_ < 60) return;
     i2s_zero_dma_buffer(kAmpPort);
     if (i2s_start(kAmpPort) != ESP_OK) return;
     live_playing_ = true;
     playing_ = true;
   }
-  for (int chunk = 0; chunk < kMaxChunksPerUpdate && live_playing_ && live_n_ > 0; ++chunk) {
+  for (int chunk = 0; chunk < kMaxChunksPerUpdate && live_n_ > 0; ++chunk) {
     const size_t count = live_n_ < kChunkSamples ? live_n_ : kChunkSamples;
-    for (size_t i = 0; i < count; ++i) {
-      chunk_[i] = live_[live_r_];
-      live_r_ = (live_r_ + 1) % live_cap_;
-    }
-    live_n_ -= count;
+    for (size_t i = 0; i < count; ++i) chunk_[i] = live_[(live_r_ + i) % live_cap_];
     apply_volume(chunk_, count, volume_step_, volume_steps_);
-    track_level(chunk_, count);
     for (size_t i = 0; i < count; ++i) {
       stereo_[i * 2] = chunk_[i];
       stereo_[i * 2 + 1] = chunk_[i];
     }
     size_t written = 0;
-    if (i2s_write(kAmpPort, stereo_, count * 2 * sizeof(int16_t), &written, 0) != ESP_OK) return;
+    const auto result = i2s_write(kAmpPort, stereo_, count * 2 * sizeof(int16_t), &written, 0);
     const size_t consumed = written / (2 * sizeof(int16_t));
-    if (consumed < count) {
-      // Push unused samples back. Rare: DMA ring full.
-      for (size_t i = count; i > consumed; --i) {
-        live_r_ = (live_r_ + live_cap_ - 1) % live_cap_;
-        ++live_n_;
-      }
-      return;
+    live_r_ = (live_r_ + consumed) % live_cap_;
+    live_n_ -= consumed;
+    if (consumed) {
+      track_level(chunk_, consumed);
+      constexpr uint32_t drain_ms = (kDmaBuffers * kDmaFrames * 1000 + kSampleRate - 1) / kSampleRate + 2;
+      live_drain_until_ = millis() + drain_ms;
     }
+    // ESP-IDF may return timeout with a partial write. Keep every unwritten
+    // sample in the ring, in its original (unscaled) form, for the next pump.
+    if (result != ESP_OK || consumed < count) return;
   }
 }
 

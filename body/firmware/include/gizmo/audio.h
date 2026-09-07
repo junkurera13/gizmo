@@ -39,6 +39,7 @@ class Audio {
   // samples so idle MAX98357A has no BCLK.
   size_t enqueue_live(const int16_t* samples, size_t count);
   void stop_live();
+  size_t live_capacity_left() const { return live_cap_ - live_n_; }
 
   void set_volume(uint8_t step, uint8_t steps);
   void update();
@@ -98,6 +99,8 @@ class Audio {
   size_t live_w_ = 0;
   size_t live_r_ = 0;
   size_t live_n_ = 0;
+  uint32_t live_wait_since_ = 0;
+  uint32_t live_drain_until_ = 0;
 };
 
 }  // namespace gizmo

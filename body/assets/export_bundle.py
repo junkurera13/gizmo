@@ -13,7 +13,7 @@ import tempfile
 import wave
 from pathlib import Path
 
-from PIL import Image, ImageDraw, ImageFont, ImageOps
+from PIL import features, Image, ImageDraw, ImageFont, ImageOps
 
 
 SCHEMA_VERSION = 1
@@ -106,10 +106,13 @@ def draw_clock_glyph(
     font: ImageFont.FreeTypeFont,
 ) -> bool:
     """Draw one atlas glyph. Prefer OpenType `tnum` when raqm/Pillow exposes it."""
+    if not features.check("raqm"):
+        draw.text(xy, character, font=font, fill=255, anchor="ls")
+        return False
     try:
         draw.text(xy, character, font=font, fill=255, anchor="ls", features=["tnum"])
         return True
-    except (TypeError, ValueError):
+    except (TypeError, ValueError, KeyError):
         draw.text(xy, character, font=font, fill=255, anchor="ls")
         return False
 
@@ -120,7 +123,8 @@ def export_clock_atlas(font_path: Path, panel_width: int) -> tuple[bytes, dict[s
     font_size = max(8, round(panel_width * 0.05))
     font, variation = load_outfit_medium(font_path, font_size)
     ascent, descent = font.getmetrics()
-    advances = [font.getlength(character) for character in CLOCK_CHARACTERS]
+    advances = [font.getlength(character, **({"features": ["tnum"]} if features.check("raqm") else {}))
+                for character in CLOCK_CHARACTERS]
     cell_width = max(1, math.ceil(max(advances)))
     cell_height = max(1, ascent + descent)
     atlas = Image.new("L", (cell_width * len(CLOCK_CHARACTERS), cell_height), 0)

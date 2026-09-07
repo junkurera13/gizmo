@@ -161,8 +161,10 @@ double-Select and also toggles Camera. Up / `u` / single `e` (after 320 ms) /
 After Wi-Fi reports `online`, firmware GET `/health` and requires
 `body_protocol.version == 1`, then opens `/ws` with `X-Gizmo-Device`,
 `X-Gizmo-Protocol: 1`, and `Authorization: Bearer <token>` when a token is
-stored. Hello must confirm protocol 1; the following `glass` snapshot is
-acknowledged and not fetched. PTT while connected sends `ptt` then 24 kHz
+stored. Hello must confirm protocol 1. A powered-off session receives
+`power:on`; firmware waits for the backend boot to finish before enabling
+Friend PTT. Reconnecting to an already-powered session preserves it. The
+`glass` snapshot is acknowledged and not fetched. PTT while connected sends `ptt` then 24 kHz
 `audio` chunks (mic stays 16 kHz; body resamples 3/2). Inbound `audio` PCM is
 downsampled 24→16 and queued onto the 16 kHz MAX98357A path. Local memo still
 fills during PTT and still plays with Select when the socket is down.
@@ -177,11 +179,19 @@ f
 
 Or compile-time in `platformio.ini` `build_flags`:
 `-DGIZMO_BRAIN_URL='"https://…"'` and `-DGIZMO_DEVICE_TOKEN='"…"'`.
-NVS/serial overrides those. `?` includes `friend=` phase. HTTPS/WSS currently
-**skips TLS certificate verify** (remaining: pin the ESP32 cert bundle).
+NVS/serial overrides those. `?` includes `friend=` phase. HTTPS/WSS verifies
+the certificate chain and hostname using the committed ISRG X1/X2 public roots
+(see [certs](certs/README.md)); it waits for network time before connecting.
+
+HTTP, TLS, and WebSocket work run in a dedicated FreeRTOS task. The body loop
+uses bounded, nonblocking queues, so retries cannot stall mic servicing or
+buttons. Queue overflow cancels the voice turn rather than submitting missing
+audio. Connection generations prevent stale audio from being replayed after
+reconnect. Live playback buffers briefly for jitter and drains DMA before
+stopping the amplifier clocks.
 
 Stubbed, do not treat as done: glass/show JPEG-MJPEG fetch, Friend-owned
-Settings overlay, `navigate`/`power` events, vision `frame`, wake-audio buffer
+Settings overlay, `navigate` events, a physical power-off event, vision `frame`, wake-audio buffer
 across reconnect. Agent voice is only the PTT + PCM path above — not Show, not
 a full session UI.
 
@@ -204,7 +214,7 @@ Recorded in [hardware](../hardware/xiao-esp32s3-sense.md): full header budget,
 ladder schematic, and the 2026-09-06 on-device serial evidence. Remaining:
 physical UP/DOWN/SELECT and battery divider soldering with measured mV,
 listening check of memo playback, boot chime, and Friend inbound PCM
-(`kMicGain` in `audio.cpp` is a fixed x4), TLS cert bundle for `wss://`,
+(`kMicGain` in `audio.cpp` is a fixed x4),
 Friend-owned Settings / `navigate` / Show-frame fetch / vision `frame`, and a
 wake-audio buffer across reconnect. Phone Wi-Fi setup is on-device; a later
 app can replace the captive portal. LED stays tied to 3V3 until a PWM pin is
@@ -214,3 +224,9 @@ not.
 
 A successful compile is not hardware verification. Do not label this target the
 complete Gizmo product firmware until those integrations run on the board.
+
+## Review fixes and board acceptance
+
+See [TESTING.md](TESTING.md) for pull/build/flash commands, expected serial
+output, and the short voice/camera/clock board pass. Host regression tests and
+a cross-compile cannot substitute for that physical pass.

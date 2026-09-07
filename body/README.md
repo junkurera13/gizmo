@@ -17,7 +17,9 @@ hardware pass.
 The native simulator, the laptop reference client, and the XIAO firmware use
 JSON text messages over WebSocket `/ws`. Firmware still owns boot, home,
 Settings, Camera, and local memo when the socket is down; the `/ws` slice is
-health + hello + PTT audio, not the full Show/Settings overlay. Python classes
+health + hello + backend power/boot readiness + PTT audio, not the full
+Show/Settings overlay. Network work runs outside the body loop; HTTPS/WSS
+verifies the server certificate. See [the board test checklist](firmware/TESTING.md). Python classes
 in `friend/gizmo_friend/body_protocol.py` are internal controller events; their
 names are not necessarily the JSON names.
 
