@@ -4,13 +4,13 @@ Railway project: https://railway.com/project/4e9d895f-7559-4def-8700-bea6a530132
 
 Brain health: https://gizmo-brain-production.up.railway.app/health
 
-All four services run in Singapore: `gizmo-brain`, `memobase`, `postgres`, and `redis`. Only the brain has a public domain. Other HTTP routes and the device WebSocket require `Authorization: Bearer <GIZMO_DEVICE_TOKEN>`.
+All four services run in Singapore: `gizmo-brain`, `memobase`, `postgres`, and `redis`. Only the brain has a public domain. Device/data routes and the device WebSocket require `Authorization: Bearer <GIZMO_DEVICE_TOKEN>`. The OddityOS shell and its exact static assets are public so `oddware.xyz/gizmo/oddity` can embed them; live browser sessions require `ODDITY_PREVIEW_TOKEN`, use isolated random identities, enforce same-origin sockets, and have separate daily spend caps.
 
 Deploy the committed repository with `npx @railway/cli up --service gizmo-brain` and `npx @railway/cli up --service memobase`. Railway's GitHub App currently lacks access to `junkurera13/gizmo`, so automatic GitHub deployments are not enabled. GitHub source connection must be explicitly configured after repository access is granted.
 
 The native simulator uses the ignored repository `.env` for `GIZMO_BRAIN_URL` and `GIZMO_DEVICE_TOKEN`. API keys are backend credentials, not client configuration. The current local env file is permission mode 600 and is not tracked by Git.
 
-The public site is a separate Vercel project (`gizmo`, Oddware team) with root directory `web/`. It is not the brain. Hobby Git deploys require the commit author to be the team owner.
+The public site is a separate Vercel project (`gizmo`, Oddware team) with root directory `web/`. It is not the brain. The main Oddware Vercel project forwards `/gizmo/*` to this project, so the simulator page does not need a DNS or subdomain change. Hobby Git deploys require the commit author to be the team owner.
 
 ## Verified on 2026-09-02
 

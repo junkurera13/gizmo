@@ -1,0 +1,65 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="theme-color" content="#151517">
+  <title>OddityOS 1 — Gizmo</title>
+  <link rel="icon" href="data:,">
+  <link rel="stylesheet" href="/static/oddity.css">
+  <link rel="stylesheet" href="/static/oddity-device.css">
+  <link rel="preload" as="image" href="/static/device-reference-ptt-pressed.png">
+  <script type="module" src="/static/oddity.js"></script>
+</head>
+<body>
+  <header class="masthead">
+    <a href="/oddity" class="wordmark" aria-label="OddityOS home">oddity<span>OS 1</span></a>
+    <nav aria-label="Simulator controls">
+      <button id="sound" class="quiet" aria-label="Mute narration" aria-pressed="false">Sound on</button>
+      <button id="expand" class="icon-button" aria-label="Enter fullscreen"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M8 3H3v5M16 3h5v5M21 16v5h-5M8 21H3v-5"/></svg></button>
+      <button id="help" class="icon-button" aria-label="How to use Gizmo">?</button>
+    </nav>
+  </header>
+  <section id="preview-gate" class="preview-gate" aria-labelledby="preview-title" hidden>
+    <div class="preview-card">
+      <h1 id="preview-title">OddityOS 1</h1>
+      <p>This live AI prototype is open to adult product reviewers with a preview code.</p>
+      <form id="preview-form">
+        <input id="preview-code" type="password" name="preview-code" placeholder="Preview code" autocomplete="current-password" aria-label="Preview code">
+        <button type="submit">Enter <span>↗</span></button>
+      </form>
+      <p id="preview-error" class="preview-error" role="alert"></p>
+    </div>
+  </section>
+  <main>
+    <section class="simulator" aria-label="Gizmo simulator">
+      <div id="device" class="device" aria-label="Gizmo handheld">
+        <img class="device-art device-rest" src="/static/device-reference.png" alt="" draggable="false">
+        <img class="device-art device-pressed" src="/static/device-reference-ptt-pressed.png" alt="" draggable="false">
+        <div id="stage" class="stage" data-state="asleep">
+          <div class="stage-top"><span id="connection" class="connection">Connecting</span><span id="chapter-title"></span><button id="home" class="stage-home" aria-label="Return to Gizmo's face" hidden>↩</button></div>
+          <div id="scene" class="scene"><img id="still" alt="" hidden><video id="film" muted playsinline preload="auto" hidden></video></div>
+          <div id="friend" class="friend"><img src="/static/oddity-character.png" alt="Gizmo" draggable="false"></div>
+          <div id="wake-panel" class="wake-panel"><button id="wake" class="wake">Wake Gizmo <span>↗</span></button></div>
+          <div id="caption" class="caption" aria-live="polite"></div>
+          <button id="play-blocked" class="play-blocked" hidden>Tap to play narration</button>
+          <div id="listening" class="listening" hidden><i></i><i></i><i></i><i></i><i></i><span>I'm listening</span></div>
+          <div class="stage-bottom"><span id="scene-position"></span><div id="beat-dots" class="beat-dots" aria-label="Experience progress"></div><span id="scene-kind"></span></div>
+        </div>
+        <button id="talk" class="device-control device-talk" aria-label="Hold to talk" aria-describedby="talk-label" title="Hold to talk · Space" disabled></button>
+        <button id="previous" class="device-control device-up" aria-label="Previous scene" title="Previous scene · ↑">⌃</button>
+        <button id="next" class="device-control device-down" aria-label="Next scene" title="Next scene · ↓">⌄</button>
+        <button id="select" class="device-control device-select" aria-label="Select: pause or continue" title="Select · Enter">✓</button>
+      </div>
+      <div class="below-screen"><p id="status" role="status">A friend, and whatever comes next.</p><button id="reconnect" class="quiet" hidden>Reconnect</button><button id="pause" class="quiet" hidden>Pause</button></div>
+      <p id="notice" class="notice" role="alert" hidden></p>
+      <div class="device-hints"><span id="talk-label">Hold the pink side to talk <kbd>space</kbd></span><span><kbd>↑ ↓</kbd> Explore <kbd>↵</kbd> Select</span></div>
+      <form id="composer" class="composer"><input id="thought" name="thought" placeholder="Or type a thought…" aria-label="Your thought" maxlength="3000" autocomplete="off" disabled><button id="send" aria-label="Send thought" disabled>↗</button></form>
+      <div id="starters" class="starters" hidden><button>What if I fell into Jupiter?</button><button>Why don't bridges fall down?</button></div>
+    </section>
+  </main>
+  <footer><span>Gizmo · Browser preview</span><button id="open-notes" class="quiet">Session notes</button><span class="keyboard-hint">Interrupt whenever curiosity takes you.</span></footer>
+  <dialog id="help-dialog"><button class="dialog-close" data-close aria-label="Close help">×</button><h2>Follow your curiosity.</h2><p>Hold the pink button or Space to speak. Let go when you're done. You can also type.</p><p>Gizmo chooses when to explain, draw, or make a moving picture. Some scenes take a moment to arrive.</p><p>Talk again to interrupt. Select pauses or continues. The arrows revisit scenes you've already seen.</p><p class="fine">Your conversation and generated scenes stay in this browser's session on the server. Microphone recording runs only while you hold the button, for up to 45 seconds. No camera is used.</p></dialog>
+  <dialog id="notes-dialog"><button class="dialog-close" data-close aria-label="Close session notes">×</button><h2>This conversation</h2><div id="notes"></div><details><summary>Experience direction</summary><ol id="direction"></ol></details></dialog>
+  <audio id="voice" preload="auto"></audio>
+</body>
+</html>

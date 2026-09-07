@@ -63,3 +63,29 @@ class MotionBudget(ShowBudget):
     device_default = 20
     global_default = 200
     environment_name = "GIZMO_DAILY_MOTION_LIMIT"
+
+
+class OddityTurnBudget(ShowBudget):
+    """Bound public-preview planning, transcription, and narration spend."""
+
+    counter = "turns"
+    ledger_name = "oddity-turn-usage"
+    device_default = 16
+    global_default = 120
+    environment_name = "ODDITY_DAILY_TURN_LIMIT"
+
+
+class OddityShowBudget(ShowBudget):
+    counter = "shows"
+    ledger_name = "oddity-show-usage"
+    device_default = 8
+    global_default = 80
+    environment_name = "ODDITY_DAILY_SHOW_LIMIT"
+
+
+class OddityMotionBudget(ShowBudget):
+    counter = "motions"
+    ledger_name = "oddity-motion-usage"
+    device_default = 4
+    global_default = 20
+    environment_name = "ODDITY_DAILY_MOTION_LIMIT"

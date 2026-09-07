@@ -77,6 +77,7 @@ def _queue_url(value: object) -> str:
 @dataclass
 class H3MaxClipProvider(ClipProvider):
     api_key: str = field(repr=False)
+    motion_prefix: str = MOTION_PREFIX
     # The standalone checkpoint can measure slow generations without imposing
     # the runtime deadline. Production callers retain the plan's 20-second cap.
     timeout_seconds: float = CLIP_TIMEOUT_SECONDS
@@ -135,7 +136,7 @@ class H3MaxClipProvider(ClipProvider):
         motion = motion.strip()
         if not still or not motion:
             return None
-        prompt = f"{MOTION_PREFIX}\n\nMotion: {motion}"
+        prompt = f"{self.motion_prefix}\n\nMotion: {motion}"
         started = time.perf_counter()
         cancel_url = None
         request_id = None

@@ -1,0 +1,193 @@
+from __future__ import annotations
+
+import asyncio
+import tempfile
+import unittest
+from pathlib import Path
+from types import SimpleNamespace
+from unittest.mock import patch
+from urllib.parse import urlsplit
+
+from fastapi.testclient import TestClient
+from pydantic import ValidationError
+
+from gizmo_friend.brain.memory import NullMemoryProvider
+from gizmo_friend.oddity.director import Beat, Experience
+from gizmo_friend.oddity.runtime import ExperienceSession
+from gizmo_friend.server import app_factory
+
+
+def beat(visual="face", narration="A useful opening."):
+    return Beat(narration=narration, visual=visual, subject="Jupiter's atmosphere" if visual in {"video", "image"} else "",
+                motion="Cloud bands circle the planet" if visual == "video" else "", purpose="Explain the idea")
+
+
+class FakeDirector:
+    def __init__(self, beats):
+        self.beats = beats
+        self.requests = []
+
+    async def plan(self, text, history, current, memory):
+        self.requests.append((text, list(history), dict(current)))
+        return Experience(title="Jupiter", beats=self.beats)
+
+    async def speech(self, text): return b"test wave"
+    async def close(self): pass
+
+
+class FakeImages:
+    async def conjure(self, *args, **kwargs): return SimpleNamespace(jpeg=b"test image")
+    async def close(self): pass
+
+
+class FakeClips:
+    def __init__(self): self.started = asyncio.Event(); self.cancelled = asyncio.Event(); self.block = False
+    async def animate(self, *args):
+        self.started.set()
+        try:
+            if self.block: await asyncio.Event().wait()
+            return SimpleNamespace(mp4=b"test video")
+        except asyncio.CancelledError:
+            self.cancelled.set()
+            raise
+    async def close(self): pass
+
+
+class OddityTests(unittest.IsolatedAsyncioTestCase):
+    async def asyncSetUp(self):
+        self.tmp = tempfile.TemporaryDirectory(); self.root = Path(self.tmp.name)
+        self.events = []
+        self.director = FakeDirector([beat(), beat("video")])
+        self.clips = FakeClips()
+        async def send(event): self.events.append(event)
+        self.session = ExperienceSession(self.root, "a" * 32, send, director=self.director,
+                                         images=FakeImages(), clips=self.clips, memory=NullMemoryProvider())
+
+    async def asyncTearDown(self):
+        await self.session.close(); self.tmp.cleanup()
+
+    async def test_prepares_ordered_video_with_narration_and_private_media(self):
+        await self.session.begin("What if I fell into Jupiter?"); await self.session.task
+        beats = [e["beat"] for e in self.events if e["type"] == "beat"]
+        self.assertEqual([b["index"] for b in beats], [0, 1])
+        self.assertTrue(urlsplit(beats[1]["video"]).path.endswith(".mp4"))
+        self.assertTrue(urlsplit(beats[1]["audio"]).path.endswith(".wav"))
+        self.assertTrue((self.session.directory / Path(urlsplit(beats[1]["video"]).path).name).exists())
+        self.assertEqual([m["role"] for m in self.session.history], ["user"])
+
+    async def test_interrupt_cancels_video_and_never_records_unseen_script(self):
+        self.clips.block = True
+        await self.session.begin("Jupiter"); old_turn = self.session.turn
+        await asyncio.wait_for(self.clips.started.wait(), 2)
+        await self.session.stop()
+        self.assertTrue(self.clips.cancelled.is_set())
+        self.assertFalse(any(m["role"] == "assistant" for m in self.session.history))
+        self.assertFalse(any(e["type"] == "beat" and e["beat"]["visual"] == "video" for e in self.events))
+        before = len(self.events)
+        await self.session.event("beat", old_turn, beat={})
+        self.assertEqual(before, len(self.events))
+
+    async def test_acknowledgements_ignore_forgery_duplicates_and_stale_turns(self):
+        await self.session.begin("Jupiter"); await self.session.task
+        one = next(e["beat"] for e in self.events if e["type"] == "beat")
+        ack = {"turn": self.session.turn, "id":one["id"]}
+        await self.session.playback({**ack, "phase":"finished"})
+        self.assertEqual(len(self.session.history), 1)
+        await self.session.playback({**ack, "phase":"started", "turn":"stale"})
+        self.assertEqual(self.session.current, {})
+        await self.session.playback({**ack, "phase":"started"})
+        await self.session.playback({**ack, "phase":"finished"})
+        await self.session.playback({**ack, "phase":"finished"})
+        self.assertEqual(len(self.session.history), 2)
+        self.assertEqual(self.session.history[-1]["text"], one["narration"])
+
+    async def test_interruption_context_survives_restart(self):
+        await self.session.begin("Jupiter"); await self.session.task
+        one = next(e["beat"] for e in self.events if e["type"] == "beat")
+        await self.session.playback({"turn":self.session.turn, "id":one["id"], "phase":"started"})
+        await self.session.stop()
+        self.assertTrue(self.session.current["interrupted"])
+        async def send(event): pass
+        restored = ExperienceSession(self.root, "a"*32, send, director=FakeDirector([beat()]),
+                                     images=FakeImages(), clips=FakeClips(), memory=NullMemoryProvider())
+        self.assertEqual(restored.current["narration"], one["narration"])
+        self.assertEqual(len(restored.history), 1)
+        await restored.close()
+
+    async def test_image_failure_is_explicit_and_does_not_spend_on_video(self):
+        async def no_image(*args, **kwargs): return None
+        self.session.images.conjure = no_image
+        await self.session.begin("Jupiter"); await self.session.task
+        two = [e["beat"] for e in self.events if e["type"] == "beat"][1]
+        self.assertEqual(two["visual"], "keep")
+        self.assertTrue(two["warnings"])
+        self.assertIsNone(two["video"])
+        self.assertFalse(self.clips.started.is_set())
+
+    async def test_kept_scene_is_revisitable_and_home_clears_director_context(self):
+        self.director.beats = [beat("image"), beat("keep")]
+        await self.session.begin("Jupiter"); await self.session.task
+        beats = [e["beat"] for e in self.events if e["type"] == "beat"]
+        for item in beats:
+            for phase in ["started", "finished"]:
+                await self.session.playback({"turn":self.session.turn, "id":item["id"], "phase":phase})
+        self.assertEqual(self.session.library[-1]["image"], beats[0]["image"])
+        self.session.revisit(beats[1]["id"])
+        self.assertEqual(self.session.current["screen"]["subject"], beats[0]["subject"])
+        self.session.revisit(None)
+        self.assertIsNone(self.session.current["screen"])
+
+    def test_plan_rejects_incoherent_media(self):
+        with self.assertRaises(ValidationError): Beat(narration="Hi", visual="video", purpose="Missing brief")
+        with self.assertRaises(ValidationError): Experience(title="Too many clips", beats=[beat("video")] * 3)
+
+
+class OddityRouteTests(unittest.TestCase):
+    def test_provisioned_identity_and_media_isolation(self):
+        with tempfile.TemporaryDirectory() as directory, patch.dict("os.environ", {"GIZMO_DEVICE_TOKEN":"", "RAILWAY_ENVIRONMENT_ID":""}):
+            root = Path(directory)
+            with TestClient(app_factory(root)) as first, TestClient(app_factory(root)) as second:
+                response = first.get("/oddity")
+                self.assertEqual(response.status_code, 200)
+                provisioned = first.post("/oddity/session")
+                self.assertEqual(provisioned.status_code, 200)
+                self.assertIn("HttpOnly", provisioned.headers["set-cookie"])
+                identity = provisioned.json()["session"]
+                name = "b"*32 + ".jpg"
+                (root / "oddity" / identity / name).write_bytes(b"private")
+                self.assertEqual(first.get("/oddity/media/" + name, params={"session": identity}).status_code, 200)
+                other = second.post("/oddity/session").json()["session"]
+                self.assertNotEqual(identity, other)
+                self.assertEqual(second.get("/oddity/media/" + name, params={"session": other}).status_code, 404)
+                self.assertEqual(first.get("/oddity/media/session.json").status_code, 404)
+                self.assertEqual(first.get("/health").status_code, 200)
+
+    def test_cloud_preview_is_public_shell_with_gated_session(self):
+        environment = {
+            "GIZMO_DEVICE_TOKEN": "device-secret",
+            "RAILWAY_ENVIRONMENT_ID": "production",
+            "ODDITY_PREVIEW_TOKEN": "adult-review",
+        }
+        with tempfile.TemporaryDirectory() as directory, patch.dict("os.environ", environment):
+            with TestClient(app_factory(Path(directory))) as client:
+                self.assertEqual(client.get("/oddity").status_code, 200)
+                self.assertEqual(client.get("/static/oddity.js").status_code, 200)
+                self.assertEqual(client.get("/").status_code, 401)
+                self.assertEqual(client.post("/oddity/session").status_code, 401)
+                response = client.post("/oddity/session", headers={"x-oddity-preview": "adult-review"})
+                self.assertEqual(response.status_code, 200)
+                self.assertRegex(response.json()["session"], r"^[0-9a-f]{32}$")
+
+    def test_websocket_rejects_cross_origin(self):
+        from starlette.websockets import WebSocketDisconnect
+        with tempfile.TemporaryDirectory() as directory, patch.dict("os.environ", {"GIZMO_DEVICE_TOKEN":"", "RAILWAY_ENVIRONMENT_ID":""}):
+            with TestClient(app_factory(Path(directory))) as client:
+                session = client.post("/oddity/session").json()["session"]
+                with self.assertRaises(WebSocketDisconnect):
+                    with client.websocket_connect(
+                        "/oddity/ws?session=" + session,
+                        headers={"origin":"https://unrelated.example"},
+                    ): pass
+
+
+if __name__ == "__main__": unittest.main()

@@ -98,6 +98,39 @@ body:has(.about-page) {
   color: #f3ece6;
 }
 
+.oddity-page {
+  min-height: 100dvh;
+  overflow: hidden;
+  background: #101010;
+}
+
+.oddity-page::before {
+  content: "";
+  position: fixed;
+  inset: 0 0 auto;
+  z-index: 3;
+  height: 4.25rem;
+  background: #101010;
+}
+
+.oddity-page .topbar {
+  z-index: 4;
+}
+
+.oddity-frame-wrap {
+  position: fixed;
+  inset: 4.25rem 0 0;
+  background: #151517;
+}
+
+.oddity-frame {
+  display: block;
+  width: 100%;
+  height: 100%;
+  border: 0;
+  background: #151517;
+}
+
 .about-grid {
   display: flex;
   flex-direction: column;
@@ -191,6 +224,14 @@ body:has(.about-page) {
     top: 2.2rem;
   }
 
+  .oddity-page::before {
+    height: 5.4rem;
+  }
+
+  .oddity-frame-wrap {
+    inset: 5.4rem 0 0;
+  }
+
   .v2-caption {
     bottom: 2.55rem;
   }
@@ -201,6 +242,25 @@ body:has(.about-page) {
 
   .v2-caption .v2-eyebrow {
     font-size: 0.68rem;
+  }
+}
+
+@media (max-width: 600px) {
+  .topbar {
+    left: 1.1rem;
+    right: 1.1rem;
+  }
+
+  .nav-left {
+    gap: 0.62rem;
+  }
+
+  .socials {
+    display: none;
+  }
+
+  .interest {
+    padding: 0.48rem 0.62rem;
   }
 }
 

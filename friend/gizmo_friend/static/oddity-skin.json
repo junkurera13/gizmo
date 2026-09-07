@@ -1,0 +1,77 @@
+{
+  "id": "gizmo-reference-v2",
+  "name": "Gizmo reference v2",
+  "imageFilename": "device-reference.png",
+  "pressedImageFilename": "device-reference-ptt-pressed.png",
+  "canvasWidth": 1145,
+  "canvasHeight": 1373,
+  "stageColor": "#151517",
+  "screen": {
+    "x": 0.1581,
+    "y": 0.1755,
+    "width": 0.7153,
+    "height": 0.4975,
+    "cornerRadius": 0.0390,
+    "pixelWidth": 240,
+    "pixelHeight": 240,
+    "contentMode": "fit"
+  },
+  "controls": [
+    {
+      "id": "navigate-up",
+      "label": "Navigate up",
+      "shape": "pillTop",
+      "rect": {
+        "x": 0.9220,
+        "y": 0.3270,
+        "width": 0.0500,
+        "height": 0.0460
+      },
+      "shortAction": "navigateUp",
+      "longAction": "navigateUp",
+      "longPressSeconds": 0.0
+    },
+    {
+      "id": "navigate-down",
+      "label": "Navigate down",
+      "shape": "pillBottom",
+      "rect": {
+        "x": 0.9220,
+        "y": 0.3730,
+        "width": 0.0500,
+        "height": 0.0460
+      },
+      "shortAction": "navigateDown",
+      "longAction": "navigateDown",
+      "longPressSeconds": 0.0
+    },
+    {
+      "id": "select",
+      "label": "Select",
+      "shape": "circle",
+      "rect": {
+        "x": 0.9220,
+        "y": 0.4320,
+        "width": 0.0500,
+        "height": 0.0417
+      },
+      "shortAction": "select",
+      "longAction": "select",
+      "longPressSeconds": 0.0
+    },
+    {
+      "id": "side",
+      "label": "Push to talk",
+      "shape": "roundedRect",
+      "rect": {
+        "x": 0.0660,
+        "y": 0.2340,
+        "width": 0.0420,
+        "height": 0.3500
+      },
+      "shortAction": "ptt",
+      "longAction": "ptt",
+      "longPressSeconds": 0.65
+    }
+  ]
+}

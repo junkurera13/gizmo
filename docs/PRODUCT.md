@@ -2,6 +2,20 @@
 
 ## What it is
 
+Gizmo is a first computer for kids, built around an AI friend that brings explanations to life with words, drawings, and videos, all generated in real time. A conversation about space might become a visual story about falling into Jupiter, while a question about bridges could turn into a drawing, simulation, or game. Kids can interrupt, follow tangents, and change direction as Gizmo adapts. Instead of moving through apps or fixed content, the agent creates the next thing it needs in the moment, blending learning and storytelling into playful experiences.
+
+Manifesto: [A rocketship for the mind.](https://oddware.xyz/gizmo/manifesto) Public-site source: [`web/app/manifesto/page.tsx`](../web/app/manifesto/page.tsx).
+
+### Full vision and prototype scope
+
+The core is the agent's judgment: knowing when to narrate, what to generate, when to let a visual speak, and when to narrate over it. The explanatory craft of Kurzgesagt, Crash Course, and BibleProject is a reference for pacing, visual metaphors, and narration working with imagery. Here the kid can interrupt, follow a tangent, or change direction, and the agent adapts the whole experience. Success is a coherent, responsive audiovisual explanation or story, not simply a completed media generation.
+
+Real-time video generation is the highest-priority feature of the full vision: explanations and stories come to life as videos the kid can steer through conversation. Drawings, simulations, and games belong in that vision too; they do not take priority over video generation.
+
+The description above is the product vision, not a claim that every capability already works on the current hardware. Current hardware constraints and implementation sequencing do not narrow that vision. A software vision prototype should let people experience it beyond today's device limits. Runtime status and v1 scope are documented below and in [`V1.md`](V1.md).
+
+### The handheld experience
+
 Gizmo is an agentic personal computer for kids 9–14, in the shape of a small handheld. There are no apps. There is no home screen. There is a someone: a wizard named Gizmo, and he is the whole interface.
 
 You hold a button and talk. He decides what the moment needs — words, a viewfinder, a picture, a moving picture, a card they keep, something to play — and the device becomes that, for exactly as long as it's needed, then goes back to being his face. Nothing on the screen exists unless he conjured it for this kid, right now. The hands are the pink button (talk), a rocker, and Select. There is no touchscreen.

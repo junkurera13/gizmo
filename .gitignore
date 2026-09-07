@@ -30,3 +30,4 @@ Thumbs.db
 
 # Embedded firmware toolchain/build outputs
 body/firmware/.pio/
+.vercel

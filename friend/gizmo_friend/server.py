@@ -34,6 +34,18 @@ from gizmo_friend.brain.show_budget import MotionBudget, ShowBudget
 from gizmo_friend.session import GizmoSession
 
 STATIC = Path(__file__).parent / "static"
+ODDITY_PUBLIC_ASSETS = {
+    "/static/device-reference-ptt-pressed.png",
+    "/static/device-reference.png",
+    "/static/oddity-character.png",
+    "/static/oddity-device.css",
+    "/static/oddity-device.mjs",
+    "/static/oddity-outfit.ttf",
+    "/static/oddity-skin.json",
+    "/static/oddity-timing.mjs",
+    "/static/oddity.css",
+    "/static/oddity.js",
+}
 
 
 def app_factory(data_dir: Path) -> FastAPI:
@@ -79,7 +91,12 @@ def app_factory(data_dir: Path) -> FastAPI:
 
     @app.middleware("http")
     async def require_device_token(request: Request, call_next):
-        if request.url.path != "/health" and not authorized(request):
+        public_oddity = (
+            request.url.path in {"/oddity", "/oddity/session"}
+            or request.url.path.startswith("/oddity/media/")
+            or request.url.path in ODDITY_PUBLIC_ASSETS
+        )
+        if request.url.path != "/health" and not public_oddity and not authorized(request):
             return JSONResponse({"detail": "unauthorized"}, status_code=401)
         return await call_next(request)
 
@@ -250,6 +267,9 @@ def app_factory(data_dir: Path) -> FastAPI:
             await friend.body_disconnected(socket)
 
     if STATIC.exists():
+        from gizmo_friend.oddity.routes import router as oddity_router
+
+        app.include_router(oddity_router(data_dir, STATIC))
         app.mount("/static", StaticFiles(directory=STATIC), name="static")
     return app
 

@@ -1,5 +1,9 @@
 # Gizmo
 
+Gizmo is a first computer for kids, built around an AI friend that brings explanations to life with words, drawings, and videos, all generated in real time. Kids steer the conversation; Gizmo creates what the moment needs, blending learning and storytelling into playful experiences.
+
+Read [`docs/PRODUCT.md`](docs/PRODUCT.md) for the full product vision and priorities, and the [manifesto](https://oddware.xyz/gizmo/manifesto) for why we're building it. Real-time video generation is the highest-priority feature of that vision; the implementation described below is the current prototype.
+
 A wizard in a kid's pocket. One face, one voice, one coat. Kids 9–14. Dry, a little weird, warm underneath. He says the one line that matters and lets the kid steer; a story or a walkthrough runs longer, in chapters they pull. Magic is a chore he's good at.
 
 This repo is the device: GizmoSession (brain), Body (XIAO firmware bring-up), Glass (device renderer), and the native emulator. The public site lives in `web/`.
@@ -15,11 +19,13 @@ docs/V1.md        what v1 is and is not
 docs/ROADMAP.md   from held prototype to magic
 docs/SPRINT.md    the next eleven days: Blueprint II application, due Sep 14
 docs/SHOW.md      Show: design and build plan
+docs/ODDITY.md    OddityOS 1 browser simulator: run, architecture, and limits
 docs/DEMO.md      the 90-second film: script, staging, what's real
 friend/           GizmoSession, providers, Gemini transport, and server
 body/             XIAO ESP32S3 Sense firmware, hardware notes, protocol reference
 glass/            device renderer assets
 simulator/        native macOS emulator
+friend/gizmo_friend/oddity/  browser experience director and runtime
 web/              public site (Next.js on Vercel, /gizmo)
 ```
 
@@ -47,6 +53,8 @@ Or: `python -m gizmo_friend` from a venv with this repo installed.
 | `GIZMO_DATA_DIR` | no | Final transcript JSONL. Default `./data`. |
 
 ### Talk to him
+
+**OddityOS 1 browser simulator:** run `gizmo --host 127.0.0.1 --port 43148`, then open [localhost:43148/oddity](http://127.0.0.1:43148/oddity). This richer client coordinates generated narration, drawings, and video in connected beats. It uses the same server environment and media providers, with its own browser session and experience director. See [`docs/ODDITY.md`](docs/ODDITY.md).
 
 **Native emulator:** launch `Gizmo Simulator.app`. **Power on** cold-boots Gizmo. Hold **PTT** while talking; release to send. **Up** from home opens Settings (brightness and volume); Friend owns that menu so every protocol body paints the same snapshot. Down from home opens the Mac camera world; its live viewfinder is local preview only. The pink button sends only 24 kHz microphone PCM over the body WebSocket; the backend resamples it to Gemini's 16 kHz input. XIAO firmware, including a local Settings/memo OS that does not yet speak `/ws`, is in `body/firmware/`. Pins and acceptance notes are in `body/hardware/`.
 
