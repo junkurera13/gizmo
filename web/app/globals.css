@@ -191,11 +191,11 @@ body:has(.about-page) {
   }
 
   .v2-caption {
-    bottom: 3.7rem;
+    bottom: 3.45rem;
   }
 
   .v2-caption .hero-line {
-    font-size: clamp(2.05rem, 7.6vw, 2.4rem);
+    font-size: clamp(1.92rem, 7.1vw, 2.25rem);
   }
 
   .v2-caption .v2-eyebrow {
