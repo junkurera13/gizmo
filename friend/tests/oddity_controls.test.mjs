@@ -27,7 +27,7 @@ async function controller(getUserMedia) {
     WebSocket:{OPEN:1}, MediaRecorder:class {}, Image:class {}, captionChunks:()=>[],captionAt:()=>'',console});
   window.MediaRecorder = context.MediaRecorder;
   let source = await fs.readFile(new URL('../gizmo_friend/static/oddity.js',import.meta.url),'utf8');
-  source = source.replace(/^import .*;\n/gm, '').replace(/try \{ await mountDevice[\s\S]*$/, '');
+  source = source.replace(/^import .*;\n/gm, '').replace(/\nsyncPower\(\);[\s\S]*$/, '');
   vm.runInContext(source,context);
   vm.runInContext('awake = true; socket = {readyState:1, send(){}};',context);
   return {element,context,windowEvents,run:code=>vm.runInContext(code,context)};
@@ -53,6 +53,16 @@ test('permission denial restores the button and offers typing', async () => {
   assert.equal(app.element('device').dataset.ptt,'false');
   assert.match(app.element('notice').textContent,/declined/);
   assert.equal(app.element('listening').hidden,true);
+});
+
+test('pink button press shows the pressed skin even before the microphone opens', async () => {
+  const app = await controller(()=>new Promise(()=>{}));
+  app.run('awake = false');
+  app.run('pressTalk()');
+  assert.equal(app.element('device').dataset.ptt,'true');
+  assert.equal(app.run('awake'),false);
+  app.run('releaseTalk()');
+  assert.equal(app.element('device').dataset.ptt,'false');
 });
 
 test('losing focus cancels a held press without sending an audio turn', async () => {

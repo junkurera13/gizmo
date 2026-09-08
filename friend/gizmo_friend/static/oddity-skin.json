@@ -64,10 +64,10 @@
       "label": "Push to talk",
       "shape": "roundedRect",
       "rect": {
-        "x": 0.0660,
-        "y": 0.2340,
-        "width": 0.0420,
-        "height": 0.3500
+        "x": 0.0420,
+        "y": 0.2200,
+        "width": 0.0720,
+        "height": 0.3800
       },
       "shortAction": "ptt",
       "longAction": "ptt",

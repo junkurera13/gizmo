@@ -2,14 +2,16 @@ import {captionChunks, captionAt} from './oddity-timing.mjs';
 import {mountDevice} from './oddity-device.mjs';
 import {createOrbit} from './oddity-orbit.mjs';
 import {createInteraction} from './oddity-interaction.mjs';
+import {createGlass} from './oddity-glass.mjs?v=gate24';
 const $ = (id) => document.getElementById(id);
 const stage = $('stage'), voice = $('voice'), film = $('film');
 let socket, awake = false, turn = '', queue = [], ready = false, playing = false;
 let controller, currentBeat, paused = false, muted = false, archive = [], archiveIndex = -1;
-let history = [], plan = [], recorder, stream, held = false, recordingTimer, progressTimer;
+let history = [], plan = [], recorder, stream, held = false, talkHeld = false, recordingTimer, progressTimer;
 let microphoneAttempt = 0, mediaWaitResolve, audioUnlock, expectedClose = false;
 let captions = [];
 let orbitView, invitation, restoredInvitation, screenOrbit = false;
+let glass;
 function orbit() { return orbitView ||= createOrbit($('orbit')); }
 function interactionUI() {
   return invitation ||= createInteraction($('interaction'), stage, orbit(), {
@@ -30,18 +32,26 @@ function invite(beat) {
 const embedded = /(?:^|[?&])embedded=1(?:&|$)/.test(globalThis.location?.search || '');
 if (embedded) document.documentElement.classList.add('embedded');
 
-function stored(key) { try { return sessionStorage.getItem(key) || ''; } catch { return ''; } }
-function remember(key, value) { try { sessionStorage.setItem(key, value); } catch { /* Private mode may disable storage. */ } }
+function stored(key) {
+  try { return sessionStorage.getItem(key) || localStorage.getItem(key) || ''; }
+  catch { return ''; }
+}
+function remember(key, value) {
+  try { sessionStorage.setItem(key, value); } catch { /* Private mode may disable storage. */ }
+  try { localStorage.setItem(key, value); } catch { /* Private mode may disable storage. */ }
+}
 let session = stored('oddity-session-v1');
 voice.addEventListener('timeupdate', () => {
   if (playing && currentBeat?.audio && !voice.paused) $('caption').textContent = captionAt(captions, voice.currentTime, voice.duration);
 });
 
-function status(text, state) { $('status').textContent = text; if (state) stage.dataset.state = state; }
+function status(text, state) { $('status').textContent = text; if (state && glass?.world === 'home') stage.dataset.state = state; }
 function notice(text = '') { $('notice').textContent = text; $('notice').hidden = !text; }
 function send(value) { if (socket?.readyState === WebSocket.OPEN) socket.send(JSON.stringify(value)); }
-function inputEnabled(enabled) { for (const id of ['talk', 'thought', 'send']) $(id).disabled = !enabled; }
+function inputEnabled(enabled) { for (const id of ['thought', 'send']) $(id).disabled = !enabled; }
 function showPreviewGate(message = '') {
+  document.documentElement.classList.add('oddity-locked');
+  document.documentElement.classList.remove('oddity-ready');
   $('preview-gate').hidden = false;
   $('preview-error').textContent = message;
   playBlink();
@@ -72,7 +82,16 @@ function playBlink() {
     }
     blinkSlot = (blinkSlot + 1) % BLINK_SLOTS.length;
     eye.src = blinkFrames[BLINK_SLOTS[blinkSlot]].src;
-  }, 125);
+  }, 150);
+}
+let deviceReady = false;
+async function revealDevice() {
+  document.documentElement.classList.remove('oddity-locked');
+  document.documentElement.classList.add('oddity-ready');
+  $('preview-gate').hidden = true;
+  if (deviceReady) return;
+  deviceReady = true;
+  await mountDevice($('device'));
 }
 async function connect(previewCode) {
   if (socket && socket.readyState < WebSocket.CLOSING) return;
@@ -90,7 +109,8 @@ async function connect(previewCode) {
     if (!response.ok) throw new Error('The private preview is unavailable right now.');
     session = (await response.json()).session;
     remember('oddity-session-v1', session);
-    $('preview-gate').hidden = true;
+    if (preview) remember('oddity-preview-v1', preview);
+    await revealDevice();
   } catch (error) {
     if (!$('preview-gate').hidden) $('preview-error').textContent = error.message;
     notice(error.message); $('reconnect').hidden = false; status('Cannot reach the private preview.'); return;
@@ -99,7 +119,7 @@ async function connect(previewCode) {
   socket.onmessage = ({data}) => handle(JSON.parse(data));
   socket.onclose = () => {
     stopPlayer(); cancelRecording(); inputEnabled(false);
-    $('connection').textContent = 'Disconnected'; $('connection').className = 'connection offline';
+    $('connection').textContent = 'Disconnected';
     $('reconnect').hidden = false;
     if (!expectedClose) status('Connection closed. Reconnect when you’re ready.');
   };
@@ -107,11 +127,10 @@ async function connect(previewCode) {
 }
 function handle(event) {
   if (event.type === 'hello') {
-    $('connection').textContent = 'Gizmo'; $('connection').className = 'connection online';
     archive = event.library || []; history = event.history || []; renderNotes();
     restoredInvitation = event.current?.awaiting ? event.current : null;
-    inputEnabled(awake); $('wake').disabled = false;
-    if (awake) status('Right here. Where were we?', 'idle');
+    inputEnabled(awake); $('power').disabled = false;
+    if (awake) status('Right here. Where were we?');
     return;
   }
   if (event.type === 'turn') {
@@ -160,11 +179,43 @@ async function unlockAudio() {
     source.connect(audioUnlock.destination); source.start();
   } catch { /* HTML media exposes its own explicit play fallback. */ }
 }
+function syncPower() {
+  const on = awake || glass?.booting;
+  const button = $('power');
+  button.setAttribute('aria-checked', String(Boolean(on)));
+  button.classList.toggle?.('is-on', Boolean(on));
+  $('power-state').textContent = on ? 'On' : 'Off';
+}
+function sleep() {
+  glass.powerOff();
+}
+function onGlassOff() {
+  setTalkPressed(false);
+  if (held) cancelRecording();
+  interrupt();
+  awake = false;
+  inputEnabled(false);
+  $('starters').hidden = true;
+  orbitView?.hide();
+  screenOrbit = false;
+  stage.classList.remove('has-scene');
+  $('still').hidden = true; film.hidden = true; film.removeAttribute('src'); film.load();
+  $('caption').textContent = ''; $('chapter-title').textContent = '';
+  $('scene-position').textContent = ''; $('scene-kind').textContent = '';
+  $('beat-dots').replaceChildren(); $('home').hidden = true;
+  syncPower();
+}
 function wake() {
-  awake = true; unlockAudio(); $('wake-panel').hidden = true;
-  stage.dataset.state = 'idle'; inputEnabled(socket?.readyState === WebSocket.OPEN);
+  if (awake || glass.booting) return;
+  unlockAudio();
+  glass.powerOn();
+  syncPower();
+}
+function onGlassReady() {
+  awake = true;
+  inputEnabled(socket?.readyState === WebSocket.OPEN);
   $('starters').hidden = history.length > 0;
-  status('Hold to talk. A question, a story, anything.');
+  syncPower();
   if (restoredInvitation) {
     const beat = archive.find(b => b.id === restoredInvitation.id);
     if (beat?.interaction) {
@@ -173,6 +224,13 @@ function wake() {
     }
     restoredInvitation = null;
   }
+}
+function goHome() {
+  if (!awake) return;
+  interrupt(); orbitView?.hide(); screenOrbit = false; send({type:'home'});
+  stage.classList.remove('has-scene'); $('caption').textContent = '';
+  $('chapter-title').textContent = ''; $('scene-position').textContent = '';
+  $('scene-kind').textContent = ''; $('beat-dots').replaceChildren(); $('home').hidden = true;
 }
 function ack(phase) {
   if (currentBeat && turn) send({type:'playback', turn, id:currentBeat.id, phase, elapsed:voice.currentTime || 0});
@@ -328,10 +386,27 @@ async function submitThought(text) {
   await unlockAudio(); interrupt(); send({type:'text', text});
   $('thought').value = ''; status('Thinking it through…', 'thinking');
 }
+function setTalkPressed(pressed) {
+  talkHeld = pressed;
+  $('device').dataset.ptt = pressed ? 'true' : 'false';
+}
+function pressTalk(event) {
+  if (event && event.button !== 0) return;
+  if (event) {
+    event.preventDefault();
+    try { $('talk').setPointerCapture(event.pointerId); } catch { /* Capture is best-effort. */ }
+  }
+  setTalkPressed(true);
+  startRecording();
+}
+function releaseTalk() {
+  setTalkPressed(false);
+  if (held) stopRecording();
+}
 function cancelRecording() {
   const wasHeld = held;
   held = false; microphoneAttempt++; clearTimeout(recordingTimer);
-  $('device').dataset.ptt = 'false';
+  if (!talkHeld) $('device').dataset.ptt = 'false';
   if (recorder?.state === 'recording') { recorder.onstop = null; recorder.stop(); }
   stream?.getTracks().forEach((track) => track.stop()); stream = null;
   $('talk').classList.remove('recording'); $('listening').hidden = true;
@@ -339,7 +414,7 @@ function cancelRecording() {
   if (wasHeld) status('Microphone stopped. Hold to try again.', 'idle');
 }
 async function startRecording() {
-  if (held || !awake || socket?.readyState !== WebSocket.OPEN) return;
+  if (held || !awake || (glass && !glass.canTalk()) || socket?.readyState !== WebSocket.OPEN) return;
   held = true; const attempt = ++microphoneAttempt;
   $('device').dataset.ptt = 'true';
   interrupt(); unlockAudio(); status('Opening the microphone…', 'listening');
@@ -372,7 +447,7 @@ async function startRecording() {
 function stopRecording() {
   if (!held) return;
   held = false; clearTimeout(recordingTimer);
-  $('device').dataset.ptt = 'false';
+  if (!talkHeld) $('device').dataset.ptt = 'false';
   if (recorder?.state === 'recording') recorder.stop();
   else { microphoneAttempt++; status('Hold again after allowing the microphone.', 'idle'); }
   $('talk').classList.remove('recording'); $('listening').hidden = true; $('talk-label').textContent = 'Hold the pink side to talk';
@@ -393,7 +468,8 @@ async function browse(direction) {
     send({type:'revisit', id:beat.id});
   } catch { notice('That earlier scene is unavailable.'); }
 }
-$('wake').onclick = wake; $('reconnect').onclick = () => { notice(); connect(); };
+$('power').onclick = () => (awake || glass.booting) ? sleep() : wake();
+$('reconnect').onclick = () => { notice(); connect(); };
 $('preview-form').onsubmit = (event) => {
   event.preventDefault();
   const code = $('preview-code').value.trim();
@@ -401,14 +477,26 @@ $('preview-form').onsubmit = (event) => {
   remember('oddity-preview-v1', code); $('preview-error').textContent = ''; connect(code);
 };
 $('composer').onsubmit = (event) => { event.preventDefault(); submitThought($('thought').value); };
-$('talk').onpointerdown = (event) => { if (event.button !== 0) return; event.preventDefault(); $('talk').setPointerCapture(event.pointerId); startRecording(); };
-$('talk').onpointerup = stopRecording; $('talk').onpointercancel = cancelRecording;
-$('talk').onlostpointercapture = () => { if (held) stopRecording(); };
+$('talk').onpointerdown = pressTalk;
+$('talk').onpointerup = releaseTalk;
+$('talk').onpointercancel = () => { setTalkPressed(false); cancelRecording(); };
+$('talk').onlostpointercapture = () => { if (held) releaseTalk(); };
 $('talk').oncontextmenu = (event) => event.preventDefault();
 $('pause').onclick = togglePause;
-$('select').onclick = () => { if (!awake) wake(); else if (invitation?.select()) return; else if (playing) togglePause(); else if (!$('play-blocked').hidden) $('play-blocked').click(); else $('home').click(); };
-$('previous').onclick = () => { if (!invitation?.step(-1)) browse(-1); }; $('next').onclick = () => { if (!invitation?.step(1)) browse(1); };
-$('home').onclick = () => { if (!awake) return; interrupt(); orbitView?.hide(); screenOrbit = false; send({type:'home'}); stage.classList.remove('has-scene'); $('caption').textContent = ''; $('chapter-title').textContent = ''; $('scene-position').textContent = ''; $('scene-kind').textContent = ''; $('beat-dots').replaceChildren(); $('home').hidden = true; status('Right here.', 'idle'); };
+function onSelect() {
+  glass.select({
+    invitation,
+    playing,
+    togglePause,
+    playBlocked: $('play-blocked'),
+    hasScene: stage.classList.contains('has-scene'),
+    goHome,
+  });
+}
+$('select').onclick = onSelect;
+$('previous').onclick = () => glass.navigate('up');
+$('next').onclick = () => glass.navigate('down');
+$('home').onclick = goHome;
 $('sound').onclick = () => { muted = !muted; voice.muted = muted; $('sound').textContent = muted ? 'Sound off' : 'Sound on'; $('sound').setAttribute('aria-pressed', String(muted)); $('sound').setAttribute('aria-label', muted ? 'Unmute narration' : 'Mute narration'); };
 $('expand').onclick = async () => { try { if (document.fullscreenElement) await document.exitFullscreen(); else await document.documentElement.requestFullscreen(); } catch { notice('Fullscreen is unavailable in this browser.'); } };
 document.addEventListener('fullscreenchange', () => $('expand').setAttribute('aria-label', document.fullscreenElement ? 'Exit fullscreen' : 'Enter fullscreen'));
@@ -419,15 +507,25 @@ const typing = () => (document.activeElement?.id !== 'talk' && ['INPUT','TEXTARE
 window.addEventListener('keydown', (event) => {
   if (!$('preview-gate').hidden) return;
   if (event.repeat || typing()) return;
-  if (event.code === 'Space') { event.preventDefault(); startRecording(); }
+  if (event.code === 'Space') { event.preventDefault(); pressTalk(); }
   if (event.code === 'Enter') { event.preventDefault(); $('select').click(); }
   if (event.code === 'ArrowUp') { event.preventDefault(); $('previous').click(); }
   if (event.code === 'ArrowDown') { event.preventDefault(); $('next').click(); }
-  if (event.code === 'Escape') $('home').click();
+  if (event.code === 'Escape') goHome();
 });
-window.addEventListener('keyup', (event) => { if (event.code === 'Space' && held) { event.preventDefault(); stopRecording(); } });
-window.addEventListener('blur', () => { if (held) cancelRecording(); });
-document.addEventListener('visibilitychange', () => { if (document.hidden) { cancelRecording(); if (playing && !paused) togglePause(); } });
-window.addEventListener('pagehide', () => { expectedClose = true; cancelRecording(); stopPlayer(); socket?.close(); });
-try { await mountDevice($('device')); connect(); }
+window.addEventListener('keyup', (event) => { if (event.code === 'Space') { event.preventDefault(); releaseTalk(); } });
+window.addEventListener('blur', () => { setTalkPressed(false); if (held) cancelRecording(); });
+document.addEventListener('visibilitychange', () => { if (document.hidden) { setTalkPressed(false); cancelRecording(); if (playing && !paused) togglePause(); } });
+window.addEventListener('pagehide', () => { expectedClose = true; setTalkPressed(false); cancelRecording(); stopPlayer(); socket?.close(); });
+syncPower();
+glass = createGlass(stage, {
+  ready: onGlassReady,
+  off: onGlassOff,
+  clearShow() { if (stage.classList.contains('has-scene')) goHome(); },
+  volume(level) { if (!muted) voice.volume = level; },
+});
+try {
+  if (document.documentElement.classList.contains('oddity-locked')) playBlink();
+  await connect();
+}
 catch (error) { notice(error.message); status('The device could not load.'); }

@@ -5,11 +5,36 @@
   <meta name="theme-color" content="#151517">
   <title>OddityOS 1 — Gizmo</title>
   <link rel="icon" href="data:,">
+  <link rel="stylesheet" href="/static/oddity-boot.css?v=gate14">
   <link rel="stylesheet" href="/static/oddity.css">
-  <link rel="stylesheet" href="/static/oddity-device.css?v=gate4">
+  <link rel="stylesheet" href="/static/oddity-device.css?v=gate24">
   <link rel="stylesheet" href="/static/oddity-experience.css">
   <link rel="preload" as="image" href="/static/device-reference-ptt-pressed.png">
-  <script type="module" src="/static/oddity.js?v=gate5"></script>
+  <link rel="preload" as="image" href="/static/oddity-boot-00.jpg">
+  <link rel="preload" as="image" href="/static/oddity-boot-01.jpg">
+  <link rel="preload" as="image" href="/static/oddity-boot-02.jpg">
+  <link rel="preload" as="image" href="/static/oddity-boot-03.jpg">
+  <link rel="preload" as="image" href="/static/oddity-boot-04.jpg">
+  <link rel="preload" as="image" href="/static/oddity-boot-05.jpg">
+  <link rel="preload" as="image" href="/static/oddity-boot-06.jpg">
+  <link rel="preload" as="image" href="/static/oddity-boot-07.jpg">
+  <link rel="preload" as="image" href="/static/oddity-boot-08.jpg">
+  <link rel="preload" as="image" href="/static/oddity-boot-09.jpg">
+  <link rel="preload" as="image" href="/static/oddity-boot-10.jpg">
+  <link rel="preload" as="image" href="/static/oddity-boot-11.jpg">
+  <link rel="preload" as="image" href="/static/oddity-boot-12.jpg">
+  <link rel="preload" as="image" href="/static/oddity-boot-13.jpg">
+  <link rel="preload" as="image" href="/static/oddity-boot-14.jpg">
+  <script>
+    try {
+      if (!(sessionStorage.getItem('oddity-preview-v1') || localStorage.getItem('oddity-preview-v1'))) {
+        document.documentElement.classList.add('oddity-locked');
+      }
+    } catch (error) {
+      document.documentElement.classList.add('oddity-locked');
+    }
+  </script>
+  <script type="module" src="/static/oddity.js?v=gate24"></script>
 </head>
 <body>
   <header class="masthead">
@@ -31,37 +56,93 @@
       <p id="preview-error" class="preview-error" role="alert"></p>
     </form>
   </section>
+  <script>
+    if (document.documentElement.classList.contains('oddity-locked')) {
+      document.getElementById('preview-gate').hidden = false;
+    }
+  </script>
   <main>
     <section class="simulator" aria-label="Gizmo simulator">
       <div id="device" class="device" aria-label="Gizmo handheld">
         <img class="device-art device-rest" src="/static/device-reference.png" alt="" draggable="false">
         <img class="device-art device-pressed" src="/static/device-reference-ptt-pressed.png" alt="" draggable="false">
-        <div id="stage" class="stage" data-state="asleep">
-          <div class="stage-top"><span id="connection" class="connection">Connecting</span><span id="chapter-title"></span><button id="home" class="stage-home" aria-label="Return to Gizmo's face" hidden>↩</button></div>
-          <div id="scene" class="scene"><img id="still" alt="" hidden><video id="film" muted playsinline preload="auto" hidden></video><canvas id="orbit" class="orbit-canvas" aria-label="Orbit experiment: a satellite falling around Earth" hidden></canvas></div>
-          <div id="friend" class="friend"><img src="/static/oddity-character.png" alt="Gizmo" draggable="false"></div>
-          <div id="wake-panel" class="wake-panel"><button id="wake" class="wake">Wake Gizmo <span>↗</span></button></div>
-          <div id="caption" class="caption" aria-live="polite"></div>
-          <div id="interaction" class="interaction" aria-label="Explore with Gizmo" hidden></div>
-          <button id="play-blocked" class="play-blocked" hidden>Tap to play narration</button>
-          <div id="listening" class="listening" hidden><i></i><i></i><i></i><i></i><i></i><span>I'm listening</span></div>
-          <div class="stage-bottom"><span id="scene-position"></span><div id="beat-dots" class="beat-dots" aria-label="Experience progress"></div><span id="scene-kind"></span></div>
+        <div id="stage" class="stage" data-glass="off" data-state="off">
+          <div class="glass">
+            <div id="glass-dim" class="glass-dim" aria-hidden="true"></div>
+            <div id="glass-boot" class="glass-boot" hidden>
+              <img id="glass-boot-frame" alt="" draggable="false">
+            </div>
+            <div id="glass-home" class="glass-home" hidden>
+              <div class="glass-hud">
+                <span id="glass-clock" class="glass-clock"></span>
+                <span id="glass-hearts" class="glass-hearts" aria-label="Battery">
+                  <img src="/static/oddity-heart-full.png" alt="">
+                  <img src="/static/oddity-heart-full.png" alt="">
+                  <img src="/static/oddity-heart-full.png" alt="">
+                  <img src="/static/oddity-heart-full.png" alt="">
+                  <img src="/static/oddity-heart-full.png" alt="">
+                </span>
+              </div>
+              <div id="friend" class="friend"><img src="/static/oddity-character.png" alt="" draggable="false"></div>
+            </div>
+            <div id="glass-settings" class="glass-settings" hidden>
+              <div class="glass-setting" data-key="brightness">
+                <i class="glass-caret" aria-hidden="true"></i>
+                <div class="glass-setting-body">
+                  <p>BRIGHTNESS</p>
+                  <div class="glass-meter"></div>
+                </div>
+                <span class="glass-ticks" aria-hidden="true"></span>
+              </div>
+              <div class="glass-setting" data-key="volume">
+                <i class="glass-caret" aria-hidden="true"></i>
+                <div class="glass-setting-body">
+                  <p>VOLUME</p>
+                  <div class="glass-meter"></div>
+                </div>
+                <span class="glass-ticks" aria-hidden="true"></span>
+              </div>
+            </div>
+            <div id="glass-camera" class="glass-camera" hidden>
+              <div class="camera-finder">
+                <video id="camera-feed" autoplay muted playsinline hidden></video>
+                <span id="camera-status">CAMERA</span>
+              </div>
+              <div class="camera-strip">
+                <img src="/static/oddity-character.png" alt="" draggable="false">
+              </div>
+            </div>
+            <div id="scene" class="scene"><img id="still" alt="" hidden><video id="film" muted playsinline preload="auto" hidden></video><canvas id="orbit" class="orbit-canvas" aria-label="Orbit experiment: a satellite falling around Earth" hidden></canvas></div>
+            <div id="caption" class="caption" aria-live="polite"></div>
+            <div id="interaction" class="interaction" aria-label="Explore with Gizmo" hidden></div>
+            <button id="play-blocked" class="play-blocked" hidden>Tap to play narration</button>
+            <div id="listening" class="listening" hidden></div>
+            <div class="stage-top" hidden><span id="connection" class="connection"></span><span id="chapter-title"></span><button id="home" class="stage-home" type="button" hidden>↩</button></div>
+            <div class="stage-bottom" hidden><span id="scene-position"></span><div id="beat-dots" class="beat-dots"></div><span id="scene-kind"></span></div>
+          </div>
         </div>
-        <button id="talk" class="device-control device-talk" aria-label="Hold to talk" aria-describedby="talk-label" title="Hold to talk · Space" disabled></button>
-        <button id="previous" class="device-control device-up" aria-label="Previous scene" title="Previous scene · ↑">⌃</button>
-        <button id="next" class="device-control device-down" aria-label="Next scene" title="Next scene · ↓">⌄</button>
-        <button id="select" class="device-control device-select" aria-label="Select: pause or continue" title="Select · Enter">✓</button>
+        <button id="talk" type="button" class="device-control device-talk" aria-label="Hold to talk" aria-describedby="talk-label" title="Hold to talk · Space"></button>
+        <button id="previous" type="button" class="device-control device-up" aria-label="Navigate up" title="Up · Settings">⌃</button>
+        <button id="next" type="button" class="device-control device-down" aria-label="Navigate down" title="Down · Camera">⌄</button>
+        <button id="select" type="button" class="device-control device-select" aria-label="Select" title="Select · Enter">✓</button>
+      </div>
+      <div class="power-bar">
+        <button id="power" type="button" class="power-toggle" role="switch" aria-checked="false" aria-label="Power">
+          <span class="power-track" aria-hidden="true"><span class="power-knob"></span></span>
+          <span id="power-state">Off</span>
+        </button>
       </div>
       <div class="below-screen"><p id="status" role="status">A friend, and whatever comes next.</p><button id="reconnect" class="quiet" hidden>Reconnect</button><button id="pause" class="quiet" hidden>Pause</button></div>
       <p id="notice" class="notice" role="alert" hidden></p>
-      <div class="device-hints"><span id="talk-label">Hold the pink side to talk <kbd>space</kbd></span><span><kbd>↑ ↓</kbd> Explore <kbd>↵</kbd> Select</span></div>
+      <div class="device-hints"><span id="talk-label">Hold the pink side to talk <kbd>space</kbd></span><span><kbd>↑</kbd> Settings <kbd>↓</kbd> Camera <kbd>↵</kbd> Select</span></div>
       <form id="composer" class="composer"><input id="thought" name="thought" placeholder="Or type a thought…" aria-label="Your thought" maxlength="3000" autocomplete="off" disabled><button id="send" aria-label="Send thought" disabled>↗</button></form>
       <div id="starters" class="starters" hidden><button>Why don't satellites fall down?</button><button>What if I fell into Jupiter?</button></div>
     </section>
   </main>
   <footer><span>Gizmo · Browser preview</span><button id="open-notes" class="quiet">Session notes</button><span class="keyboard-hint">Interrupt whenever curiosity takes you.</span></footer>
-  <dialog id="help-dialog"><button class="dialog-close" data-close aria-label="Close help">×</button><h2>Follow your curiosity.</h2><p>Hold the pink button or Space to speak. Let go when you're done. You can also type.</p><p>Gizmo chooses when to explain, draw, or make a moving picture. Some scenes take a moment to arrive.</p><p>Talk again to interrupt. Select pauses or continues. The arrows revisit scenes you've already seen.</p><p class="fine">Your conversation and generated scenes stay in this browser's session on the server. Microphone recording runs only while you hold the button, for up to 45 seconds. No camera is used.</p></dialog>
+  <dialog id="help-dialog"><button class="dialog-close" data-close aria-label="Close help">×</button><h2>Follow your curiosity.</h2><p>Power on. Hold the pink button or Space to speak. Let go when you're done.</p><p>Up opens Settings. Down opens Camera. Select confirms, or double-press Select for Camera. Down past Volume returns Home.</p><p class="fine">Your conversation and generated scenes stay in this browser's session on the server. Microphone recording runs only while you hold the button, for up to 45 seconds.</p></dialog>
   <dialog id="notes-dialog"><button class="dialog-close" data-close aria-label="Close session notes">×</button><h2>This conversation</h2><div id="notes"></div><details><summary>Experience direction</summary><ol id="direction"></ol></details></dialog>
   <audio id="voice" preload="auto"></audio>
+  <audio id="glass-boot-audio" src="/static/oddity-boot.wav" preload="auto"></audio>
 </body>
 </html>
