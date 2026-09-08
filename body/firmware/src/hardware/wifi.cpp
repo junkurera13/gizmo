@@ -8,7 +8,8 @@
 namespace gizmo {
 namespace {
 constexpr uint16_t kDnsPort = 53;
-constexpr uint32_t kConnectTimeoutMs = 20000;
+constexpr uint32_t kSavedConnectTimeoutMs = 10000;
+constexpr uint32_t kPortalConnectTimeoutMs = 20000;
 constexpr uint32_t kScanPeriodMs = 8000;
 constexpr uint32_t kStatusPeriodMs = 2000;
 constexpr int kMaxListed = 12;
@@ -84,8 +85,14 @@ void WifiLink::send_portal() {
             "button{background:#fff;color:#111;font-weight:600}"
             ".net{display:block;width:100%;text-align:left;background:#1c1c1c;color:#fff;"
             "margin:0 0 8px;padding:14px} .err{color:#f66;margin:0 0 12px}</style></head><body>");
-  page += F("<h1>Gizmo</h1><p>Pick your Wi-Fi. This is saved on the device; "
-            "you only do this once.</p>");
+  page += F("<h1>Gizmo</h1><p>Pick your Wi-Fi. This is saved on the device.</p>");
+  if (sta_ssid_[0] && phase_ == WifiPhase::kPortal) {
+    String escaped_saved;
+    html_escape(String(sta_ssid_), escaped_saved);
+    page += F("<p>Saved network <b>");
+    page += escaped_saved;
+    page += F("</b> was not in range. Pick one that is, or type that name to keep it.</p>");
+  }
   if (detail_[0] && phase_ != WifiPhase::kPortal) {
     page += "<p class=err>";
     page += escaped_error;
@@ -101,7 +108,15 @@ void WifiLink::send_portal() {
     page += scan_html_;
   }
   page += F("<form method=POST action=/join>"
-            "<input name=ssid id=ssid placeholder=\"Network name\" maxlength=32 required>"
+            "<input name=ssid id=ssid placeholder=\"Network name\" maxlength=32 required");
+  if (sta_ssid_[0]) {
+    String escaped_ssid;
+    html_escape(String(sta_ssid_), escaped_ssid);
+    page += F(" value=\"");
+    page += escaped_ssid;
+    page += '"';
+  }
+  page += F(">"
             "<input name=pass type=password placeholder=\"Password\" maxlength=63>"
             "<button type=submit>Connect</button></form>"
             "<script>function pick(s){document.getElementById('ssid').value=s}</script>"
@@ -121,8 +136,9 @@ void WifiLink::handle_join() {
             F("<!DOCTYPE html><html><head><meta charset=utf-8>"
               "<meta name=viewport content=\"width=device-width,initial-scale=1\">"
               "<title>Gizmo</title></head><body style=\"font-family:sans-serif;background:#111;color:#eee;padding:24px\">"
-              "<h1>Connecting</h1><p>You can leave this page. Gizmo will join the network "
-              "and this setup Wi-Fi will disappear.</p></body></html>"));
+              "<h1>Connecting</h1><p>You can leave this page. Gizmo saves this network even if it is "
+              "out of range, then tries to join. Setup Wi-Fi stays up until it is online.</p></body></html>"));
+  save_credentials();
   start_sta(sta_ssid_, sta_pass_, true);
 }
 
@@ -311,15 +327,21 @@ void WifiLink::update() {
       strncpy(sta_ssid_, WiFi.SSID().c_str(), sizeof(sta_ssid_) - 1);
       sta_ssid_[sizeof(sta_ssid_) - 1] = '\0';
       finish_online();
-    } else if (millis() - connect_started_ >= kConnectTimeoutMs) {
+    } else if (millis() - connect_started_ >=
+               (join_from_portal_ ? kPortalConnectTimeoutMs : kSavedConnectTimeoutMs)) {
       if (join_from_portal_) {
-        Serial.println("wifi: join timed out");
+        Serial.println("wifi: join timed out; credentials kept");
         strncpy(detail_, "WRONG PASSWORD OR TIMEOUT", sizeof(detail_) - 1);
+        detail_[sizeof(detail_) - 1] = '\0';
         WiFi.disconnect(false, false);
         start_portal();
       } else {
-        Serial.printf("wifi: join timed out, retrying \"%s\"\n", sta_ssid_);
-        start_sta(sta_ssid_, sta_pass_, false);
+        Serial.printf("wifi: saved \"%s\" not in range after %us; opening portal (credentials kept)\n",
+                      sta_ssid_, static_cast<unsigned>(kSavedConnectTimeoutMs / 1000));
+        strncpy(detail_, "SAVED WIFI NOT FOUND", sizeof(detail_) - 1);
+        detail_[sizeof(detail_) - 1] = '\0';
+        WiFi.disconnect(false, false);
+        start_portal();
       }
     }
   } else if (phase_ == WifiPhase::kOnline) {

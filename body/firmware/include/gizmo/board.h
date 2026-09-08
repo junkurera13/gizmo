@@ -34,14 +34,15 @@ constexpr int display_width = 320;
 constexpr int display_height = 240;
 
 // Sense expansion board microSD chip select. The slot shares SCK/MOSI with the
-// panel and MISO (GPIO8) with the amplifier BCLK, so it is held HIGH forever.
+// panel and MISO (GPIO8) with the speaker PWM pin, so it is held HIGH forever.
 constexpr int sd_cs = 21;
 
-// MAX98357A I2S amplifier (builder breadboard, 2026-09-06). I2S_NUM_1, Philips.
-// XIAO D0=GPIO1 LRC, D3=GPIO4 DIN, D9=GPIO8 BCLK.
-constexpr int amp_lrc = 1;
-constexpr int amp_din = 4;
-constexpr int amp_bclk = 8;
+// Adafruit STEMMA Speaker 3885 (TS2012 Class-D + 1 W / 8 Ω). Analog IN only:
+// STEMMA white → D9/GPIO8 (LEDC PWM), red → 3V3, black → GND. GPIO8 is also
+// Sense microSD MISO; SD CS stays HIGH. On-board trim pot is analog gain.
+constexpr int amp_out = 8;
+constexpr int amp_bclk = 1;  // unused (was MAX98357A BCLK)
+constexpr int amp_ws = 4;    // unused (was MAX98357A LRC)
 
 // Controls. PTT is the 5-way switch centre click on D1, active-LOW, internal
 // pull-up. UP/DOWN/SELECT share one resistor ladder on D4 (GPIO5 / ADC1_CH4)

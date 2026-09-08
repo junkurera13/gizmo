@@ -4,18 +4,176 @@
 #include <Arduino.h>
 #include <driver/i2s.h>
 #include <esp_heap_caps.h>
+#ifdef ARDUINO
+#include <driver/ledc.h>
+#endif
 
 namespace gizmo {
 namespace {
-constexpr i2s_port_t kMicPort = I2S_NUM_0;  // PDM RX exists only on controller 0
-constexpr i2s_port_t kAmpPort = I2S_NUM_1;
+constexpr i2s_port_t kMicPort = I2S_NUM_0;  // PDM RX/TX exist only on controller 0
+constexpr i2s_port_t kAmpPort = I2S_NUM_1;  // host tests only; device speaker is LEDC PWM
 constexpr int kDmaBuffers = 12;
 constexpr int kDmaFrames = 256;
-// PDM output from the Sense microphone is quiet; a fixed digital gain keeps
-// the memo audible without touching the amplifier's GAIN strap.
-constexpr int32_t kMicGain = 4;
+constexpr size_t kAmpRingSamples = kDmaBuffers * kDmaFrames;
+constexpr int32_t kMicGain = 3;
 constexpr int kMaxChunksPerUpdate = 16;
 constexpr uint32_t kVuDecayMs = 60;
+
+#ifdef ARDUINO
+// 10-bit at 39062 Hz is the S3 LEDC XTAL limit (40 MHz / 1024). 8-bit/125 kHz
+// was the scratchy radio; hardware PDM TX is I2S0-only and crashed I2S1.
+constexpr uint8_t kPwmChannel = 4;  // LEDC_TIMER_2; camera XCLK keeps TIMER_0
+constexpr uint8_t kPwmBits = 10;
+constexpr uint32_t kPwmFreq = 39062;
+constexpr uint32_t kPwmIdleDuty = 1u << (kPwmBits - 1);
+constexpr uint8_t kPwmTimerIndex = 0;
+constexpr uint16_t kPwmTimerDivider = 500;  // 80 MHz / 500 = 160 kHz
+constexpr uint64_t kPwmTimerAlarm = 5;      // 160 kHz / 5 = 32 kHz ISR
+
+portMUX_TYPE amp_mux = portMUX_INITIALIZER_UNLOCKED;
+hw_timer_t* amp_timer = nullptr;
+int16_t amp_ring[kAmpRingSamples];
+volatile size_t amp_w = 0;
+volatile size_t amp_r = 0;
+volatile size_t amp_n = 0;
+bool amp_running = false;
+int16_t pwm_prev = 0;
+int16_t pwm_curr = 0;
+bool pwm_odd = false;
+int32_t pwm_err = 0;
+int32_t mic_hp_x_ = 0;
+int32_t mic_hp_y_ = 0;
+
+void IRAM_ATTR amp_isr() {
+  int32_t sample;
+  if (!pwm_odd) {
+    pwm_prev = pwm_curr;
+    int16_t fetched = 0;
+    portENTER_CRITICAL_ISR(&amp_mux);
+    if (amp_n > 0) {
+      fetched = amp_ring[amp_r];
+      amp_r = (amp_r + 1) % kAmpRingSamples;
+      --amp_n;
+    }
+    portEXIT_CRITICAL_ISR(&amp_mux);
+    pwm_curr = fetched;
+    sample = pwm_curr;
+  } else {
+    sample = (static_cast<int32_t>(pwm_prev) + pwm_curr) / 2;
+  }
+  pwm_odd = !pwm_odd;
+
+  int32_t shaped = sample + pwm_err;
+  if (shaped > 32767) shaped = 32767;
+  if (shaped < -32768) shaped = -32768;
+  const uint32_t duty = static_cast<uint32_t>(shaped + 32768) >> (16 - kPwmBits);
+  pwm_err = shaped - (static_cast<int32_t>(duty << (16 - kPwmBits)) - 32768);
+
+  ledc_set_duty(LEDC_LOW_SPEED_MODE, static_cast<ledc_channel_t>(kPwmChannel), duty);
+  ledc_update_duty(LEDC_LOW_SPEED_MODE, static_cast<ledc_channel_t>(kPwmChannel));
+}
+
+void amp_hold_low() {
+  ledcDetachPin(board::amp_out);
+  pinMode(board::amp_out, OUTPUT);
+  digitalWrite(board::amp_out, LOW);
+}
+
+void reset_mic_filters() {
+  mic_hp_x_ = mic_hp_y_ = 0;
+}
+
+int16_t condition_mic_sample(int16_t raw) {
+  const int32_t x = raw;
+  const int32_t hp = x - mic_hp_x_ + (mic_hp_y_ * 31) / 32;
+  mic_hp_x_ = x;
+  mic_hp_y_ = hp;
+  int32_t value = hp * kMicGain;
+  if (value > 32767) value = 32767;
+  if (value < -32768) value = -32768;
+  return static_cast<int16_t>(value);
+}
+#endif
+
+esp_err_t amp_start() {
+#ifdef ARDUINO
+  if (amp_running) return ESP_OK;
+  portENTER_CRITICAL(&amp_mux);
+  amp_w = amp_r = amp_n = 0;
+  portEXIT_CRITICAL(&amp_mux);
+  pwm_prev = pwm_curr = 0;
+  pwm_odd = false;
+  pwm_err = 0;
+  if (ledcSetup(kPwmChannel, kPwmFreq, kPwmBits) == 0) {
+    Serial.println("speaker: LEDC setup failed");
+    return ESP_FAIL;
+  }
+  ledcAttachPin(board::amp_out, kPwmChannel);
+  ledcWrite(kPwmChannel, kPwmIdleDuty);
+  if (amp_timer == nullptr) {
+    amp_timer = timerBegin(kPwmTimerIndex, kPwmTimerDivider, true);
+    if (amp_timer == nullptr) {
+      amp_hold_low();
+      return ESP_FAIL;
+    }
+    timerAttachInterrupt(amp_timer, &amp_isr, true);
+    timerAlarmWrite(amp_timer, kPwmTimerAlarm, true);
+  }
+  timerAlarmEnable(amp_timer);
+  amp_running = true;
+  return ESP_OK;
+#else
+  i2s_zero_dma_buffer(kAmpPort);
+  return i2s_start(kAmpPort);
+#endif
+}
+
+void amp_stop() {
+#ifdef ARDUINO
+  if (amp_timer != nullptr) timerAlarmDisable(amp_timer);
+  portENTER_CRITICAL(&amp_mux);
+  amp_w = amp_r = amp_n = 0;
+  portEXIT_CRITICAL(&amp_mux);
+  if (amp_running) {
+    ledcWrite(kPwmChannel, 0);
+    amp_hold_low();
+  }
+  amp_running = false;
+#else
+  i2s_zero_dma_buffer(kAmpPort);
+  i2s_stop(kAmpPort);
+#endif
+}
+
+void amp_clear() {
+#ifdef ARDUINO
+  portENTER_CRITICAL(&amp_mux);
+  amp_w = amp_r = amp_n = 0;
+  portEXIT_CRITICAL(&amp_mux);
+  pwm_prev = pwm_curr = 0;
+  pwm_odd = false;
+  pwm_err = 0;
+#else
+  i2s_zero_dma_buffer(kAmpPort);
+#endif
+}
+
+esp_err_t amp_write(const int16_t* samples, size_t count, size_t* written) {
+#ifdef ARDUINO
+  size_t n = 0;
+  portENTER_CRITICAL(&amp_mux);
+  while (n < count && amp_n < kAmpRingSamples) {
+    amp_ring[amp_w] = samples[n++];
+    amp_w = (amp_w + 1) % kAmpRingSamples;
+    ++amp_n;
+  }
+  portEXIT_CRITICAL(&amp_mux);
+  *written = n * sizeof(int16_t);
+  return n < count ? ESP_ERR_TIMEOUT : ESP_OK;
+#else
+  return i2s_write(kAmpPort, samples, count * sizeof(int16_t), written, 0);
+#endif
+}
 
 i2s_config_t base_config(i2s_mode_t mode, i2s_channel_fmt_t channels) {
   i2s_config_t config{};
@@ -38,7 +196,7 @@ i2s_config_t base_config(i2s_mode_t mode, i2s_channel_fmt_t channels) {
 
 esp_err_t Audio::install_mic() {
   const auto config = base_config(
-      static_cast<i2s_mode_t>(I2S_MODE_MASTER | I2S_MODE_RX | I2S_MODE_PDM), I2S_CHANNEL_FMT_ONLY_LEFT);
+      static_cast<i2s_mode_t>(I2S_MODE_MASTER | I2S_MODE_RX | I2S_MODE_PDM), I2S_CHANNEL_FMT_RIGHT_LEFT);
   esp_err_t result = i2s_driver_install(kMicPort, &config, 0, nullptr);
   if (result != ESP_OK) return result;
   i2s_pin_config_t pins{};
@@ -49,24 +207,34 @@ esp_err_t Audio::install_mic() {
   pins.data_in_num = board::microphone_data;
   result = i2s_set_pin(kMicPort, &pins);
   if (result != ESP_OK) return result;
+  // IDF 4.4 PDM RX defaults to 8-sample downsample, which pitches recordings up.
+  result = i2s_set_pdm_rx_down_sample(kMicPort, I2S_PDM_DSR_16S);
+  if (result != ESP_OK) return result;
+  result = i2s_set_clk(kMicPort, Audio::kSampleRate, I2S_BITS_PER_SAMPLE_16BIT, I2S_CHANNEL_STEREO);
+  if (result != ESP_OK) return result;
   return i2s_stop(kMicPort);
 }
 
 esp_err_t Audio::install_amp() {
+#ifdef ARDUINO
+  amp_hold_low();
+  return ESP_OK;
+#else
   const auto config = base_config(
-      static_cast<i2s_mode_t>(I2S_MODE_MASTER | I2S_MODE_TX), I2S_CHANNEL_FMT_RIGHT_LEFT);
+      static_cast<i2s_mode_t>(I2S_MODE_MASTER | I2S_MODE_TX), I2S_CHANNEL_FMT_ONLY_LEFT);
   esp_err_t result = i2s_driver_install(kAmpPort, &config, 0, nullptr);
   if (result != ESP_OK) return result;
   i2s_pin_config_t pins{};
   pins.mck_io_num = I2S_PIN_NO_CHANGE;
-  pins.bck_io_num = board::amp_bclk;
-  pins.ws_io_num = board::amp_lrc;
-  pins.data_out_num = board::amp_din;
+  pins.bck_io_num = I2S_PIN_NO_CHANGE;
+  pins.ws_io_num = I2S_PIN_NO_CHANGE;
+  pins.data_out_num = board::amp_out;
   pins.data_in_num = I2S_PIN_NO_CHANGE;
   result = i2s_set_pin(kAmpPort, &pins);
   if (result != ESP_OK) return result;
   i2s_zero_dma_buffer(kAmpPort);
-  return i2s_stop(kAmpPort);  // no BCLK: MAX98357A sits in shutdown, no whine
+  return i2s_stop(kAmpPort);
+#endif
 }
 
 esp_err_t Audio::begin() {
@@ -103,6 +271,9 @@ bool Audio::start_recording() {
   peak_ = 0;
   vu_ = 0;
   capture_w_ = capture_r_ = capture_n_ = 0;
+#ifdef ARDUINO
+  reset_mic_filters();
+#endif
   i2s_zero_dma_buffer(kMicPort);
   if (i2s_start(kMicPort) != ESP_OK) return false;
   recording_ = true;
@@ -134,10 +305,10 @@ bool Audio::start_clip(const int16_t* samples, size_t count) {
   live_playing_ = false;
   live_armed_ = false;
   peak_ = 0;
-  i2s_zero_dma_buffer(kAmpPort);
-  if (i2s_start(kAmpPort) != ESP_OK) return false;
+  amp_clear();
+  if (amp_start() != ESP_OK) return false;
   playing_ = true;
-  pump_playback();  // prime the DMA ring before returning
+  pump_playback();  // prime the speaker ring before returning
   return true;
 }
 
@@ -149,8 +320,7 @@ void Audio::stop_playback() {
   draining_ = false;
   source_ = nullptr;
   live_n_ = live_r_ = live_w_ = 0;
-  i2s_zero_dma_buffer(kAmpPort);
-  i2s_stop(kAmpPort);  // no BCLK: MAX98357A sits in shutdown
+  amp_stop();
 }
 
 void Audio::stop_live() {
@@ -180,7 +350,7 @@ bool Audio::arm_live() {
   peak_ = 0;
   source_ = nullptr;
   live_armed_ = true;
-  // Amp clocks stay down until pump_live sees samples (no idle BCLK / whine).
+  // PWM stays off until pump_live sees samples (no idle carrier).
   return true;
 }
 
@@ -213,22 +383,45 @@ void Audio::track_level(const int16_t* samples, size_t count) {
 }
 
 void Audio::pump_recording() {
+  int16_t pdm_stereo[kChunkSamples * 2];
   for (int chunk = 0; chunk < kMaxChunksPerUpdate && recording_; ++chunk) {
     size_t bytes = 0;
-    if (i2s_read(kMicPort, chunk_, sizeof(chunk_), &bytes, 0) != ESP_OK || bytes == 0) return;
-    size_t count = bytes / sizeof(int16_t);
-    const int16_t* source = chunk_;
+    if (i2s_read(kMicPort, pdm_stereo, sizeof(pdm_stereo), &bytes, 0) != ESP_OK || bytes == 0) return;
+    size_t count = 0;
+    if (bytes >= 4 && (bytes % 4) == 0) {
+      const size_t frames = bytes / 4;
+      int32_t energy_left = 0;
+      int32_t energy_right = 0;
+      const size_t probe = frames < 32 ? frames : 32;
+      for (size_t i = 0; i < probe; ++i) {
+        const int16_t left = pdm_stereo[i * 2];
+        const int16_t right = pdm_stereo[i * 2 + 1];
+        energy_left += left < 0 ? -left : left;
+        energy_right += right < 0 ? -right : right;
+      }
+      const size_t channel = energy_right > energy_left * 2 ? 1 : 0;
+      count = frames < kChunkSamples ? frames : kChunkSamples;
+      for (size_t i = 0; i < count; ++i) chunk_[i] = pdm_stereo[i * 2 + channel];
+    } else {
+      count = bytes / sizeof(int16_t);
+      if (count > kChunkSamples) count = kChunkSamples;
+      for (size_t i = 0; i < count; ++i) chunk_[i] = pdm_stereo[i];
+    }
     if (warmup_left_ > 0) {
       const size_t skip = count < warmup_left_ ? count : warmup_left_;
       warmup_left_ -= skip;
-      source += skip;
+      for (size_t i = 0; i + skip < count; ++i) chunk_[i] = chunk_[i + skip];
       count -= skip;
     }
     for (size_t i = 0; i < count; ++i) {
-      int32_t value = static_cast<int32_t>(source[i]) * kMicGain;
+#ifdef ARDUINO
+      chunk_[i] = condition_mic_sample(chunk_[i]);
+#else
+      int32_t value = static_cast<int32_t>(chunk_[i]) * kMicGain;
       if (value > 32767) value = 32767;
       if (value < -32768) value = -32768;
       chunk_[i] = static_cast<int16_t>(value);
+#endif
     }
     track_level(chunk_, count);
     if (capture_n_ < kCaptureRingChunks) {
@@ -247,7 +440,7 @@ void Audio::pump_recording() {
       i2s_stop(kMicPort);
       return;
     }
-    if (bytes < sizeof(chunk_)) return;  // DMA drained for now
+    if (bytes < sizeof(pdm_stereo)) return;  // DMA drained for now
   }
 }
 
@@ -263,7 +456,7 @@ void Audio::pump_playback() {
   for (int chunk = 0; chunk < kMaxChunksPerUpdate && playing_; ++chunk) {
     const size_t remaining = source_samples_ - play_cursor_;
     if (remaining == 0) {
-      // Let the DMA ring finish the queued tail before cutting the clocks.
+      // Let I2S DMA finish the queued tail before cutting the bitstream.
       draining_ = true;
       drain_until_ = millis() + (kDmaBuffers * kDmaFrames * 1000UL) / kSampleRate + 10;
       return;
@@ -272,25 +465,19 @@ void Audio::pump_playback() {
     for (size_t i = 0; i < count; ++i) chunk_[i] = source_[play_cursor_ + i];
     apply_volume(chunk_, count, volume_step_, volume_steps_);
     track_level(chunk_, count);
-    for (size_t i = 0; i < count; ++i) {
-      stereo_[i * 2] = chunk_[i];
-      stereo_[i * 2 + 1] = chunk_[i];
-    }
     size_t written = 0;
-    if (i2s_write(kAmpPort, stereo_, count * 2 * sizeof(int16_t), &written, 0) != ESP_OK) return;
-    play_cursor_ += written / (2 * sizeof(int16_t));
-    if (written < count * 2 * sizeof(int16_t)) return;  // DMA ring full for now
+    if (amp_write(chunk_, count, &written) != ESP_OK && written == 0) return;
+    play_cursor_ += written / sizeof(int16_t);
+    if (written < count * sizeof(int16_t)) return;  // DMA full for now
   }
 }
 
 void Audio::pump_live() {
   if (live_n_ == 0) {
-    // Empty software ring does not mean the I2S DMA has played its tail.
-    // Keep clocks running for at least the entire DMA ring after the last
-    // successful write, then stop them to silence the idle amplifier.
+    // Empty software ring does not mean DMA has played its tail. Keep the
+    // bitstream running for at least the DMA depth after the last write.
     if (live_playing_ && static_cast<int32_t>(millis() - live_drain_until_) >= 0) {
-      i2s_stop(kAmpPort);
-      i2s_zero_dma_buffer(kAmpPort);
+      amp_stop();
       live_playing_ = false;
       playing_ = false;
     }
@@ -300,8 +487,8 @@ void Audio::pump_live() {
     // ~200 ms prebuffer so the first WS jitter does not underrun later.
     constexpr size_t kPrebuffer = kSampleRate / 5;
     if (live_n_ < kPrebuffer && millis() - live_wait_since_ < 250) return;
-    i2s_zero_dma_buffer(kAmpPort);
-    if (i2s_start(kAmpPort) != ESP_OK) return;
+    amp_clear();
+    if (amp_start() != ESP_OK) return;
     live_playing_ = true;
     playing_ = true;
   }
@@ -309,25 +496,21 @@ void Audio::pump_live() {
     const size_t count = live_n_ < kChunkSamples ? live_n_ : kChunkSamples;
     for (size_t i = 0; i < count; ++i) chunk_[i] = live_[(live_r_ + i) % live_cap_];
     apply_volume(chunk_, count, volume_step_, volume_steps_);
-    for (size_t i = 0; i < count; ++i) {
-      stereo_[i * 2] = chunk_[i];
-      stereo_[i * 2 + 1] = chunk_[i];
-    }
     size_t written = 0;
-    const auto result = i2s_write(kAmpPort, stereo_, count * 2 * sizeof(int16_t), &written, 0);
-    const size_t consumed = written / (2 * sizeof(int16_t));
+    const auto result = amp_write(chunk_, count, &written);
+    const size_t consumed = written / sizeof(int16_t);
     live_r_ = (live_r_ + consumed) % live_cap_;
     live_n_ -= consumed;
     if (consumed) {
       track_level(chunk_, consumed);
       constexpr uint32_t drain_ms =
           (kDmaBuffers * kDmaFrames * 1000 + kSampleRate - 1) / kSampleRate + 2;
-      // Keep BCLK running across Gemini chunk gaps so the tail does not
-      // restart the amp (that restart is the late-reply “glitch”).
+      // Keep the bitstream running across Gemini chunk gaps so the tail does
+      // not restart the speaker (that restart is the late-reply “glitch”).
       live_drain_until_ = millis() + drain_ms + 300;
     }
-    // ESP-IDF may return timeout with a partial write. Keep every unwritten
-    // sample in the ring, in its original (unscaled) form, for the next pump.
+    // A full ring can still have accepted half a chunk. Keep every unwritten
+    // sample in the live ring, in its original (unscaled) form, for the next pump.
     if (result != ESP_OK || consumed < count) return;
   }
 }

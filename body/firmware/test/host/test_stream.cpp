@@ -51,8 +51,8 @@ int main() {
       if (!count) break;
       worker.insert(worker.end(), pcm, pcm + count);
     }
-    // 160 stereo frames per 10 ms, with a DMA-sized write allowance.
-    mock_write_limit = 160 * 4;
+    // 160 mono samples per 10 ms, with a DMA-sized write allowance.
+    mock_write_limit = 160 * 2;
     audio.update();
     while (!worker.empty() && audio.live_capacity_left()) {
       const size_t count = std::min({size_t(256), worker.size(), audio.live_capacity_left()});
@@ -63,10 +63,9 @@ int main() {
         audio.live_capacity_left() == 16000 * 3 && !audio.playing()) break;
   }
   assert(sent == total);
-  assert(mock_written.size() == expected.size() * 2);
+  assert(mock_written.size() == expected.size());
   for (size_t i = 0; i < expected.size(); ++i) {
-    assert(mock_written[i * 2] == expected[i]);
-    assert(mock_written[i * 2 + 1] == expected[i]);
+    assert(mock_written[i] == expected[i]);
   }
   assert(tick >= 12000 && tick < 12100);
 
@@ -91,5 +90,5 @@ int main() {
   connection.update(false);
   assert(!connection.ready() && !connection.speaker_pending());
   mock_socket_loop = nullptr;
-  puts("stream: 120 seconds at 4x arrival, irregular packets, resampling, queue/ring wraps and stereo output preserved");
+  puts("stream: 120 seconds at 4x arrival, irregular packets, resampling, queue/ring wraps and speaker output preserved");
 }

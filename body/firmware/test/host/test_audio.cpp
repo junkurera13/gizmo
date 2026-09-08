@@ -19,14 +19,14 @@ int main() {
   mock_now+=2;audio.update();assert(mock_dma_clears==cleared&&mock_amp_stops==stopped);
   mock_now+=491;audio.update();assert(audio.playing());
   mock_now+=2;audio.update();assert(!audio.playing());
-  assert(mock_written.size()==512);
+  assert(mock_written.size()==256);
   for(auto p:mock_written)assert(p==500);
   // A timeout can still have accepted half a chunk. No lost or duplicate PCM.
-  mock_written.clear();mock_write_limit=128*4;
+  mock_written.clear();mock_write_limit=128*2;
   audio.enqueue_live(pcm,256);mock_now+=250;audio.update();
-  assert(mock_written.size()==256);
+  assert(mock_written.size()==128);
   mock_write_limit=SIZE_MAX;audio.update();
-  assert(mock_written.size()==512);
+  assert(mock_written.size()==256);
   for(auto p:mock_written)assert(p==500);
   // An explicit interrupt must discard the pending tail immediately.
   audio.stop_live();assert(!audio.playing());

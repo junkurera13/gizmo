@@ -5,7 +5,10 @@
 #include <stdint.h>
 
 // One-time phone setup: open AP, captive-portal list of nearby networks,
-// save the chosen SSID/password in NVS, then auto-join on later boots.
+// save the chosen SSID/password in NVS immediately (even if that network is
+// out of range), then auto-join on later boots. If a saved network is missing
+// for 10 s, the open Gizmo AP comes back so a phone can pick an in-range
+// network. Credentials stay in NVS until serial `w` forgets them.
 // The portal runs inside loop(); it never calls delay() around I2S or SPI.
 namespace gizmo {
 

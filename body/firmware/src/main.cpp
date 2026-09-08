@@ -725,9 +725,9 @@ void setup() {
   audio_ok = sound == ESP_OK;
   apply_volume();
   apply_brightness();
-  Serial.printf("audio begin: %s mic=I2S0 PDM clk=%d data=%d amp=I2S1 bclk=%d lrc=%d din=%d device=%uHz memo=%us wire=%uHz (resample on body)\n",
+  Serial.printf("audio begin: %s mic=I2S0 PDM clk=%d data=%d speaker=D9/GPIO%d LEDC-PWM 10bit/39kHz device=%uHz memo=%us wire=%uHz\n",
                 esp_err_to_name(sound), gizmo::board::microphone_clock, gizmo::board::microphone_data,
-                gizmo::board::amp_bclk, gizmo::board::amp_lrc, gizmo::board::amp_din,
+                gizmo::board::amp_out,
                 gizmo::Audio::kSampleRate, gizmo::Audio::kCapacitySeconds, gizmo::FriendLink::kWireSampleRate);
   Serial.printf("inputs: ptt=D1/GPIO%d ladder=D4/GPIO%d battery=D5/GPIO%d haptic=D2/GPIO%d sd_cs=GPIO%d held high\n",
                 gizmo::board::ptt, gizmo::board::buttons_adc, gizmo::board::battery_adc,

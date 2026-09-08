@@ -4,11 +4,10 @@
 #include <stddef.h>
 #include <stdint.h>
 
-// Voice memo path: Sense PDM microphone (I2S_NUM_0, the only controller with
-// a PDM receiver on the S3) into a PSRAM buffer, out through the MAX98357A on
-// I2S_NUM_1. update() pumps DMA in small non-blocking chunks from loop().
-// The amplifier clocks are stopped whenever nothing is playing so the speaker
-// stays silent and the DMA ring never loops stale data.
+// Voice memo path: Sense PDM microphone (I2S_NUM_0) into a PSRAM buffer, out
+// as 10-bit LEDC PWM on D9 (Adafruit STEMMA analog IN). PDM TX is I2S0-only,
+// so the speaker cannot share that peripheral with the mic. update() pumps
+// samples from loop(). PWM stops when idle so D9 sits low.
 namespace gizmo {
 
 class Audio {
@@ -35,8 +34,8 @@ class Audio {
   bool playing_memo() const { return playing_ && source_ == memo_ && !live_playing_; }
   bool live_playing() const { return live_playing_; }
   // Queue already-downsampled 16 kHz mono PCM16 (Friend wire is 24 kHz; the
-  // body resamples before this). Amp clocks start only while the ring has
-  // samples so idle MAX98357A has no BCLK.
+  // body resamples before this). I2S clocks start only while the ring has
+  // samples so idle D9 is quiet.
   size_t enqueue_live(const int16_t* samples, size_t count);
   void stop_live();
   size_t live_capacity_left() const { return live_cap_ - live_n_; }
@@ -69,8 +68,8 @@ class Audio {
   bool ready_ = false;
   bool recording_ = false;
   bool playing_ = false;
-  bool live_armed_ = false;    // accepting inbound PCM; amp may be stopped
-  bool live_playing_ = false;  // I2S_NUM_1 clocks running for live
+  bool live_armed_ = false;    // accepting inbound PCM; speaker may be stopped
+  bool live_playing_ = false;  // PWM running for live inbound audio
   bool draining_ = false;   // last samples queued, waiting for DMA to finish
   uint32_t drain_until_ = 0;
   int16_t* memo_ = nullptr;
@@ -86,7 +85,6 @@ class Audio {
   int16_t peak_ = 0;
   uint32_t last_vu_decay_ = 0;
   int16_t chunk_[kChunkSamples];
-  int16_t stereo_[kChunkSamples * 2];
 
   int16_t capture_ring_[kCaptureRingChunks][kChunkSamples];
   uint16_t capture_len_[kCaptureRingChunks] = {};
