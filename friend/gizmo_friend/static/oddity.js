@@ -24,7 +24,35 @@ function inputEnabled(enabled) { for (const id of ['talk', 'thought', 'send']) $
 function showPreviewGate(message = '') {
   $('preview-gate').hidden = false;
   $('preview-error').textContent = message;
+  playBlink();
   $('preview-code').focus();
+}
+const BLINK_SLOTS = [10, 10, 10, 11, 12, 13, 12, 11, 10, 10, 12, 13, 12];
+const blinkFrames = Object.fromEntries([10, 11, 12, 13].map((id) => {
+  const image = new Image();
+  image.src = `/static/oddity-blink-${id}.jpg`;
+  return [id, image];
+}));
+let blinkTimer = 0;
+let blinkSlot = 0;
+function playBlink() {
+  const eye = $('preview-blink');
+  if (!eye || blinkTimer) return;
+  if (window.matchMedia('(prefers-reduced-motion: reduce)').matches) {
+    eye.src = blinkFrames[10].src;
+    return;
+  }
+  blinkSlot = 0;
+  eye.src = blinkFrames[BLINK_SLOTS[0]].src;
+  blinkTimer = window.setInterval(() => {
+    if ($('preview-gate').hidden) {
+      window.clearInterval(blinkTimer);
+      blinkTimer = 0;
+      return;
+    }
+    blinkSlot = (blinkSlot + 1) % BLINK_SLOTS.length;
+    eye.src = blinkFrames[BLINK_SLOTS[blinkSlot]].src;
+  }, 125);
 }
 async function connect() {
   if (socket && socket.readyState < WebSocket.CLOSING) return;
@@ -34,7 +62,7 @@ async function connect() {
       method: 'POST',
       headers: {'X-Oddity-Preview': stored('oddity-preview-v1'), 'X-Oddity-Session': session},
     });
-    if (response.status === 401) { showPreviewGate(session ? 'The preview code has changed. Try the new one.' : 'Enter the preview code to continue.'); return; }
+    if (response.status === 401) { showPreviewGate(session ? 'The preview code has changed. Try the new one.' : ''); return; }
     if (!response.ok) throw new Error('The private preview is unavailable right now.');
     session = (await response.json()).session;
     remember('oddity-session-v1', session);
@@ -322,7 +350,7 @@ $('wake').onclick = wake; $('reconnect').onclick = () => { notice(); connect(); 
 $('preview-form').onsubmit = (event) => {
   event.preventDefault();
   const code = $('preview-code').value.trim();
-  if (!code) { $('preview-error').textContent = 'Enter the preview code.'; return; }
+  if (!code) { $('preview-code').focus(); return; }
   remember('oddity-preview-v1', code); $('preview-error').textContent = ''; connect();
 };
 $('composer').onsubmit = (event) => { event.preventDefault(); submitThought($('thought').value); };

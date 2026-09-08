@@ -41,12 +41,23 @@ function InstagramLogo() {
 }
 
 export function SiteHeader() {
-  const onManifesto = usePathname() === "/manifesto";
+  const path = usePathname();
+  const onManifesto = path === "/manifesto";
+  const onOddity = path === "/oddity";
 
   return (
     <nav className="topbar">
       <div className="nav-left">
-        {onManifesto ? (
+        {onOddity ? (
+          <>
+            <Link className="nav-link" href="/">
+              Home
+            </Link>
+            <Link className="nav-link" href="/manifesto">
+              Manifesto
+            </Link>
+          </>
+        ) : onManifesto ? (
           <Link className="nav-link" href="/">
             Home
           </Link>
@@ -55,9 +66,11 @@ export function SiteHeader() {
             Manifesto
           </Link>
         )}
-        <Link className="nav-link nav-oddity" href="/oddity">
-          Oddity 1.0
-        </Link>
+        {!onOddity && (
+          <Link className="nav-link nav-oddity" href="/oddity">
+            Oddity 1.0
+          </Link>
+        )}
         <a className="nav-link" href="mailto:parkjundk@gmail.com?subject=Careers">
           Careers
         </a>

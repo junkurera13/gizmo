@@ -6,9 +6,9 @@
   <title>OddityOS 1 — Gizmo</title>
   <link rel="icon" href="data:,">
   <link rel="stylesheet" href="/static/oddity.css">
-  <link rel="stylesheet" href="/static/oddity-device.css">
+  <link rel="stylesheet" href="/static/oddity-device.css?v=gate4">
   <link rel="preload" as="image" href="/static/device-reference-ptt-pressed.png">
-  <script type="module" src="/static/oddity.js"></script>
+  <script type="module" src="/static/oddity.js?v=gate4"></script>
 </head>
 <body>
   <header class="masthead">
@@ -21,6 +21,9 @@
   </header>
   <section id="preview-gate" class="preview-gate" aria-labelledby="preview-title" hidden>
     <form id="preview-form" class="preview-form">
+      <div class="preview-blink" aria-hidden="true">
+        <img id="preview-blink" src="/static/oddity-blink-10.jpg" alt="">
+      </div>
       <h1 id="preview-title">Oddware Oddity 1.0</h1>
       <input id="preview-code" type="password" name="preview-code" placeholder="Code" autocomplete="current-password" aria-label="Preview code">
       <button type="submit">Enter</button>

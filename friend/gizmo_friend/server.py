@@ -37,6 +37,10 @@ STATIC = Path(__file__).parent / "static"
 ODDITY_PUBLIC_ASSETS = {
     "/static/device-reference-ptt-pressed.png",
     "/static/device-reference.png",
+    "/static/oddity-blink-10.jpg",
+    "/static/oddity-blink-11.jpg",
+    "/static/oddity-blink-12.jpg",
+    "/static/oddity-blink-13.jpg",
     "/static/oddity-character.png",
     "/static/oddity-device.css",
     "/static/oddity-device.mjs",
