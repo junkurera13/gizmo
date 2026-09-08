@@ -12,8 +12,10 @@ menu driven by UP/DOWN/SELECT. Down from IDLE (and serial `d`) opens the local
 Camera world: 78% viewfinder + 22% character strip. Double-Select within 320 ms
 toggles it, matching the Mac simulator. Wi-Fi is a one-time phone captive portal:
 the board opens an AP named `Gizmo-XXXX`, the phone joins it (no password), a
-page lists nearby networks, and the chosen SSID/password is stored in NVS for
-later boots. NTP (JST) starts after join so the home clock can appear. After
+page lists nearby networks (or open `http://192.168.4.1` if the sheet does not
+appear), and the chosen SSID/password is stored in NVS. Later boots auto-join
+that network in the background; serial `w` forgets it and reopens the portal.
+NTP (JST) starts after join so the home clock can appear. After
 Wi-Fi is online and a brain URL is stored, firmware opens authenticated Friend
 `/ws` (health + hello + PTT audio: 16 kHz mic upsampled to 24 kHz on the wire,
 inbound 24 kHz PCM downsampled to 16 kHz before the amp). Local

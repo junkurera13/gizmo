@@ -193,14 +193,14 @@ void render_camera_world(const draw::Canvas& canvas, const uint16_t* home_base, 
   }
 }
 
-void render_wifi_setup(const draw::Canvas& canvas, const char* ap_ssid, const char* detail) {
+void render_wifi_setup(const draw::Canvas& canvas, const char* title, const char* line, const char* detail) {
   if (!canvas.valid()) return;
   const int h = 78;
   const int y = canvas.height - h;
   draw::fill_rect(canvas, 0, y, canvas.width, h, draw::kBlack);
   draw::fill_rect(canvas, 0, y, canvas.width, 1, draw::kFaint);
-  draw::text_centered(canvas, canvas.width / 2, y + 10, "OPEN PHONE WIFI", draw::kDim, 1);
-  draw::text_centered(canvas, canvas.width / 2, y + 26, ap_ssid ? ap_ssid : "GIZMO", draw::kWhite, 2);
+  draw::text_centered(canvas, canvas.width / 2, y + 10, title && title[0] ? title : "OPEN PHONE WIFI", draw::kDim, 1);
+  draw::text_centered(canvas, canvas.width / 2, y + 26, line && line[0] ? line : "GIZMO", draw::kWhite, 2);
   draw::text_centered(canvas, canvas.width / 2, y + 52, detail && detail[0] ? detail : "WAITING FOR PHONE", draw::kDim,
                       1);
 }

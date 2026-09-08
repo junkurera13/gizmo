@@ -1,6 +1,7 @@
 #include "gizmo/audio.h"
 #include "gizmo/board.h"
 #include "gizmo/settings.h"
+#include "gizmo/pwm_audio.h"
 #include <Arduino.h>
 #include <driver/i2s.h>
 #include <esp_heap_caps.h>
@@ -20,15 +21,19 @@ constexpr int kMaxChunksPerUpdate = 16;
 constexpr uint32_t kVuDecayMs = 60;
 
 #ifdef ARDUINO
-// 10-bit at 39062 Hz is the S3 LEDC XTAL limit (40 MHz / 1024). 8-bit/125 kHz
-// was the scratchy radio; hardware PDM TX is I2S0-only and crashed I2S1.
+// Exact XTAL divider: 40 MHz / (512 * 1.25) = 62.5 kHz. Two carrier
+// periods per update avoid the former 39.0625 kHz vs 32 kHz clock mismatch.
+// Keep XTAL as the LEDC source so the camera's separate timer is unaffected.
 constexpr uint8_t kPwmChannel = 4;  // LEDC_TIMER_2; camera XCLK keeps TIMER_0
-constexpr uint8_t kPwmBits = 10;
-constexpr uint32_t kPwmFreq = 39062;
+constexpr uint8_t kPwmBits = 9;
+constexpr uint32_t kPwmFreq = 62500;
 constexpr uint32_t kPwmIdleDuty = 1u << (kPwmBits - 1);
 constexpr uint8_t kPwmTimerIndex = 0;
-constexpr uint16_t kPwmTimerDivider = 500;  // 80 MHz / 500 = 160 kHz
-constexpr uint64_t kPwmTimerAlarm = 5;      // 160 kHz / 5 = 32 kHz ISR
+constexpr uint16_t kPwmTimerDivider = 80;  // 80 MHz / 80 = 1 MHz
+constexpr uint64_t kPwmTimerAlarm = 32;    // 1 MHz / 32 = 31.25 kHz ISR
+static_assert(80000000ULL / kPwmTimerDivider / kPwmTimerAlarm == PwmClock::kOutputRate);
+static_assert(kPwmFreq == PwmClock::kOutputRate * 2);
+static_assert(Audio::kSampleRate * 125 == PwmClock::kOutputRate * 64);
 
 portMUX_TYPE amp_mux = portMUX_INITIALIZER_UNLOCKED;
 hw_timer_t* amp_timer = nullptr;
@@ -37,37 +42,26 @@ volatile size_t amp_w = 0;
 volatile size_t amp_r = 0;
 volatile size_t amp_n = 0;
 bool amp_running = false;
-int16_t pwm_prev = 0;
-int16_t pwm_curr = 0;
-bool pwm_odd = false;
-int32_t pwm_err = 0;
+PwmAudio pwm_audio;
+PwmClock pwm_clock;
 int32_t mic_hp_x_ = 0;
 int32_t mic_hp_y_ = 0;
 
 void IRAM_ATTR amp_isr() {
-  int32_t sample;
-  if (!pwm_odd) {
-    pwm_prev = pwm_curr;
+  if (pwm_clock.advance()) {
     int16_t fetched = 0;
+    bool available = false;
     portENTER_CRITICAL_ISR(&amp_mux);
     if (amp_n > 0) {
       fetched = amp_ring[amp_r];
       amp_r = (amp_r + 1) % kAmpRingSamples;
       --amp_n;
+      available = true;
     }
     portEXIT_CRITICAL_ISR(&amp_mux);
-    pwm_curr = fetched;
-    sample = pwm_curr;
-  } else {
-    sample = (static_cast<int32_t>(pwm_prev) + pwm_curr) / 2;
+    pwm_audio.midpoint(fetched, available);
   }
-  pwm_odd = !pwm_odd;
-
-  int32_t shaped = sample + pwm_err;
-  if (shaped > 32767) shaped = 32767;
-  if (shaped < -32768) shaped = -32768;
-  const uint32_t duty = static_cast<uint32_t>(shaped + 32768) >> (16 - kPwmBits);
-  pwm_err = shaped - (static_cast<int32_t>(duty << (16 - kPwmBits)) - 32768);
+  const uint32_t duty = pwm_duty(pwm_clock.sample(pwm_audio.previous, pwm_audio.current));
 
   ledc_set_duty(LEDC_LOW_SPEED_MODE, static_cast<ledc_channel_t>(kPwmChannel), duty);
   ledc_update_duty(LEDC_LOW_SPEED_MODE, static_cast<ledc_channel_t>(kPwmChannel));
@@ -101,13 +95,17 @@ esp_err_t amp_start() {
   portENTER_CRITICAL(&amp_mux);
   amp_w = amp_r = amp_n = 0;
   portEXIT_CRITICAL(&amp_mux);
-  pwm_prev = pwm_curr = 0;
-  pwm_odd = false;
-  pwm_err = 0;
-  if (ledcSetup(kPwmChannel, kPwmFreq, kPwmBits) == 0) {
-    Serial.println("speaker: LEDC setup failed");
+  pwm_audio = {};
+  pwm_clock = {};
+  const uint32_t actual_freq = ledcSetup(kPwmChannel, kPwmFreq, kPwmBits);
+  if (actual_freq != kPwmFreq) {
+    Serial.printf("speaker: expected %lu Hz PWM, got %lu\n",
+                  static_cast<unsigned long>(kPwmFreq), static_cast<unsigned long>(actual_freq));
     return ESP_FAIL;
   }
+  Serial.printf("speaker: PWM %lu Hz, %u-bit, updates %lu Hz\n",
+                static_cast<unsigned long>(actual_freq), kPwmBits,
+                static_cast<unsigned long>(PwmClock::kOutputRate));
   ledcAttachPin(board::amp_out, kPwmChannel);
   ledcWrite(kPwmChannel, kPwmIdleDuty);
   if (amp_timer == nullptr) {
@@ -147,12 +145,12 @@ void amp_stop() {
 
 void amp_clear() {
 #ifdef ARDUINO
+  if (amp_timer != nullptr) timerAlarmDisable(amp_timer);
   portENTER_CRITICAL(&amp_mux);
   amp_w = amp_r = amp_n = 0;
   portEXIT_CRITICAL(&amp_mux);
-  pwm_prev = pwm_curr = 0;
-  pwm_odd = false;
-  pwm_err = 0;
+  pwm_audio = {};
+  pwm_clock = {};
 #else
   i2s_zero_dma_buffer(kAmpPort);
 #endif

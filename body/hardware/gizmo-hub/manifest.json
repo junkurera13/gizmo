@@ -1,0 +1,219 @@
+[
+  {
+    "ref": "U1",
+    "value": "XIAO ESP32S3 Sense",
+    "pins": {
+      "1": "D0_GPIO1_UNUSED",
+      "2": "PTT_D1_GPIO2",
+      "3": "HAPTIC_D2_GPIO3",
+      "4": "D3_GPIO4_UNUSED",
+      "5": "BUTTON_ADC_D4_GPIO5",
+      "6": "BAT_SENSE_D5_GPIO6",
+      "7": "DISP_DC_D6_GPIO43",
+      "8": "DISP_CS_D7_GPIO44",
+      "9": "DISP_SCK_D8_GPIO7",
+      "10": "SPK_IN_D9_GPIO8",
+      "11": "DISP_SDI_D10_GPIO9",
+      "12": "3V3",
+      "13": "GND",
+      "14": "5V"
+    },
+    "footprint": "Gizmo:XIAO_ESP32S3_Castellated",
+    "uuid": "d5e1cfa5-58ac-54aa-bc23-4d9cf3ca11b8"
+  },
+  {
+    "ref": "J1",
+    "value": "DISPLAY",
+    "pins": {
+      "1": "5V",
+      "2": "GND",
+      "3": "DISP_CS_D7_GPIO44",
+      "4": "3V3",
+      "5": "DISP_DC_D6_GPIO43",
+      "6": "DISP_SDI_D10_GPIO9",
+      "7": "DISP_SCK_D8_GPIO7",
+      "8": "3V3",
+      "9": null
+    },
+    "footprint": "Gizmo:Header_1x09_V",
+    "uuid": "484450cb-eaa7-5fd1-a83f-02870ab5158f"
+  },
+  {
+    "ref": "J2",
+    "value": "SPEAKER 3885",
+    "pins": {
+      "1": "SPK_IN_D9_GPIO8",
+      "2": "3V3",
+      "3": "GND"
+    },
+    "footprint": "Gizmo:Header_1x03_V",
+    "uuid": "baa0d11a-2939-5372-8f77-a2d880d8d02d"
+  },
+  {
+    "ref": "J3",
+    "value": "BUTTONS",
+    "pins": {
+      "1": "BUTTON_ADC_D4_GPIO5",
+      "2": "BUTTON_DOWN",
+      "3": "BUTTON_SEL",
+      "4": "3V3",
+      "5": "GND"
+    },
+    "footprint": "Gizmo:Header_1x05_V",
+    "uuid": "c29fc668-ec2b-553f-944a-f1f101fea9a1"
+  },
+  {
+    "ref": "J4",
+    "value": "PTT",
+    "pins": {
+      "1": "PTT_D1_GPIO2",
+      "2": "GND"
+    },
+    "footprint": "Gizmo:Header_1x02_V",
+    "uuid": "50830b37-4cb7-5ead-b030-4634e93d0f93"
+  },
+  {
+    "ref": "J5",
+    "value": "HAPTIC",
+    "pins": {
+      "1": "HAPTIC_D2_GPIO3",
+      "2": "GND",
+      "3": "3V3"
+    },
+    "footprint": "Gizmo:Header_1x03_V",
+    "uuid": "8f740ad3-b448-5195-b7d5-216e3e3ec3d0"
+  },
+  {
+    "ref": "J6",
+    "value": "PWR",
+    "pins": {
+      "1": "BAT+",
+      "2": "GND",
+      "3": "5V"
+    },
+    "footprint": "Gizmo:Header_1x03_H",
+    "uuid": "337e767e-6220-5318-ae55-cab4234543c1"
+  },
+  {
+    "ref": "J7",
+    "value": "UTIL",
+    "pins": {
+      "1": "5V",
+      "2": "5V",
+      "3": "GND",
+      "4": "GND",
+      "5": "3V3",
+      "6": "GND"
+    },
+    "footprint": "Gizmo:Header_1x06_H",
+    "uuid": "b874b581-1734-57fd-8161-2661d3bad23b"
+  },
+  {
+    "ref": "J8",
+    "value": "5V AUX A",
+    "pins": {
+      "1": "5V",
+      "2": "GND"
+    },
+    "footprint": "Gizmo:Header_1x02_V",
+    "uuid": "cec6df9b-ed22-57b3-a1f9-2523fff26c62"
+  },
+  {
+    "ref": "J9",
+    "value": "5V AUX B",
+    "pins": {
+      "1": "5V",
+      "2": "GND"
+    },
+    "footprint": "Gizmo:Header_1x02_V",
+    "uuid": "dcfd3889-f26e-5fb2-9c79-f4f92e52e482"
+  },
+  {
+    "ref": "J10",
+    "value": "FUTURE",
+    "pins": {
+      "1": "D0_GPIO1_UNUSED",
+      "2": "D3_GPIO4_UNUSED"
+    },
+    "footprint": "Gizmo:Header_1x02_V",
+    "uuid": "e502a4b7-3644-54a7-9ed6-9f0f2ea7b8a6"
+  },
+  {
+    "ref": "R1",
+    "value": "10k",
+    "pins": {
+      "1": "BUTTON_ADC_D4_GPIO5",
+      "2": "GND"
+    },
+    "footprint": "Gizmo:R_0805_2012Metric",
+    "uuid": "7819c3d1-6f78-5aec-b652-4c90e8795d0b"
+  },
+  {
+    "ref": "R2",
+    "value": "4.7k",
+    "pins": {
+      "1": "BUTTON_DOWN",
+      "2": "BUTTON_ADC_D4_GPIO5"
+    },
+    "footprint": "Gizmo:R_0805_2012Metric",
+    "uuid": "127d712c-05c0-5f13-b5a7-74c140aed697"
+  },
+  {
+    "ref": "R3",
+    "value": "15k",
+    "pins": {
+      "1": "BUTTON_SEL",
+      "2": "BUTTON_ADC_D4_GPIO5"
+    },
+    "footprint": "Gizmo:R_0805_2012Metric",
+    "uuid": "37dac811-8ab9-557d-ad36-f9f2594a8002"
+  },
+  {
+    "ref": "C1",
+    "value": "100nF",
+    "pins": {
+      "1": "BUTTON_ADC_D4_GPIO5",
+      "2": "GND"
+    },
+    "footprint": "Gizmo:C_0805_2012Metric",
+    "uuid": "1ae3e61c-573c-5aa6-b1f5-cb39ed7389b3"
+  },
+  {
+    "ref": "R4",
+    "value": "100k",
+    "pins": {
+      "1": "BAT+",
+      "2": "BAT_SENSE_D5_GPIO6"
+    },
+    "footprint": "Gizmo:R_0805_2012Metric",
+    "uuid": "5bd5e7fe-2a34-56a5-a44e-5e1dcd1c31e6"
+  },
+  {
+    "ref": "R5",
+    "value": "100k",
+    "pins": {
+      "1": "BAT_SENSE_D5_GPIO6",
+      "2": "GND"
+    },
+    "footprint": "Gizmo:R_0805_2012Metric",
+    "uuid": "0d63bbc3-cca7-5d1a-a8da-683c80a4c567"
+  },
+  {
+    "ref": "TP1",
+    "value": "3V3",
+    "pins": {
+      "1": "3V3"
+    },
+    "footprint": "Gizmo:TestPoint_1.5mm",
+    "uuid": "2ebf2c17-3f01-54f7-b9b2-0bcddf0ba97a"
+  },
+  {
+    "ref": "TP2",
+    "value": "GND",
+    "pins": {
+      "1": "GND"
+    },
+    "footprint": "Gizmo:TestPoint_1.5mm",
+    "uuid": "3ac61987-aa74-58b1-ae86-ba311485c5ea"
+  }
+]

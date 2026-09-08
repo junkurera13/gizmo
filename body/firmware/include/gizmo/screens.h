@@ -46,7 +46,7 @@ inline int camera_viewfinder_height(int height) { return height - camera_strip_h
 void render_camera_world(const draw::Canvas& canvas, const uint16_t* home_base, bool viewfinder_ready,
                          const char* status);
 
-// Setup card over home while the open AP / captive portal is up.
-void render_wifi_setup(const draw::Canvas& canvas, const char* ap_ssid, const char* detail);
+// Setup / join card over home while Wi-Fi still needs attention.
+void render_wifi_setup(const draw::Canvas& canvas, const char* title, const char* line, const char* detail);
 
 }  // namespace gizmo

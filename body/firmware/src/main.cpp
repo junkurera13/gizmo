@@ -280,8 +280,8 @@ void render() {
     }
     case State::kIdle:
       paint_home_base();
-      if (wifi.portal() || wifi.phase() == gizmo::WifiPhase::kConnecting) {
-        gizmo::render_wifi_setup(canvas, wifi.ap_ssid(), wifi.detail());
+      if (wifi.card_visible()) {
+        gizmo::render_wifi_setup(canvas, wifi.card_title(), wifi.card_line(), wifi.detail());
       }
       break;
     case State::kRecording:
@@ -725,7 +725,7 @@ void setup() {
   audio_ok = sound == ESP_OK;
   apply_volume();
   apply_brightness();
-  Serial.printf("audio begin: %s mic=I2S0 PDM clk=%d data=%d speaker=D9/GPIO%d LEDC-PWM 10bit/39kHz device=%uHz memo=%us wire=%uHz\n",
+  Serial.printf("audio begin: %s mic=I2S0 PDM clk=%d data=%d speaker=D9/GPIO%d LEDC-PWM 9bit/62.5kHz device=%uHz memo=%us wire=%uHz\n",
                 esp_err_to_name(sound), gizmo::board::microphone_clock, gizmo::board::microphone_data,
                 gizmo::board::amp_out,
                 gizmo::Audio::kSampleRate, gizmo::Audio::kCapacitySeconds, gizmo::FriendLink::kWireSampleRate);
@@ -775,8 +775,9 @@ void loop() {
   battery.update();
   haptic.update();
   const auto wifi_phase = wifi.phase();
+  const bool wifi_card = wifi.card_visible();
   wifi.update();
-  if (wifi.phase() != wifi_phase) dirty = true;
+  if (wifi.phase() != wifi_phase || wifi.card_visible() != wifi_card) dirty = true;
 
   const uint32_t now = millis();
   switch (state) {
@@ -816,7 +817,7 @@ void loop() {
       }
       break;
     case State::kIdle:
-      if (wifi.portal() || wifi.phase() == gizmo::WifiPhase::kConnecting) {
+      if (wifi.card_visible()) {
         if (now - last_redraw >= 400) dirty = true;
       } else if (now - last_redraw >= kIdleRedrawMs && hud_changed(current_hud(), last_hud)) {
         dirty = true;

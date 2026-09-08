@@ -25,7 +25,7 @@ returned as physical evidence. Local USB access is not required for development.
   3.3–5 V; this does not establish that every signal accepts 5 V.
 - Speaker: **Adafruit STEMMA Speaker** (PID **3885**), TS2012 Class-D plus a
   1 W / 8 Ω speaker. Analog input only (STEMMA white = IN, red = 3–5 V,
-  black = GND). Signal on **D9** (GPIO8) as 10-bit LEDC PWM. Replaces the earlier
+  black = GND). Signal on **D9** (GPIO8) as 9-bit / 62.5 kHz LEDC PWM. Replaces the earlier
   Youmile MAX98357 I2S breadboard amp (BCLK/LRC/DIN). On-board trim pot is
   analog gain; firmware volume still scales PCM before PWM.
 
