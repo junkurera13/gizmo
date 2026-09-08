@@ -26,7 +26,7 @@
     (via_keepout "" (polygon B.Cu 0  6500 -23000  68500 -23000  68500 -65000  6500 -65000  6500 -23000))
     (via "Via[0-1]_600:300_um")
     (rule
-      (width 200)
+      (width 250)
       (clearance 200)
       (clearance 50 (type smd_smd))
     )
@@ -4947,18 +4947,12 @@
     (net BAT+
       (pins R4-1 J6-1)
     )
-    (class kicad_default 3V3 5V BAT+ BAT_SENSE_D5_GPIO6 BUTTON_ADC_D4_GPIO5
-      BUTTON_DOWN BUTTON_SEL D0_GPIO1_UNUSED D3_GPIO4_UNUSED DISP_CS_D7_GPIO44
-      DISP_DC_D6_GPIO43 DISP_SCK_D8_GPIO7 DISP_SDI_D10_GPIO9 GND HAPTIC_D2_GPIO3
-      PTT_D1_GPIO2 SPK_IN_D9_GPIO8
-      (circuit
-        (use_via "Via[0-1]_600:300_um")
-      )
-      (rule
-        (width 200)
-        (clearance 200)
-      )
-    )
+    (class signals D0_GPIO1_UNUSED PTT_D1_GPIO2 HAPTIC_D2_GPIO3 D3_GPIO4_UNUSED BUTTON_ADC_D4_GPIO5 BAT_SENSE_D5_GPIO6 DISP_DC_D6_GPIO43 DISP_CS_D7_GPIO44 DISP_SCK_D8_GPIO7 SPK_IN_D9_GPIO8 DISP_SDI_D10_GPIO9 BUTTON_SEL BUTTON_DOWN BAT+
+      (circuit (use_via "Via[0-1]_600:300_um"))
+      (rule (width 250) (clearance 200)))
+    (class power 5V 3V3 GND
+      (circuit (use_via "Via[0-1]_600:300_um"))
+      (rule (width 600) (clearance 200)))
   )
   (wiring
   )

@@ -1,0 +1,8 @@
+tools/
+vendor/*.zip
+vendor/**/__MACOSX/
+*.kicad_prl
+*.lck
+*-backups/
+outputs/router*.log
+Gizmo.pretty/test.kicad_mod

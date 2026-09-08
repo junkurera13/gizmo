@@ -6,7 +6,7 @@
 	(property "Reference" ""
 		(at 0 0 0)
 		(layer "F.SilkS")
-		(uuid "ef5659d5-9907-4943-8486-f083a78f74cc")
+		(uuid "db188a43-c9ff-4a9b-b3b9-5f9b7ac9120e")
 		(effects
 			(font
 				(size 1.27 1.27)
@@ -16,7 +16,7 @@
 	(property "Value" ""
 		(at 0 0 0)
 		(layer "F.Fab")
-		(uuid "45bc3f46-5303-42da-8a57-f107c4798660")
+		(uuid "d1dfe96e-c521-4feb-b33d-e0face9718ce")
 		(effects
 			(font
 				(size 1.27 1.27)
@@ -27,7 +27,7 @@
 		(at 0 0 0)
 		(layer "F.Fab")
 		(hide yes)
-		(uuid "b9168b96-12a1-4640-94a0-70b83d49d75b")
+		(uuid "b3d062e8-976d-4826-bf5e-12e1136aa028")
 		(effects
 			(font
 				(size 1.27 1.27)
@@ -38,7 +38,7 @@
 		(at 0 0 0)
 		(layer "F.Fab")
 		(hide yes)
-		(uuid "dc87e403-caa9-4571-841c-c23063aca1b5")
+		(uuid "1777a9f8-7ec6-4139-9419-63fcb91aacbf")
 		(effects
 			(font
 				(size 1.27 1.27)
@@ -51,7 +51,7 @@
 		(at 0 0)
 		(size 1.5 1.5)
 		(layers "F.Cu" "F.Mask" "F.Paste")
-		(uuid "f9d943b3-88a8-4c1d-ab02-ca1e1d1f02dd")
+		(uuid "4f14d216-d12f-4983-8df5-59332617e083")
 	)
 	(embedded_fonts no)
 )

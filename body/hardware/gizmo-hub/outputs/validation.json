@@ -1,0 +1,26 @@
+{
+  "result": "PASS",
+  "board_mm": [
+    75,
+    70
+  ],
+  "battery_clearance_mm": [
+    62,
+    42
+  ],
+  "battery_user_dimensions_mm": [
+    60,
+    40,
+    8
+  ],
+  "schematic_pad_connections_verified": 65,
+  "copper_layers": 2,
+  "vias": 4,
+  "minimum_track_width_mm": 0.25,
+  "erc_errors": 0,
+  "drc_violations": 0,
+  "unrouted_connections": 0,
+  "schematic_parity_issues": 0,
+  "physical_assembly_tested": false,
+  "battery_connector_polarity_verified": false
+}
