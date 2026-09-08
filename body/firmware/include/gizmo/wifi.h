@@ -4,9 +4,11 @@
 #include <IPAddress.h>
 #include <stdint.h>
 
-// One-time phone setup: open AP, captive-portal list of nearby networks,
-// save the chosen SSID/password in NVS, then auto-join on later boots.
-// The portal runs inside loop(); it never calls delay() around I2S or SPI.
+// Phone setup: open AP, captive-portal list of nearby networks, save the
+// chosen SSID/password in NVS, then auto-join on later boots. If that saved
+// network is gone (new location, timeout, drop), reopen the same open AP
+// instead of retrying forever. The portal runs inside loop(); it never calls
+// delay() around I2S or SPI.
 namespace gizmo {
 
 enum class WifiPhase : uint8_t {
@@ -32,7 +34,8 @@ class WifiLink {
   IPAddress ip() const { return ip_; }
 
  private:
-  void start_portal();
+  void start_portal(const char* status = nullptr);
+  void reopen_portal_after_sta_fail(const char* why);
   void stop_portal();
   void start_sta(const char* ssid, const char* pass, bool from_portal);
   void finish_online();

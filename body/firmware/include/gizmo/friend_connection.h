@@ -75,7 +75,7 @@ class FriendConnection {
   char detail_[56] = "";
   char extra_headers_[280] = "";
 
-  static constexpr size_t kSpeakerCap = 16000 * 3;  // 16 kHz after 24→16
+  static constexpr size_t kSpeakerCap = 16000 * 4;  // 16 kHz live PCM, ~4 s
   int16_t* speaker_ = nullptr;
   size_t speaker_cap_ = 0;
   size_t speaker_w_ = 0;

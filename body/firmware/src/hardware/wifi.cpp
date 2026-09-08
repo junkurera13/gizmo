@@ -4,11 +4,16 @@
 #include <Preferences.h>
 #include <WebServer.h>
 #include <WiFi.h>
+#include <sys/time.h>
+#include <time.h>
 
 namespace gizmo {
 namespace {
 constexpr uint16_t kDnsPort = 53;
 constexpr uint32_t kConnectTimeoutMs = 20000;
+constexpr uint32_t kSavedNetGiveUpMs = 4000;
+constexpr time_t kTlsClockFloor = 1735689600;  // 2025-01-01; cert checks need a sane clock
+constexpr time_t kTlsClockFallback = 1788825600;  // 2026-09-08 until NTP
 constexpr uint32_t kScanPeriodMs = 8000;
 constexpr uint32_t kStatusPeriodMs = 2000;
 constexpr int kMaxListed = 12;
@@ -84,13 +89,13 @@ void WifiLink::send_portal() {
             "button{background:#fff;color:#111;font-weight:600}"
             ".net{display:block;width:100%;text-align:left;background:#1c1c1c;color:#fff;"
             "margin:0 0 8px;padding:14px} .err{color:#f66;margin:0 0 12px}</style></head><body>");
-  page += F("<h1>Gizmo</h1><p>Pick your Wi-Fi. This is saved on the device; "
-            "you only do this once.</p>");
-  if (detail_[0] && phase_ != WifiPhase::kPortal) {
-    page += "<p class=err>";
-    page += escaped_error;
-    page += "</p>";
-  } else if (detail_[0] && strstr(detail_, "WRONG") != nullptr) {
+  page += F("<h1>Gizmo</h1><p>Pick your 2.4 GHz Wi-Fi. It is saved on the device. "
+            "If Gizmo cannot join the last network (new place, dead router), "
+            "this setup Wi-Fi comes back by itself.</p>");
+  const bool hide_status =
+      detail_[0] == '\0' || strcmp(detail_, "WAITING FOR PHONE") == 0 ||
+      strcmp(detail_, "WAITING FOR BOOT") == 0;
+  if (!hide_status) {
     page += "<p class=err>";
     page += escaped_error;
     page += "</p>";
@@ -117,6 +122,9 @@ void WifiLink::handle_join() {
     send_portal();
     return;
   }
+  // Immediately persist to NVS so power cuts do not lose the entered network
+  save_credentials();
+
   http.send(200, "text/html",
             F("<!DOCTYPE html><html><head><meta charset=utf-8>"
               "<meta name=viewport content=\"width=device-width,initial-scale=1\">"
@@ -158,9 +166,13 @@ void WifiLink::build_scan_html() {
   }
 }
 
-void WifiLink::start_portal() {
+void WifiLink::start_portal(const char* status) {
   phase_ = WifiPhase::kPortal;
-  strncpy(detail_, "WAITING FOR PHONE", sizeof(detail_) - 1);
+  if (status != nullptr && status[0] != '\0') {
+    strncpy(detail_, status, sizeof(detail_) - 1);
+  } else {
+    strncpy(detail_, "WAITING FOR PHONE", sizeof(detail_) - 1);
+  }
   detail_[sizeof(detail_) - 1] = '\0';
 
   // Scan first as STA, then AP-only. AP_STA + live scan is why phones miss us.
@@ -194,6 +206,13 @@ void WifiLink::start_portal() {
   Serial.printf("wifi portal: softAP %s ssid=\"%s\" ch=6 ip=%s\n", ok ? "ok" : "FAIL", ap_ssid_,
                 WiFi.softAPIP().toString().c_str());
   Serial.println("wifi: phone must use 2.4 GHz. Look for that SSID (open, no password).");
+}
+
+void WifiLink::reopen_portal_after_sta_fail(const char* why) {
+  Serial.printf("wifi: %s — opening setup AP \"%s\"\n", why ? why : "sta failed", ap_ssid_);
+  WiFi.disconnect(false, false);
+  // Keep NVS credentials until the portal saves a new network.
+  start_portal("SAVED WIFI UNREACHABLE - PICK A NETWORK");
 }
 
 void WifiLink::stop_portal() {
@@ -233,42 +252,66 @@ void WifiLink::finish_online() {
   ip_ = WiFi.localIP();
   phase_ = WifiPhase::kOnline;
   join_from_portal_ = false;
-  strncpy(sta_ssid_, WiFi.SSID().c_str(), sizeof(sta_ssid_) - 1);
-  sta_ssid_[sizeof(sta_ssid_) - 1] = '\0';
+  // Ensure we do not overwrite a valid sta_ssid_ if WiFi.SSID() returns empty
+  if (WiFi.SSID().length() > 0) {
+    strncpy(sta_ssid_, WiFi.SSID().c_str(), sizeof(sta_ssid_) - 1);
+    sta_ssid_[sizeof(sta_ssid_) - 1] = '\0';
+  }
   save_credentials();
   stop_portal();
   WiFi.mode(WIFI_STA);
   snprintf(detail_, sizeof(detail_), "ONLINE %s", ip_.toString().c_str());
+  if (time(nullptr) < kTlsClockFloor) {
+    struct timeval tv = {kTlsClockFallback, 0};
+    settimeofday(&tv, nullptr);
+    Serial.println("wifi: TLS clock fallback until NTP");
+  }
   configTzTime("JST-9", "pool.ntp.org", "time.google.com");
   Serial.printf("wifi online: ssid=\"%s\" ip=%s (saved)\n", sta_ssid_, ip_.toString().c_str());
 }
 
 void WifiLink::save_credentials() {
+  if (sta_ssid_[0] == '\0') return;
   Preferences store;
-  store.begin("gizmo-wifi", false);
-  store.putString("ssid", sta_ssid_);
-  store.putString("pass", sta_pass_);
-  store.end();
+  if (store.begin("gizmo-wifi", false)) {
+    store.putString("ssid", String(sta_ssid_));
+    store.putString("pass", String(sta_pass_));
+    store.end();
+    Serial.printf("wifi: credentials saved to flash (ssid=\"%s\")\n", sta_ssid_);
+  } else {
+    Serial.println("wifi: failed to open Preferences for saving");
+  }
 }
 
 bool WifiLink::load_credentials() {
   sta_ssid_[0] = '\0';
   sta_pass_[0] = '\0';
   Preferences store;
-  store.begin("gizmo-wifi", true);
-  store.getString("ssid", sta_ssid_, sizeof(sta_ssid_));
-  store.getString("pass", sta_pass_, sizeof(sta_pass_));
+  if (!store.begin("gizmo-wifi", true)) {
+    return false;
+  }
+  String s_ssid = store.getString("ssid", "");
+  String s_pass = store.getString("pass", "");
   store.end();
-  return sta_ssid_[0] != '\0';
+
+  if (s_ssid.length() == 0) {
+    return false;
+  }
+  strncpy(sta_ssid_, s_ssid.c_str(), sizeof(sta_ssid_) - 1);
+  sta_ssid_[sizeof(sta_ssid_) - 1] = '\0';
+  strncpy(sta_pass_, s_pass.c_str(), sizeof(sta_pass_) - 1);
+  sta_pass_[sizeof(sta_pass_) - 1] = '\0';
+  return true;
 }
 
 void WifiLink::clear_credentials() {
   sta_ssid_[0] = '\0';
   sta_pass_[0] = '\0';
   Preferences store;
-  store.begin("gizmo-wifi", false);
-  store.clear();
-  store.end();
+  if (store.begin("gizmo-wifi", false)) {
+    store.clear();
+    store.end();
+  }
 }
 
 void WifiLink::begin() {
@@ -308,23 +351,30 @@ void WifiLink::update() {
 
   if (phase_ == WifiPhase::kConnecting) {
     if (WiFi.status() == WL_CONNECTED) {
-      strncpy(sta_ssid_, WiFi.SSID().c_str(), sizeof(sta_ssid_) - 1);
-      sta_ssid_[sizeof(sta_ssid_) - 1] = '\0';
+      if (WiFi.SSID().length() > 0) {
+        strncpy(sta_ssid_, WiFi.SSID().c_str(), sizeof(sta_ssid_) - 1);
+        sta_ssid_[sizeof(sta_ssid_) - 1] = '\0';
+      }
       finish_online();
-    } else if (millis() - connect_started_ >= kConnectTimeoutMs) {
-      if (join_from_portal_) {
-        Serial.println("wifi: join timed out");
-        strncpy(detail_, "WRONG PASSWORD OR TIMEOUT", sizeof(detail_) - 1);
-        WiFi.disconnect(false, false);
-        start_portal();
-      } else {
-        Serial.printf("wifi: join timed out, retrying \"%s\"\n", sta_ssid_);
-        start_sta(sta_ssid_, sta_pass_, false);
+    } else {
+      const uint32_t waited = millis() - connect_started_;
+      const wl_status_t st = WiFi.status();
+      const bool gone = (st == WL_NO_SSID_AVAIL || st == WL_CONNECT_FAILED) &&
+                        waited >= kSavedNetGiveUpMs;
+      const bool timed_out = waited >= kConnectTimeoutMs;
+      if (gone || timed_out) {
+        if (join_from_portal_) {
+          Serial.println("wifi: join timed out");
+          WiFi.disconnect(false, false);
+          start_portal("WRONG PASSWORD OR TIMEOUT");
+        } else {
+          reopen_portal_after_sta_fail(gone ? "saved network not found" : "saved network timed out");
+        }
       }
     }
   } else if (phase_ == WifiPhase::kOnline) {
     if (WiFi.status() != WL_CONNECTED) {
-      Serial.println("wifi: dropped, reconnecting");
+      Serial.println("wifi: dropped, reconnecting once");
       start_sta(sta_ssid_, sta_pass_, false);
     }
   }

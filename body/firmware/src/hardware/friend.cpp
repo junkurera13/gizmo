@@ -448,10 +448,6 @@ void FriendConnection::on_socket_event(int type, uint8_t* payload, size_t length
 
 void FriendConnection::enqueue_speaker(const int16_t* samples, size_t count) {
   if (speaker_ == nullptr || samples == nullptr || count == 0) return;
-  int16_t group[3];
-  size_t have = down_n_;
-  for (size_t i = 0; i < down_n_; ++i) group[i] = down_hold_[i];
-  down_n_ = 0;
   size_t dropped = 0;
   auto push16 = [this, &dropped](int16_t sample) {
     if (speaker_n_ >= speaker_cap_) {
@@ -462,21 +458,14 @@ void FriendConnection::enqueue_speaker(const int16_t* samples, size_t count) {
     speaker_w_ = (speaker_w_ + 1) % speaker_cap_;
     ++speaker_n_;
   };
-  auto emit_group = [&](const int16_t* g) {
-    int16_t out[2];
-    if (resample_24k_to_16k(g, 3, out, 2) != 2) return;
-    push16(out[0]);
-    push16(out[1]);
-  };
-  for (size_t i = 0; i < count; ++i) {
-    group[have++] = samples[i];
-    if (have == 3) {
-      emit_group(group);
-      have = 0;
-    }
+  // Play wire PCM as 16 kHz. Gemini Live native audio on this brain is 16 kHz
+  // even though /health advertises 24 kHz; the old 24→16 decimate made speech
+  // 1.5× fast (brief/garbled). Device I2S and local memos stay 16 kHz.
+  if (down_n_ > 0) {
+    for (uint8_t i = 0; i < down_n_; ++i) push16(down_hold_[i]);
+    down_n_ = 0;
   }
-  down_n_ = static_cast<uint8_t>(have);
-  for (size_t i = 0; i < have; ++i) down_hold_[i] = group[i];
+  for (size_t i = 0; i < count; ++i) push16(samples[i]);
   if (dropped) Serial.printf("friend speaker: dropped %u samples (ring full)\n", static_cast<unsigned>(dropped));
 }
 
