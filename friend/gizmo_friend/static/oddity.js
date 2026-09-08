@@ -1,5 +1,7 @@
 import {captionChunks, captionAt} from './oddity-timing.mjs';
 import {mountDevice} from './oddity-device.mjs';
+import {createOrbit} from './oddity-orbit.mjs';
+import {createInteraction} from './oddity-interaction.mjs';
 const $ = (id) => document.getElementById(id);
 const stage = $('stage'), voice = $('voice'), film = $('film');
 let socket, awake = false, turn = '', queue = [], ready = false, playing = false;
@@ -7,6 +9,24 @@ let controller, currentBeat, paused = false, muted = false, archive = [], archiv
 let history = [], plan = [], recorder, stream, held = false, recordingTimer, progressTimer;
 let microphoneAttempt = 0, mediaWaitResolve, audioUnlock, expectedClose = false;
 let captions = [];
+let orbitView, invitation, restoredInvitation, screenOrbit = false;
+function orbit() { return orbitView ||= createOrbit($('orbit')); }
+function interactionUI() {
+  return invitation ||= createInteraction($('interaction'), stage, orbit(), {
+    answer: value => {
+      if (!turn || !currentBeat) return;
+      unlockAudio(); send({type:'interact', turn, id:currentBeat.id, ...value});
+      status('Thinking about what you found…', 'thinking');
+    },
+    experiment: value => send({type:'experiment', turn, id:currentBeat.id, ...value}),
+    reply: () => $('thought').focus(),
+  });
+}
+function invite(beat) {
+  $('caption').textContent = ''; $('pause').hidden = true;
+  interactionUI().show(beat.interaction);
+  status(beat.interaction.kind === 'orbit' ? 'Change the speed. See what happens.' : 'Take your time. You can always tell me something else.', 'exploring');
+}
 const embedded = /(?:^|[?&])embedded=1(?:&|$)/.test(globalThis.location?.search || '');
 if (embedded) document.documentElement.classList.add('embedded');
 
@@ -54,20 +74,25 @@ function playBlink() {
     eye.src = blinkFrames[BLINK_SLOTS[blinkSlot]].src;
   }, 125);
 }
-async function connect() {
+async function connect(previewCode) {
   if (socket && socket.readyState < WebSocket.CLOSING) return;
   $('reconnect').hidden = true; expectedClose = false; inputEnabled(false);
+  const preview = previewCode ?? stored('oddity-preview-v1');
   try {
     const response = await fetch('/oddity/session', {
       method: 'POST',
-      headers: {'X-Oddity-Preview': stored('oddity-preview-v1'), 'X-Oddity-Session': session},
+      headers: {'X-Oddity-Preview': preview, 'X-Oddity-Session': session},
     });
-    if (response.status === 401) { showPreviewGate(session ? 'The preview code has changed. Try the new one.' : ''); return; }
+    if (response.status === 401) {
+      showPreviewGate(preview ? 'That code did not work.' : '');
+      return;
+    }
     if (!response.ok) throw new Error('The private preview is unavailable right now.');
     session = (await response.json()).session;
     remember('oddity-session-v1', session);
     $('preview-gate').hidden = true;
   } catch (error) {
+    if (!$('preview-gate').hidden) $('preview-error').textContent = error.message;
     notice(error.message); $('reconnect').hidden = false; status('Cannot reach the private preview.'); return;
   }
   socket = new WebSocket(`${location.protocol === 'https:' ? 'wss:' : 'ws:'}//${location.host}/oddity/ws?session=${encodeURIComponent(session)}`);
@@ -84,6 +109,7 @@ function handle(event) {
   if (event.type === 'hello') {
     $('connection').textContent = 'Gizmo'; $('connection').className = 'connection online';
     archive = event.library || []; history = event.history || []; renderNotes();
+    restoredInvitation = event.current?.awaiting ? event.current : null;
     inputEnabled(awake); $('wake').disabled = false;
     if (awake) status('Right here. Where were we?', 'idle');
     return;
@@ -109,9 +135,11 @@ function handle(event) {
       if (!playing) status('The next moving picture is taking shape…', 'preparing'); break;
     case 'beat': queue.push(event.beat); playQueue(); break;
     case 'ready': ready = true; if (!playing && !queue.length) finish(); break;
+    case 'observation': if (event.id === currentBeat?.id) invitation?.confirmed(); break;
     case 'interrupted': break;
     case 'error':
       notice(event.message); ready = true;
+      invitation?.enable();
       if (!playing && !queue.length) status('Try that thought again.', 'idle');
       break;
   }
@@ -137,11 +165,20 @@ function wake() {
   stage.dataset.state = 'idle'; inputEnabled(socket?.readyState === WebSocket.OPEN);
   $('starters').hidden = history.length > 0;
   status('Hold to talk. A question, a story, anything.');
+  if (restoredInvitation) {
+    const beat = archive.find(b => b.id === restoredInvitation.id);
+    if (beat?.interaction) {
+      turn = restoredInvitation.invitation_turn; currentBeat = beat;
+      showScene(beat, new AbortController().signal).then(() => invite(beat));
+    }
+    restoredInvitation = null;
+  }
 }
 function ack(phase) {
   if (currentBeat && turn) send({type:'playback', turn, id:currentBeat.id, phase, elapsed:voice.currentTime || 0});
 }
 function stopPlayer() {
+  invitation?.stop(); orbitView?.cancel();
   controller?.abort(); controller = null; playing = false; paused = false;
   voice.pause(); film.pause(); clearInterval(progressTimer);
   $('pause').hidden = true; $('pause').textContent = 'Pause'; $('play-blocked').hidden = true;
@@ -152,6 +189,7 @@ function interrupt() {
   send({type:'interrupt'}); $('caption').textContent = ''; notice();
 }
 function finish() {
+  if (invitation?.active) return;
   $('pause').hidden = true; status('Your turn. Follow that thought.', 'idle');
 }
 function delay(ms, signal) {
@@ -196,6 +234,12 @@ async function startMedia(media, signal) {
   }
 }
 async function showScene(beat, signal) {
+  if (beat.visual === 'orbit' || beat.kind === 'orbit') {
+    $('still').hidden = true; film.hidden = true; film.removeAttribute('src'); film.load();
+    screenOrbit = true; stage.classList.add('has-scene'); $('home').hidden = false;
+    orbit().show(); orbit().reset(); return;
+  }
+  if (beat.visual !== 'keep') { orbitView?.hide(); screenOrbit = false; }
   if (beat.image) {
     const preload = new Image(); preload.src = beat.image; await preload.decode();
     if (signal.aborted) throw new DOMException('Stopped', 'AbortError');
@@ -226,6 +270,7 @@ async function playQueue() {
       [...$('beat-dots').children].forEach((dot, i) => dot.classList.toggle('active', i === beat.index));
       $('pause').hidden = false; status('You can interrupt at any time.', 'playing');
       const archived = {...beat};
+      if (beat.visual === 'keep' && screenOrbit) archived.kind = 'orbit';
       if (beat.visual === 'keep' && stage.classList.contains('has-scene')) {
         archived.image = $('still').getAttribute('src');
         archived.subject = $('still').alt;
@@ -256,13 +301,15 @@ async function playQueue() {
       await breathingRoom(beat.pause_seconds, signal);
       film.pause(); clearInterval(progressTimer); ack('finished');
       history.push({role:'assistant', text:beat.narration}); renderNotes();
+      if (beat.interaction) { invite(beat); return; }
     }
   } catch (error) {
     if (!signal.aborted) { notice(error.message || 'This scene could not be played. Try again.'); send({type:'interrupt'}); queue = []; ready = true; }
   } finally {
     if (controller === ownController && turn === localTurn) {
       playing = false; clearInterval(progressTimer);
-      if (ready) finish(); else status('The next scene is taking shape…', 'preparing');
+      if (invitation?.active) { /* The kid owns this pause. */ }
+      else if (ready) finish(); else status('The next scene is taking shape…', 'preparing');
     }
   }
 }
@@ -351,7 +398,7 @@ $('preview-form').onsubmit = (event) => {
   event.preventDefault();
   const code = $('preview-code').value.trim();
   if (!code) { $('preview-code').focus(); return; }
-  remember('oddity-preview-v1', code); $('preview-error').textContent = ''; connect();
+  remember('oddity-preview-v1', code); $('preview-error').textContent = ''; connect(code);
 };
 $('composer').onsubmit = (event) => { event.preventDefault(); submitThought($('thought').value); };
 $('talk').onpointerdown = (event) => { if (event.button !== 0) return; event.preventDefault(); $('talk').setPointerCapture(event.pointerId); startRecording(); };
@@ -359,9 +406,9 @@ $('talk').onpointerup = stopRecording; $('talk').onpointercancel = cancelRecordi
 $('talk').onlostpointercapture = () => { if (held) stopRecording(); };
 $('talk').oncontextmenu = (event) => event.preventDefault();
 $('pause').onclick = togglePause;
-$('select').onclick = () => { if (!awake) wake(); else if (playing) togglePause(); else if (!$('play-blocked').hidden) $('play-blocked').click(); else $('home').click(); };
-$('previous').onclick = () => browse(-1); $('next').onclick = () => browse(1);
-$('home').onclick = () => { if (!awake) return; interrupt(); send({type:'home'}); stage.classList.remove('has-scene'); $('caption').textContent = ''; $('chapter-title').textContent = ''; $('scene-position').textContent = ''; $('scene-kind').textContent = ''; $('beat-dots').replaceChildren(); $('home').hidden = true; status('Right here.', 'idle'); };
+$('select').onclick = () => { if (!awake) wake(); else if (invitation?.select()) return; else if (playing) togglePause(); else if (!$('play-blocked').hidden) $('play-blocked').click(); else $('home').click(); };
+$('previous').onclick = () => { if (!invitation?.step(-1)) browse(-1); }; $('next').onclick = () => { if (!invitation?.step(1)) browse(1); };
+$('home').onclick = () => { if (!awake) return; interrupt(); orbitView?.hide(); screenOrbit = false; send({type:'home'}); stage.classList.remove('has-scene'); $('caption').textContent = ''; $('chapter-title').textContent = ''; $('scene-position').textContent = ''; $('scene-kind').textContent = ''; $('beat-dots').replaceChildren(); $('home').hidden = true; status('Right here.', 'idle'); };
 $('sound').onclick = () => { muted = !muted; voice.muted = muted; $('sound').textContent = muted ? 'Sound off' : 'Sound on'; $('sound').setAttribute('aria-pressed', String(muted)); $('sound').setAttribute('aria-label', muted ? 'Unmute narration' : 'Mute narration'); };
 $('expand').onclick = async () => { try { if (document.fullscreenElement) await document.exitFullscreen(); else await document.documentElement.requestFullscreen(); } catch { notice('Fullscreen is unavailable in this browser.'); } };
 document.addEventListener('fullscreenchange', () => $('expand').setAttribute('aria-label', document.fullscreenElement ? 'Exit fullscreen' : 'Enter fullscreen'));
@@ -370,11 +417,12 @@ document.querySelectorAll('[data-close]').forEach(button => button.onclick = () 
 document.querySelectorAll('.starters button').forEach(button => button.onclick = () => submitThought(button.textContent));
 const typing = () => (document.activeElement?.id !== 'talk' && ['INPUT','TEXTAREA','BUTTON','SUMMARY'].includes(document.activeElement?.tagName)) || document.querySelector('dialog[open]');
 window.addEventListener('keydown', (event) => {
+  if (!$('preview-gate').hidden) return;
   if (event.repeat || typing()) return;
   if (event.code === 'Space') { event.preventDefault(); startRecording(); }
   if (event.code === 'Enter') { event.preventDefault(); $('select').click(); }
-  if (event.code === 'ArrowUp') { event.preventDefault(); browse(-1); }
-  if (event.code === 'ArrowDown') { event.preventDefault(); browse(1); }
+  if (event.code === 'ArrowUp') { event.preventDefault(); $('previous').click(); }
+  if (event.code === 'ArrowDown') { event.preventDefault(); $('next').click(); }
   if (event.code === 'Escape') $('home').click();
 });
 window.addEventListener('keyup', (event) => { if (event.code === 'Space' && held) { event.preventDefault(); stopRecording(); } });

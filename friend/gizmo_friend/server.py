@@ -48,6 +48,9 @@ ODDITY_PUBLIC_ASSETS = {
     "/static/oddity-outfit.ttf",
     "/static/oddity-skin.json",
     "/static/oddity-timing.mjs",
+    "/static/oddity-orbit.mjs",
+    "/static/oddity-interaction.mjs",
+    "/static/oddity-experience.css",
     "/static/oddity.css",
     "/static/oddity.js",
 }

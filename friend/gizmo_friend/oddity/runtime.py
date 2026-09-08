@@ -15,6 +15,7 @@ from gizmo_friend.brain.memory import memory_provider_from_env
 from gizmo_friend.brain.show_budget import OddityMotionBudget, OddityShowBudget
 from gizmo_friend.brain.shows import _atomic_write
 from gizmo_friend.oddity.director import Beat, Director
+from gizmo_friend.oddity.interactions import interaction_answer, orbit_result
 
 logger = logging.getLogger(__name__)
 MEDIA_NAME = re.compile(r"[0-9a-f]{32}\.(jpg|mp4|wav)")
@@ -43,6 +44,7 @@ class ExperienceSession:
         self.video_budget = OddityMotionBudget(root)
         self.history: list[dict] = []
         self.current: dict = {}
+        self.journey: dict = {"goal": "", "observations": []}
         self.library: list[dict] = []
         self.pending: dict[str, dict] = {}
         self.turn = ""
@@ -58,17 +60,21 @@ class ExperienceSession:
             saved = json.loads(path.read_text())
             self.history = saved.get("history", [])[-24:]
             self.current = saved.get("current", {})
+            self.journey = saved.get("journey", self.journey)
             self.library = saved.get("library", [])[-40:]
             self.character = saved.get("character", "")
             self.reference = saved.get("reference")
             if self.current.get("playing"):
                 self.current.update(playing=False, interrupted=True)
+            if self.current.get("awaiting"):
+                self.turn = self.current.get("invitation_turn", "")
 
     def save(self):
         _atomic_write(self.directory / "session.json", json.dumps({
             "history": self.history[-24:], "current": self.current,
             "library": self.library[-40:], "character": self.character,
             "reference": self.reference,
+            "journey": self.journey,
         }).encode())
 
     async def load_memory(self):
@@ -82,7 +88,8 @@ class ExperienceSession:
         if turn == self.turn:
             await self.send({"type": kind, "turn": turn, **values})
 
-    async def stop(self):
+    async def stop(self, *, preserve_invitation=False):
+        invitation_turn = self.turn
         self.turn = ""
         if self.task:
             self.task.cancel()
@@ -91,6 +98,10 @@ class ExperienceSession:
         if self.current.get("playing"):
             self.current["playing"] = False
             self.current["interrupted"] = True
+        if self.current.get("interaction") and not preserve_invitation:
+            self.current["awaiting"] = False
+        if preserve_invitation and self.current.get("awaiting"):
+            self.current["invitation_turn"] = invitation_turn
         self.pending.clear()
         self.save()
 
@@ -185,7 +196,17 @@ class ExperienceSession:
             self.save()
             await self.event("transcript", turn, role="user", text=text)
             await self.event("status", turn, stage="thinking")
-            plan = await self.director.plan(text, self.history[:-1], self.current, self.memory_context)
+            context = {**self.current, "journey": self.journey}
+            plan = await self.director.plan(text, self.history[:-1], context, self.memory_context)
+            if plan.thread == "new":
+                self.journey = {"goal": plan.goal or text[:240], "observations": []}
+            elif plan.thread == "detour":
+                self.journey.setdefault("return_to", self.journey.get("goal", ""))
+                self.journey["detour"] = text[:240]
+            elif plan.goal:
+                self.journey["goal"] = plan.goal
+                self.journey.pop("detour", None)
+                self.journey.pop("return_to", None)
             if plan.character != self.character:
                 self.character, self.reference = plan.character, None
             await self.event("plan", turn, title=plan.title, beats=[{
@@ -225,10 +246,13 @@ class ExperienceSession:
             if self.current.get("id") == beat["id"]:
                 return
             previous_visual = self.current.get("screen")
-            screen = ({"image": beat["image"], "video": beat["video"], "subject": beat["subject"]}
+            screen = ({"kind": "orbit", "speed": beat["interaction"]["speed"]}
+                      if beat["visual"] == "orbit" else
+                      {"image": beat["image"], "video": beat["video"], "subject": beat["subject"]}
                       if beat["image"] else (None if beat["visual"] == "face" else previous_visual))
             self.current = {"id": beat["id"], "narration": beat["narration"], "screen": screen,
-                            "playing": True, "title": beat["title"], "elapsed": 0}
+                            "playing": True, "title": beat["title"], "elapsed": 0,
+                            "interaction": beat.get("interaction"), "awaiting": False}
             archived = dict(beat)
             if beat["visual"] == "keep" and screen:
                 archived.update(screen)
@@ -238,6 +262,9 @@ class ExperienceSession:
             self.current["elapsed"] = max(0, min(180, float(message.get("elapsed", 0))))
         elif phase == "finished" and self.current.get("id") == beat["id"]:
             self.current["playing"] = False
+            self.journey["last_presented"] = beat["narration"]
+            if beat.get("interaction"):
+                self.current.update(awaiting=True, invitation_turn=self.turn)
             self.history.append({"role": "assistant", "text": beat["narration"],
                                  "visual": beat["subject"], "presented": "completed"})
             self.history = self.history[-24:]
@@ -247,6 +274,24 @@ class ExperienceSession:
             self.memory_task = asyncio.create_task(self.remember())
         self.save()
 
+    async def experiment(self, message: dict):
+        if (message.get("turn") != self.turn or message.get("id") != self.current.get("id")
+                or not self.current.get("awaiting")
+                or (self.current.get("interaction") or {}).get("kind") != "orbit"):
+            raise ValueError("That experiment is no longer active")
+        trial = orbit_result(message.get("speed"))
+        self.current["trials"] = (self.current.get("trials", []) + [trial])[-6:]
+        self.current["screen"] = {"kind": "orbit", "speed": trial["speed"], "outcome": trial["outcome"]}
+        self.save()
+        await self.event("observation", self.turn, id=self.current["id"], observation=trial)
+
+    def answer(self, message: dict) -> str:
+        text, observation = interaction_answer(self.current, message, self.turn)
+        self.current["awaiting"] = False  # consume exactly once before any await
+        self.journey["observations"] = (self.journey.get("observations", []) + [observation])[-8:]
+        self.save()
+        return text
+
     def revisit(self, beat_id: str | None):
         if beat_id is None:
             self.current = {"screen": None, "playing": False}
@@ -254,7 +299,9 @@ class ExperienceSession:
             beat = next((b for b in self.library if b["id"] == beat_id), None)
             if not beat:
                 return
-            self.current = {"screen": {"image": beat["image"], "video": beat["video"], "subject": beat["subject"]}
+            self.current = {"screen": {"kind": "orbit", "speed": beat["interaction"]["speed"]}
+                            if beat["visual"] == "orbit" else
+                            {"image": beat["image"], "video": beat["video"], "subject": beat["subject"]}
                             if beat["image"] else None, "narration": beat["narration"],
                             "title": beat["title"], "playing": False, "revisited": True}
         self.save()
@@ -270,7 +317,7 @@ class ExperienceSession:
             logger.info("Oddity remote memory unavailable; local history retained")
 
     async def close(self):
-        await self.stop()
+        await self.stop(preserve_invitation=True)
         if self.memory_task:
             self.memory_task.cancel()
             await asyncio.gather(self.memory_task, return_exceptions=True)

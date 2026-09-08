@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import asyncio
 import base64
+import hashlib
 import hmac
 import json
 import os
@@ -66,7 +67,10 @@ def router(root: Path, static: Path) -> APIRouter:
         if os.environ.get("RAILWAY_ENVIRONMENT_ID") and not preview_token:
             raise HTTPException(503, "preview access is not configured")
         provided = request.headers.get("x-oddity-preview", "")
-        if preview_token and not hmac.compare_digest(provided.encode(), preview_token.encode()):
+        if preview_token and not hmac.compare_digest(
+            hashlib.sha256(provided.encode()).digest(),
+            hashlib.sha256(preview_token.encode()).digest(),
+        ):
             raise HTTPException(401, "preview code required")
         session_id = identity(request) or create_session()
         response = JSONResponse({"session": session_id}, headers={"Cache-Control": "no-store"})
@@ -121,6 +125,16 @@ def router(root: Path, static: Path) -> APIRouter:
                         await socket.send_json({"type": "interrupted"})
                     elif kind == "playback":
                         await friend.playback(message)
+                    elif kind == "experiment":
+                        await friend.experiment(message)
+                    elif kind == "interact":
+                        # Validate first. Invalid/stale/duplicate clicks cannot spend.
+                        from gizmo_friend.oddity.interactions import interaction_answer
+                        interaction_answer(friend.current, message, friend.turn)
+                        if not await asyncio.to_thread(turn_budget.reserve, "oddity-" + session_id):
+                            await socket.send_json({"type": "error", "message": "Today's preview allowance is used up. You can keep exploring."})
+                            continue
+                        await friend.begin(friend.answer(message))
                     elif kind in {"home", "revisit"}:
                         await friend.stop()
                         friend.revisit(message.get("id") if kind == "revisit" else None)

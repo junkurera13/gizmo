@@ -7,8 +7,9 @@
   <link rel="icon" href="data:,">
   <link rel="stylesheet" href="/static/oddity.css">
   <link rel="stylesheet" href="/static/oddity-device.css?v=gate4">
+  <link rel="stylesheet" href="/static/oddity-experience.css">
   <link rel="preload" as="image" href="/static/device-reference-ptt-pressed.png">
-  <script type="module" src="/static/oddity.js?v=gate4"></script>
+  <script type="module" src="/static/oddity.js?v=gate5"></script>
 </head>
 <body>
   <header class="masthead">
@@ -37,10 +38,11 @@
         <img class="device-art device-pressed" src="/static/device-reference-ptt-pressed.png" alt="" draggable="false">
         <div id="stage" class="stage" data-state="asleep">
           <div class="stage-top"><span id="connection" class="connection">Connecting</span><span id="chapter-title"></span><button id="home" class="stage-home" aria-label="Return to Gizmo's face" hidden>↩</button></div>
-          <div id="scene" class="scene"><img id="still" alt="" hidden><video id="film" muted playsinline preload="auto" hidden></video></div>
+          <div id="scene" class="scene"><img id="still" alt="" hidden><video id="film" muted playsinline preload="auto" hidden></video><canvas id="orbit" class="orbit-canvas" aria-label="Orbit experiment: a satellite falling around Earth" hidden></canvas></div>
           <div id="friend" class="friend"><img src="/static/oddity-character.png" alt="Gizmo" draggable="false"></div>
           <div id="wake-panel" class="wake-panel"><button id="wake" class="wake">Wake Gizmo <span>↗</span></button></div>
           <div id="caption" class="caption" aria-live="polite"></div>
+          <div id="interaction" class="interaction" aria-label="Explore with Gizmo" hidden></div>
           <button id="play-blocked" class="play-blocked" hidden>Tap to play narration</button>
           <div id="listening" class="listening" hidden><i></i><i></i><i></i><i></i><i></i><span>I'm listening</span></div>
           <div class="stage-bottom"><span id="scene-position"></span><div id="beat-dots" class="beat-dots" aria-label="Experience progress"></div><span id="scene-kind"></span></div>
@@ -54,7 +56,7 @@
       <p id="notice" class="notice" role="alert" hidden></p>
       <div class="device-hints"><span id="talk-label">Hold the pink side to talk <kbd>space</kbd></span><span><kbd>↑ ↓</kbd> Explore <kbd>↵</kbd> Select</span></div>
       <form id="composer" class="composer"><input id="thought" name="thought" placeholder="Or type a thought…" aria-label="Your thought" maxlength="3000" autocomplete="off" disabled><button id="send" aria-label="Send thought" disabled>↗</button></form>
-      <div id="starters" class="starters" hidden><button>What if I fell into Jupiter?</button><button>Why don't bridges fall down?</button></div>
+      <div id="starters" class="starters" hidden><button>Why don't satellites fall down?</button><button>What if I fell into Jupiter?</button></div>
     </section>
   </main>
   <footer><span>Gizmo · Browser preview</span><button id="open-notes" class="quiet">Session notes</button><span class="keyboard-hint">Interrupt whenever curiosity takes you.</span></footer>

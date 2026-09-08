@@ -24,7 +24,7 @@ async function controller(getUserMedia) {
   const window = {addEventListener:(name, fn)=>{windowEvents[name]=fn;}};
   const context = vm.createContext({document,window,navigator:{mediaDevices:{getUserMedia}},
     setTimeout,clearTimeout,setInterval,clearInterval,AbortController,DOMException,
-    WebSocket:{OPEN:1}, MediaRecorder:class {}, captionChunks:()=>[],captionAt:()=>'',console});
+    WebSocket:{OPEN:1}, MediaRecorder:class {}, Image:class {}, captionChunks:()=>[],captionAt:()=>'',console});
   window.MediaRecorder = context.MediaRecorder;
   let source = await fs.readFile(new URL('../gizmo_friend/static/oddity.js',import.meta.url),'utf8');
   source = source.replace(/^import .*;\n/gm, '').replace(/try \{ await mountDevice[\s\S]*$/, '');

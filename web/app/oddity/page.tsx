@@ -8,11 +8,9 @@ export const metadata: Metadata = {
 };
 
 export default function OddityPage() {
-  const emulatorUrl = process.env.ODDITY_EMULATOR_URL ?? (
-    process.env.NODE_ENV === "development"
-      ? "http://127.0.0.1:43148/oddity"
-      : "https://gizmo-brain-production.up.railway.app/oddity"
-  );
+  const emulatorUrl =
+    process.env.ODDITY_EMULATOR_URL ??
+    "https://gizmo-brain-production.up.railway.app/oddity";
 
   return (
     <main className="oddity-page">
