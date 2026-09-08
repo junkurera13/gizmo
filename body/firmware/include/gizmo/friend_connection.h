@@ -55,7 +55,8 @@ class FriendConnection {
   bool parse_url();
   void build_headers();
   void accept_session_state(const char* state);
-  void enqueue_speaker(const int16_t* samples, size_t count);
+  bool enqueue_speaker(const int16_t* samples, size_t count);
+  bool can_receive() const;
 
   FriendPhase phase_ = FriendPhase::kOff;
   uint32_t backoff_until_ = 0;
@@ -76,6 +77,12 @@ class FriendConnection {
   char extra_headers_[280] = "";
 
   static constexpr size_t kSpeakerCap = 16000 * 3;  // 16 kHz after 24→16
+  // Reserve enough room for an entire maximum-size JSON/base64 WS frame,
+  // including the resampler's two carried input samples. No audio is dropped
+  // to catch up with a provider generating faster than real time.
+  static constexpr size_t kMaxMessageBytes = 98304;
+  static constexpr size_t kMaxFrameSamples = ((kMaxMessageBytes * 3 / 4 / 2 + 2) / 3) * 2;
+  static_assert(kSpeakerCap >= kMaxFrameSamples, "speaker ring must fit a full WS frame");
   int16_t* speaker_ = nullptr;
   size_t speaker_cap_ = 0;
   size_t speaker_w_ = 0;

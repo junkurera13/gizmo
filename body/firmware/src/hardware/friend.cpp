@@ -446,18 +446,22 @@ void FriendConnection::on_socket_event(int type, uint8_t* payload, size_t length
   }
 }
 
-void FriendConnection::enqueue_speaker(const int16_t* samples, size_t count) {
-  if (speaker_ == nullptr || samples == nullptr || count == 0) return;
+bool FriendConnection::can_receive() const {
+  return speaker_ != nullptr && speaker_cap_ - speaker_n_ >= kMaxFrameSamples;
+}
+
+bool FriendConnection::enqueue_speaker(const int16_t* samples, size_t count) {
+  if (speaker_ == nullptr || samples == nullptr || count == 0) return false;
+  const size_t needed = ((count + down_n_) / 3) * 2;
+  if (needed > speaker_cap_ - speaker_n_) {
+    Serial.println("friend speaker: receive overflow; turn cancelled");
+    return false;  // reject the whole packet, never splice missing speech
+  }
   int16_t group[3];
   size_t have = down_n_;
   for (size_t i = 0; i < down_n_; ++i) group[i] = down_hold_[i];
   down_n_ = 0;
-  size_t dropped = 0;
-  auto push16 = [this, &dropped](int16_t sample) {
-    if (speaker_n_ >= speaker_cap_) {
-      ++dropped;
-      return;
-    }
+  auto push16 = [this](int16_t sample) {
     speaker_[speaker_w_] = sample;
     speaker_w_ = (speaker_w_ + 1) % speaker_cap_;
     ++speaker_n_;
@@ -477,7 +481,7 @@ void FriendConnection::enqueue_speaker(const int16_t* samples, size_t count) {
   }
   down_n_ = static_cast<uint8_t>(have);
   for (size_t i = 0; i < have; ++i) down_hold_[i] = group[i];
-  if (dropped) Serial.printf("friend speaker: dropped %u samples (ring full)\n", static_cast<unsigned>(dropped));
+  return true;
 }
 
 size_t FriendConnection::take_speaker(int16_t* dest, size_t cap) {
@@ -523,7 +527,7 @@ void FriendConnection::accept_session_state(const char* state) {
 }
 
 void FriendConnection::on_message(const char* json, size_t len) {
-  if (len > 98304) {
+  if (len > kMaxMessageBytes) {
     Serial.printf("friend: ws message %u dropped (too large)\n", static_cast<unsigned>(len));
     return;
   }
@@ -548,7 +552,11 @@ void FriendConnection::on_message(const char* json, size_t len) {
       if (speaker_n_ == 0) {
         Serial.printf("friend speaker: start %u pcm bytes\n", static_cast<unsigned>(decoded_len));
       }
-      enqueue_speaker(reinterpret_cast<const int16_t*>(decoded), decoded_len / 2);
+      if (!enqueue_speaker(reinterpret_cast<const int16_t*>(decoded), decoded_len / 2)) {
+        free(decoded);
+        abort();
+        return;
+      }
     }
     free(decoded);
     return;
@@ -691,8 +699,13 @@ bool FriendConnection::send_pcm16k(const int16_t* samples, size_t count) {
 }
 
 void FriendConnection::update(bool wifi_online) {
+  // The pinned synchronous ESP32 WebSockets client receives at most one
+  // frame per loop(). Leave it in TCP until the downstream speaker frees
+  // space; its receive window then backpressures a fast producer. This runs
+  // only on the network task, so playback and local controls keep pumping.
   if (wifi_online && ws_used_ &&
-      (phase_ == FriendPhase::kConnecting || phase_ == FriendPhase::kOnline)) ws.loop();
+      (phase_ == FriendPhase::kConnecting || phase_ == FriendPhase::kOnline) &&
+      can_receive()) ws.loop();
 
   if (!wifi_online) {
     if (phase_ != FriendPhase::kNeedConfig && phase_ != FriendPhase::kOff) {
