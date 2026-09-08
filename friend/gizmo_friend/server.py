@@ -40,6 +40,7 @@ ODDITY_PUBLIC_ASSETS = {
     "/static/oddity-character.png",
     "/static/oddity-device.css",
     "/static/oddity-device.mjs",
+    "/static/oddity-michroma.ttf",
     "/static/oddity-outfit.ttf",
     "/static/oddity-skin.json",
     "/static/oddity-timing.mjs",
