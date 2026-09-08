@@ -15,7 +15,6 @@ constexpr i2s_port_t kMicPort = I2S_NUM_0;  // PDM RX/TX exist only on controlle
 constexpr i2s_port_t kAmpPort = I2S_NUM_1;  // host tests only; device speaker is LEDC PWM
 constexpr int kDmaBuffers = 12;
 constexpr int kDmaFrames = 256;
-constexpr size_t kAmpRingSamples = kDmaBuffers * kDmaFrames;
 constexpr int32_t kMicGain = 3;
 constexpr int kMaxChunksPerUpdate = 16;
 constexpr uint32_t kVuDecayMs = 60;
@@ -24,6 +23,7 @@ constexpr uint32_t kVuDecayMs = 60;
 // Exact XTAL divider: 40 MHz / (512 * 1.25) = 62.5 kHz. Two carrier
 // periods per update avoid the former 39.0625 kHz vs 32 kHz clock mismatch.
 // Keep XTAL as the LEDC source so the camera's separate timer is unaffected.
+constexpr size_t kAmpRingSamples = kDmaBuffers * kDmaFrames;
 constexpr uint8_t kPwmChannel = 4;  // LEDC_TIMER_2; camera XCLK keeps TIMER_0
 constexpr uint8_t kPwmBits = 9;
 constexpr uint32_t kPwmFreq = 62500;

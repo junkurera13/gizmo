@@ -305,6 +305,8 @@ void FriendConnection::forget() {
 }
 
 void FriendConnection::disconnect() {
+  show_ = ShowRequest{};
+  show_changed_ = true;
   hello_ok_ = false;
   session_ready_ = false;
   glass_seen_ = false;
@@ -418,6 +420,8 @@ bool FriendConnection::open_socket() {
 void FriendConnection::on_socket_event(int type, uint8_t* payload, size_t length) {
   switch (static_cast<WStype_t>(type)) {
     case WStype_DISCONNECTED:
+      show_ = ShowRequest{};
+      show_changed_ = true;
       interrupt_speaker();
       Serial.println("friend ws: disconnected");
       if (phase_ == FriendPhase::kOnline || phase_ == FriendPhase::kConnecting) {
@@ -562,8 +566,8 @@ void FriendConnection::on_message(const char* json, size_t len) {
     return;
   }
 
-  StaticJsonDocument<192> filter;
-  for (const char* key : {"type", "state", "protocol_version"}) filter[key] = true;
+  StaticJsonDocument<256> filter;
+  for (const char* key : {"type", "state", "protocol_version", "viewing", "still", "frames"}) filter[key] = true;
   DynamicJsonDocument document(len > 2048 ? 2048 : len + 512);
   if (deserializeJson(document, json, len, DeserializationOption::Filter(filter))) return;
   type = document["type"] | "";
@@ -592,6 +596,25 @@ void FriendConnection::on_message(const char* json, size_t len) {
   }
 
   if (strcmp(type, "glass") == 0) {
+    if (hello_ok_) {
+      if (document["viewing"].is<bool>() && !document["viewing"].as<bool>()) {
+        show_ = ShowRequest{};
+        show_changed_ = true;
+      } else {
+        const char* still = document["still"] | "";
+        const char* frames = document["frames"] | "";
+        if (show_path(still, device_id_, ".jpg")) {
+          if (strcmp(show_.still, still)) show_ = ShowRequest{};
+          strlcpy(show_.still, still, sizeof(show_.still));
+          show_.viewing = true;
+          show_changed_ = true;
+        }
+        if (show_.viewing && show_path(frames, device_id_, ".mjpeg") && show_same(show_.still, frames)) {
+          strlcpy(show_.frames, frames, sizeof(show_.frames));
+          show_changed_ = true;
+        }
+      }
+    }
     glass_seen_ = true;
     if (hello_ok_ && session_ready_) {
       phase_ = FriendPhase::kOnline;
@@ -613,7 +636,17 @@ void FriendConnection::on_message(const char* json, size_t len) {
     interrupt_speaker();
     return;
   }
-  // settings / glass media: stubbed. Local Settings still owns the menu.
+  // Local Settings still owns the menu.
+}
+
+bool FriendConnection::take_show(ShowRequest& request) {
+  if (!show_changed_) return false;
+  show_changed_ = false;
+  request = show_;
+  strlcpy(request.base, url_, sizeof(request.base));
+  strlcpy(request.token, token_, sizeof(request.token));
+  strlcpy(request.device, device_id_, sizeof(request.device));
+  return true;
 }
 
 bool FriendConnection::send_json(const char* json) {
@@ -666,6 +699,8 @@ bool FriendConnection::send_ptt(bool active) {
 }
 
 bool FriendConnection::send_select() {
+  show_ = ShowRequest{};
+  show_changed_ = true;
   return send_json("{\"type\":\"select\"}");
 }
 

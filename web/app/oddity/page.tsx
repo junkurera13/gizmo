@@ -21,7 +21,7 @@ export default function OddityPage() {
           className="oddity-frame"
           src={`${emulatorUrl}?embedded=1`}
           title="Gizmo running OddityOS 1"
-          allow="microphone; fullscreen"
+          allow="camera; microphone; fullscreen"
           allowFullScreen
           referrerPolicy="no-referrer"
         />

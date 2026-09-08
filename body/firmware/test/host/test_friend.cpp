@@ -17,6 +17,23 @@ int main() {
   message(c,"{\"type\":\"glass\",\"viewing\":false}");assert(!c.ready());
   message(c,"{\"type\":\"state\",\"state\":\"booting\"}");assert(!c.ready());
   message(c,"{\"type\":\"state\",\"state\":\"listening\"}");assert(c.ready());
+  gizmo::ShowRequest show;
+  c.take_show(show);
+  const std::string base = std::string("/shows/") + c.device_id() + "/0123456789abcdef0123456789abcdef";
+  message(c, ("{\"type\":\"glass\",\"still\":\"" + base + ".jpg\",\"viewing\":true}").c_str());
+  assert(c.take_show(show) && show.viewing && show.frames[0] == 0);
+  assert(std::string(show.token) == "test-token");
+  assert(std::string(show.still) == base + ".jpg");
+  message(c, "{\"type\":\"glass\",\"frames\":\"https://evil.test/video.mjpeg\"}");
+  assert(!c.take_show(show));
+  message(c, ("{\"type\":\"glass\",\"frames\":\"" + base + ".mjpeg\",\"viewing\":true}").c_str());
+  assert(c.take_show(show) && gizmo::show_same(show.still, show.frames));
+  message(c, "{\"type\":\"glass\",\"emotion\":\"happy\"}");
+  assert(!c.take_show(show)); // ordinary character updates preserve the picture
+  c.send_select();
+  assert(c.take_show(show) && !show.viewing);
+  message(c, ("{\"type\":\"glass\",\"frames\":\"" + base + ".mjpeg\",\"viewing\":true}").c_str());
+  assert(!c.take_show(show)); // a late video cannot revive a dismissed still
   // Wi-Fi reconnect to the same powered session must not cold-boot it again.
   c.abort();mock_sent.clear();c.open_socket();
   message(c,"{\"type\":\"hello\",\"protocol_version\":1,\"state\":\"asleep\"}");

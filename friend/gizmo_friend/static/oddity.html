@@ -7,7 +7,7 @@
   <link rel="icon" href="data:,">
   <link rel="stylesheet" href="/static/oddity-boot.css?v=gate14">
   <link rel="stylesheet" href="/static/oddity.css">
-  <link rel="stylesheet" href="/static/oddity-device.css?v=gate24">
+  <link rel="stylesheet" href="/static/oddity-device.css?v=gate30">
   <link rel="stylesheet" href="/static/oddity-experience.css">
   <link rel="preload" as="image" href="/static/device-reference-ptt-pressed.png">
   <link rel="preload" as="image" href="/static/oddity-boot-00.jpg">
@@ -34,7 +34,7 @@
       document.documentElement.classList.add('oddity-locked');
     }
   </script>
-  <script type="module" src="/static/oddity.js?v=gate24"></script>
+  <script type="module" src="/static/oddity.js?v=gate30"></script>
 </head>
 <body>
   <header class="masthead">
@@ -75,12 +75,9 @@
             <div id="glass-home" class="glass-home" hidden>
               <div class="glass-hud">
                 <span id="glass-clock" class="glass-clock"></span>
-                <span id="glass-hearts" class="glass-hearts" aria-label="Battery">
-                  <img src="/static/oddity-heart-full.png" alt="">
-                  <img src="/static/oddity-heart-full.png" alt="">
-                  <img src="/static/oddity-heart-full.png" alt="">
-                  <img src="/static/oddity-heart-full.png" alt="">
-                  <img src="/static/oddity-heart-full.png" alt="">
+                <span id="glass-battery" class="glass-battery" aria-label="Battery">
+                  <span class="glass-battery-body"><i></i></span>
+                  <span class="glass-battery-nub" aria-hidden="true"></span>
                 </span>
               </div>
               <div id="friend" class="friend"><img src="/static/oddity-character.png" alt="" draggable="false"></div>
@@ -104,12 +101,13 @@
               </div>
             </div>
             <div id="glass-camera" class="glass-camera" hidden>
+              <div class="camera-strip">
+                <img src="/static/oddity-character.png" alt="" draggable="false">
+                <p id="camera-line" class="camera-line"></p>
+              </div>
               <div class="camera-finder">
                 <video id="camera-feed" autoplay muted playsinline hidden></video>
                 <span id="camera-status">CAMERA</span>
-              </div>
-              <div class="camera-strip">
-                <img src="/static/oddity-character.png" alt="" draggable="false">
               </div>
             </div>
             <div id="scene" class="scene"><img id="still" alt="" hidden><video id="film" muted playsinline preload="auto" hidden></video><canvas id="orbit" class="orbit-canvas" aria-label="Orbit experiment: a satellite falling around Earth" hidden></canvas></div>

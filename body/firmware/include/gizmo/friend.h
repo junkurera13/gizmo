@@ -5,6 +5,7 @@
 #include <freertos/FreeRTOS.h>
 #include <freertos/queue.h>
 #include "gizmo/friend_phase.h"
+#include "gizmo/show_format.h"
 
 namespace gizmo {
 // Main-loop facade. The network task exclusively owns HTTP, TLS and WebSocket
@@ -32,6 +33,7 @@ class FriendLink {
   size_t take_speaker(int16_t* dest, size_t cap);
   void interrupt_speaker();
   bool take_barge_in();
+  bool take_show(ShowRequest& request);
 
  private:
   enum class Kind : uint8_t { kUrl, kToken, kForget, kPttDown, kPttUp, kPcm, kSelect, kInterrupt };
@@ -59,6 +61,7 @@ class FriendLink {
   QueueHandle_t commands_ = nullptr;
   QueueHandle_t speaker_ = nullptr;
   QueueHandle_t statuses_ = nullptr;
+  QueueHandle_t shows_ = nullptr;
   std::atomic<bool> wifi_online_{false};
   std::atomic<bool> overflow_{false};
   static constexpr size_t kJpegMax = 48 * 1024;

@@ -18,6 +18,7 @@
 #include "gizmo/input.h"
 #include "gizmo/screens.h"
 #include "gizmo/settings.h"
+#include "gizmo/show.h"
 #include "gizmo/wifi.h"
 
 // Operating loop for the handheld. One cooperative loop() owns every
@@ -52,6 +53,7 @@ gizmo::Haptic haptic;
 gizmo::Input input;
 gizmo::WifiLink wifi;
 gizmo::FriendLink friend_link;
+gizmo::ShowPlayer show_player;
 Preferences prefs;
 
 uint16_t* framebuffer = nullptr;
@@ -198,6 +200,10 @@ void load_settings() {
 
 void enter(State next) {
   if (state == next) return;
+  if ((next == State::kSettings || next == State::kPlayback) && show_player.viewing()) {
+    show_player.cancel();
+    friend_link.send_select();
+  }
   Serial.printf("state %s -> %s\n", state_name(state), state_name(next));
   state = next;
   state_since = millis();
@@ -223,6 +229,7 @@ void finish_recording(bool replay);
 
 void enter_camera() {
   if (state == State::kBoot || state == State::kRecording) return;
+  if (show_player.viewing()) { show_player.cancel(); friend_link.send_select(); }
   if (state == State::kCamera && camera.running()) {
     Serial.println("camera: already open");
     return;
@@ -398,6 +405,12 @@ void resolve_single_select() {
     return;
   }
   if (state != State::kIdle) return;
+  if (show_player.viewing()) {
+    show_player.cancel();
+    friend_link.send_select();
+    dirty = true;
+    return;
+  }
   // Friend-online: Select is the interrupt/wake event, not local memo play.
   // Disconnected: keep the local memo path Woz verified on the amp.
   if (friend_link.ready()) {
@@ -568,6 +581,7 @@ void command(char value) {
       }
       break;
     case 'h':
+      if (show_player.viewing()) { show_player.cancel(); friend_link.send_select(); dirty = true; }
       if (state == State::kSettings) {
         settings.open = false;
         enter(State::kIdle);
@@ -623,6 +637,7 @@ void command(char value) {
                     friend_link.detail());
       break;
     case '?':
+      show_player.diagnose();
       Serial.printf("state=%s camera=%s audio=%s memo=%ums wifi=%s friend=%s display=%s rotation=%u heap=%u "
                     "psram_free=%u backlight=%s brightness=%u volume=%u clock_wght=%d\n",
                     state_name(state), camera.running() ? "running" : "off",
@@ -737,6 +752,7 @@ void setup() {
   Serial.printf("wifi begin: %s ap=%s (plug the Sense U.FL antenna)\n", gizmo::wifi_phase_name(wifi.phase()),
                 wifi.ap_ssid());
   friend_link.begin();
+  show_player.begin();
   vision_jpeg = static_cast<uint8_t*>(heap_caps_malloc(kVisionMax, MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT));
   if (vision_jpeg == nullptr) vision_jpeg = static_cast<uint8_t*>(heap_caps_malloc(kVisionMax, MALLOC_CAP_8BIT));
   Serial.printf("vision jpeg buffer: %s\n", vision_jpeg ? "ready" : "unavailable");
@@ -764,6 +780,18 @@ void loop() {
   }
 
   friend_link.update(wifi.online());
+  const bool had_show = show_player.available();
+  gizmo::ShowRequest show_request;
+  if (friend_link.take_show(show_request)) {
+    if (state == State::kSettings || state == State::kCamera || state == State::kPlayback) {
+      if (show_request.viewing) friend_link.send_select();
+      show_player.cancel();
+    } else {
+      show_player.submit(show_request);
+    }
+  }
+  show_player.update();
+  if (had_show != show_player.available()) dirty = true;
   audio.update();
   pump_friend_audio();
   // The memo limit also applies while the camera owns the visible state.
@@ -830,6 +858,12 @@ void loop() {
       break;
   }
 
-  if (dirty && state != State::kCamera) render();
+  if ((state == State::kIdle || state == State::kRecording) && show_player.available() && ensure_framebuffer()) {
+    if (show_player.render(framebuffer, dirty)) {
+      display.blit_rgb565(framebuffer, canvas.width, canvas.height);
+      last_redraw = now;
+    }
+    dirty = !show_player.available();
+  } else if (dirty && state != State::kCamera) render();
   delay(1);
 }

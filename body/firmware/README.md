@@ -3,6 +3,30 @@
 Target: **Seeed Studio XIAO ESP32S3 Sense**. This folder contains code compiled
 for the actual ESP32-S3; the Mac simulator remains in `../../simulator/`.
 
+### Generated pictures and motion
+
+Firmware now consumes Friend's `glass.still`, `glass.frames`, and
+`glass.viewing:false` events. It downloads a 320×240 JPEG and paints it over
+home, without HUD or captions. When motion arrives, the still stays visible
+until the entire silent MJPEG sequence is downloaded and validated, then loops
+at 12 fps. Select dismisses the picture; opening Settings or Camera dismisses
+it too. PTT can continue while the picture is visible.
+
+The device requests media from the configured brain using its existing bearer
+token and `X-Gizmo-Device` identity. It never downloads provider URLs or MP4s.
+The backend generates stills using Gemini, generates motion using fal's
+MiniMax image-to-video model, and serves its saved JPEG/MJPEG versions.
+
+Media HTTP/TLS has a separate task from the voice WebSocket. Encoded clips are
+bounded to 4 MiB / 240 frames in PSRAM (stills to 256 KiB); every frame must be
+a baseline 320×240 JPEG before it can reach the decoder. Bad, unavailable, or
+oversized motion leaves the still visible. Dismissal, replacement, and network
+disconnect invalidate pending results. `?` reports Show state, media sizes,
+frame count, and free PSRAM.
+
+See [SHOW_TESTING.md](SHOW_TESTING.md) for software verification and the required
+flash/panel pass. The 12 fps target is provisional until measured on hardware.
+
 Current scope is a **local terminal OS** on the breadboard hardware showing the
 same boot and home as the Mac simulator: the Glass boot flipbook (1.25 s drop,
 blink, ODDITY wordmark, chime at 2.875 s, held to 5.05 s), the home character

@@ -2,7 +2,7 @@ import {captionChunks, captionAt} from './oddity-timing.mjs';
 import {mountDevice} from './oddity-device.mjs';
 import {createOrbit} from './oddity-orbit.mjs';
 import {createInteraction} from './oddity-interaction.mjs';
-import {createGlass} from './oddity-glass.mjs?v=gate24';
+import {createGlass} from './oddity-glass.mjs?v=gate30';
 const $ = (id) => document.getElementById(id);
 const stage = $('stage'), voice = $('voice'), film = $('film');
 let socket, awake = false, turn = '', queue = [], ready = false, playing = false;
@@ -25,7 +25,7 @@ function interactionUI() {
   });
 }
 function invite(beat) {
-  $('caption').textContent = ''; $('pause').hidden = true;
+  setCaption(); $('pause').hidden = true;
   interactionUI().show(beat.interaction);
   status(beat.interaction.kind === 'orbit' ? 'Change the speed. See what happens.' : 'Take your time. You can always tell me something else.', 'exploring');
 }
@@ -42,9 +42,13 @@ function remember(key, value) {
 }
 let session = stored('oddity-session-v1');
 voice.addEventListener('timeupdate', () => {
-  if (playing && currentBeat?.audio && !voice.paused) $('caption').textContent = captionAt(captions, voice.currentTime, voice.duration);
+  if (playing && currentBeat?.audio && !voice.paused) setCaption(captionAt(captions, voice.currentTime, voice.duration));
 });
 
+function setCaption(text = '') {
+  $('caption').textContent = text;
+  glass?.syncReply?.(text);
+}
 function status(text, state) { $('status').textContent = text; if (state && glass?.world === 'home') stage.dataset.state = state; }
 function notice(text = '') { $('notice').textContent = text; $('notice').hidden = !text; }
 function send(value) { if (socket?.readyState === WebSocket.OPEN) socket.send(JSON.stringify(value)); }
@@ -200,7 +204,7 @@ function onGlassOff() {
   screenOrbit = false;
   stage.classList.remove('has-scene');
   $('still').hidden = true; film.hidden = true; film.removeAttribute('src'); film.load();
-  $('caption').textContent = ''; $('chapter-title').textContent = '';
+  setCaption(); $('chapter-title').textContent = '';
   $('scene-position').textContent = ''; $('scene-kind').textContent = '';
   $('beat-dots').replaceChildren(); $('home').hidden = true;
   syncPower();
@@ -228,7 +232,7 @@ function onGlassReady() {
 function goHome() {
   if (!awake) return;
   interrupt(); orbitView?.hide(); screenOrbit = false; send({type:'home'});
-  stage.classList.remove('has-scene'); $('caption').textContent = '';
+  stage.classList.remove('has-scene'); setCaption();
   $('chapter-title').textContent = ''; $('scene-position').textContent = '';
   $('scene-kind').textContent = ''; $('beat-dots').replaceChildren(); $('home').hidden = true;
 }
@@ -244,7 +248,7 @@ function stopPlayer() {
 }
 function interrupt() {
   ack('progress'); stopPlayer(); queue = []; turn = ''; ready = false;
-  send({type:'interrupt'}); $('caption').textContent = ''; notice();
+  send({type:'interrupt'}); setCaption(); notice();
 }
 function finish() {
   if (invitation?.active) return;
@@ -322,7 +326,7 @@ async function playQueue() {
       voice.removeAttribute('src'); voice.load();
       await showScene(beat, signal);
       notice(beat.warnings.join(' '));
-      $('caption').textContent = '';
+      setCaption();
       $('scene-position').textContent = `${beat.index + 1} / ${plan.length}`;
       $('scene-kind').textContent = beat.video ? 'Moving picture' : beat.image ? 'Drawing' : '';
       [...$('beat-dots').children].forEach((dot, i) => dot.classList.toggle('active', i === beat.index));
@@ -345,7 +349,7 @@ async function playQueue() {
       }
       await waitUntilUnpaused(signal);
       captions = captionChunks(beat.narration);
-      $('caption').textContent = beat.audio ? captions[0] || '' : beat.narration;
+      setCaption(beat.audio ? captions[0] || '' : beat.narration);
       if (beat.audio) {
         voice.src = beat.audio; voice.muted = muted; voice.load();
         const ended = mediaEnded(voice, signal); ended.catch(() => {});
@@ -437,7 +441,7 @@ async function startRecording() {
       reader.readAsDataURL(blob);
     };
     recorder.start(250); $('talk').classList.add('recording'); $('listening').hidden = false;
-    $('talk-label').textContent = 'Release to send'; $('caption').textContent = ''; status('Listening. Let go when you’re done.', 'listening');
+    $('talk-label').textContent = 'Release to send'; setCaption(); status('Listening. Let go when you’re done.', 'listening');
     recordingTimer = setTimeout(stopRecording, 45_000);
   } catch (error) {
     cancelRecording(); notice(error.name === 'NotAllowedError' ? 'Microphone access was declined. Allow it in your browser, or type below.' : error.message);
@@ -462,7 +466,7 @@ async function browse(direction) {
   const beat = archive[archiveIndex]; currentBeat = null;
   const ownController = new AbortController(); controller = ownController;
   try {
-    await showScene(beat, ownController.signal); $('caption').textContent = beat.narration;
+    await showScene(beat, ownController.signal); setCaption(beat.narration);
     $('chapter-title').textContent = beat.title; $('scene-position').textContent = `${archiveIndex + 1} / ${archive.length}`;
     $('scene-kind').textContent = 'Revisited'; status('An earlier moment. Talk to take it somewhere new.', 'idle');
     send({type:'revisit', id:beat.id});

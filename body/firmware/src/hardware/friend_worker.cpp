@@ -10,17 +10,20 @@ void FriendLink::begin() {
   commands_ = xQueueCreate(32, sizeof(Command));
   speaker_ = xQueueCreate(80, sizeof(Speaker));
   statuses_ = xQueueCreate(1, sizeof(Status));
+  shows_ = xQueueCreate(1, sizeof(ShowRequest));
   for (int i = 0; i < 2; ++i) {
     jpeg_slot_[i] = static_cast<uint8_t*>(heap_caps_malloc(kJpegMax, MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT));
     if (jpeg_slot_[i] == nullptr) {
       jpeg_slot_[i] = static_cast<uint8_t*>(heap_caps_malloc(kJpegMax, MALLOC_CAP_8BIT));
     }
   }
-  if (!commands_ || !speaker_ || !statuses_ || jpeg_slot_[0] == nullptr || jpeg_slot_[1] == nullptr ||
+  if (!commands_ || !speaker_ || !statuses_ || !shows_ || jpeg_slot_[0] == nullptr || jpeg_slot_[1] == nullptr ||
       xTaskCreate(task, "friend-net", 16384, this, 1, nullptr) != pdPASS) {
     if (commands_) vQueueDelete(commands_);
     if (speaker_) vQueueDelete(speaker_);
     if (statuses_) vQueueDelete(statuses_);
+    if (shows_) vQueueDelete(shows_);
+    shows_ = nullptr;
     commands_ = speaker_ = statuses_ = nullptr;
     status_.phase = FriendPhase::kNeedConfig;
     strncpy(status_.detail, "NETWORK TASK NO MEMORY", sizeof(status_.detail));
@@ -30,6 +33,9 @@ void FriendLink::begin() {
 void FriendLink::update(bool wifi_online) {
   wifi_online_.store(wifi_online);
   if (statuses_) xQueueReceive(statuses_, &status_, 0);
+}
+bool FriendLink::take_show(ShowRequest& request) {
+  return shows_ && xQueueReceive(shows_, &request, 0) == pdTRUE;
 }
 
 bool FriendLink::configure(Kind kind, const char* value) {
@@ -160,6 +166,8 @@ void FriendLink::run() {
       jpeg_seen_ = jpeg_gen;
     }
     connection.update(wifi_online_.load());
+    ShowRequest show;
+    if (connection.take_show(show)) xQueueOverwrite(shows_, &show);
     if (connection.ready() != was_ready) {
       ++status.generation;
       was_ready = connection.ready();

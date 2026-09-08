@@ -5,6 +5,7 @@
 
 // Network-task-only connection. Never access this object from the body loop.
 #include "gizmo/friend_phase.h"
+#include "gizmo/show_format.h"
 
 namespace gizmo {
 
@@ -40,6 +41,7 @@ class FriendConnection {
   void interrupt_speaker();
   bool speaker_pending() const { return speaker_n_ > 0; }
   bool take_barge_in();
+  bool take_show(ShowRequest& request);
 
   void on_socket_event(int type, uint8_t* payload, size_t length);
 
@@ -93,6 +95,8 @@ class FriendConnection {
   int16_t down_hold_[2] = {};
   uint8_t down_n_ = 0;
   bool barge_in_ = false;
+  ShowRequest show_;
+  bool show_changed_ = false;
 };
 
 const char* friend_phase_name(FriendPhase phase);

@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {BOOT_SLOTS, BOOT_UNIQUE, DEFAULT_STEP, SETTING_STEPS, bootFrameSrc, DeviceSettings, dimOpacity, preloadBootFrames} from '../gizmo_friend/static/oddity-glass.mjs';
+import {BOOT_SLOTS, BOOT_UNIQUE, DEFAULT_STEP, SETTING_STEPS, bootFrameSrc, cameraIsReplying, DeviceSettings, dimOpacity, preloadBootFrames} from '../gizmo_friend/static/oddity-glass.mjs';
 
 test('up from home opens settings on volume', () => {
   const settings = new DeviceSettings();
@@ -58,4 +58,10 @@ test('default brightness does not put a veil over home', () => {
   assert.equal(dimOpacity(DEFAULT_STEP, 'home'), 0);
   assert.equal(dimOpacity(SETTING_STEPS, 'home'), 0);
   assert.ok(dimOpacity(0, 'home') > 0);
+});
+
+test('camera strip only opens when the glass is in camera with a reply', () => {
+  assert.equal(cameraIsReplying('home', 'hello'), false);
+  assert.equal(cameraIsReplying('camera', ''), false);
+  assert.equal(cameraIsReplying('camera', 'This is not a hotdog.'), true);
 });

@@ -16,6 +16,10 @@ export function dimOpacity(step, world) {
   return (1 - step / DEFAULT_STEP) * 0.82;
 }
 
+export function cameraIsReplying(world, caption) {
+  return world === 'camera' && Boolean(String(caption || '').trim());
+}
+
 function clampStep(value) {
   const number = Number.parseInt(value, 10);
   if (!Number.isFinite(number)) return DEFAULT_STEP;
@@ -82,13 +86,6 @@ function clockText(date = new Date()) {
   return `${date.getHours()}:${String(date.getMinutes()).padStart(2, '0')}`;
 }
 
-function heartName(halfSteps, index) {
-  const filled = halfSteps - index * 2;
-  if (filled >= 2) return 'full';
-  if (filled === 1) return 'half';
-  return 'empty';
-}
-
 export function bootFrameSrc(id) {
   return `/static/oddity-boot-${String(id).padStart(2, '0')}.jpg`;
 }
@@ -111,7 +108,6 @@ export function createGlass(stage, hooks = {}) {
   const bootAudio = document.getElementById('glass-boot-audio');
   const cameraFeed = document.getElementById('camera-feed');
   const cameraStatus = document.getElementById('camera-status');
-  const hearts = [...document.querySelectorAll('#glass-hearts img')];
   let world = 'off';
   let booting = false;
   let cameraOpen = false;
@@ -133,6 +129,14 @@ export function createGlass(stage, hooks = {}) {
     if ($('glass-home')) $('glass-home').hidden = next !== 'home';
     if ($('glass-settings')) $('glass-settings').hidden = next !== 'settings';
     if ($('glass-camera')) $('glass-camera').hidden = next !== 'camera';
+    syncReply();
+  }
+
+  function syncReply(text) {
+    const caption = text === undefined ? ($('caption')?.textContent || '') : String(text);
+    const line = $('camera-line');
+    if (line) line.textContent = caption.trim();
+    $('glass-camera')?.classList.toggle('is-replying', cameraIsReplying(world, caption));
   }
 
   function paintClock() {
@@ -140,10 +144,12 @@ export function createGlass(stage, hooks = {}) {
     if (clock) clock.textContent = clockText();
   }
 
-  function paintHearts() {
-    hearts.forEach((img, index) => {
-      img.src = `/static/oddity-heart-${heartName(batteryHalfSteps, index)}.png`;
-    });
+  function paintBattery() {
+    const icon = $('glass-battery');
+    if (!icon) return;
+    const percent = Math.max(0, Math.min(100, batteryHalfSteps * 10));
+    icon.style.setProperty('--level', `${percent}%`);
+    icon.setAttribute('aria-label', `Battery ${percent} percent`);
   }
 
   function paintSettings() {
@@ -203,6 +209,41 @@ export function createGlass(stage, hooks = {}) {
       cameraStatus.textContent = 'CAMERA';
     }
     if (cameraFeed) cameraFeed.hidden = true;
+    startCameraFeed();
+  }
+
+  async function startCameraFeed() {
+    if (!cameraOpen) return;
+    if (!navigator.mediaDevices?.getUserMedia) {
+      if (cameraStatus) {
+        cameraStatus.hidden = false;
+        cameraStatus.textContent = 'CAMERA UNAVAILABLE';
+      }
+      return;
+    }
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({
+        video: {facingMode: {ideal: 'environment'}},
+        audio: false,
+      });
+      if (!cameraOpen) {
+        stream.getTracks().forEach((track) => track.stop());
+        return;
+      }
+      cameraStream = stream;
+      if (cameraFeed) {
+        cameraFeed.srcObject = stream;
+        cameraFeed.hidden = false;
+        cameraFeed.play?.().catch(() => {});
+      }
+      if (cameraStatus) cameraStatus.hidden = true;
+    } catch {
+      if (!cameraOpen) return;
+      if (cameraStatus) {
+        cameraStatus.hidden = false;
+        cameraStatus.textContent = 'CAMERA UNAVAILABLE';
+      }
+    }
   }
 
   function closeCamera() {
@@ -213,6 +254,11 @@ export function createGlass(stage, hooks = {}) {
       cameraFeed.srcObject = null;
       cameraFeed.hidden = true;
     }
+    if (cameraStatus) {
+      cameraStatus.hidden = false;
+      cameraStatus.textContent = 'CAMERA';
+    }
+    $('glass-camera')?.classList.remove('is-replying');
     if (world === 'camera') setWorld('home');
   }
 
@@ -298,7 +344,7 @@ export function createGlass(stage, hooks = {}) {
   }
 
   paintClock();
-  paintHearts();
+  paintBattery();
   for (const meter of document.querySelectorAll('.glass-meter')) {
     if (meter.childElementCount) continue;
     for (let index = 0; index < SETTING_STEPS; index += 1) {
@@ -319,6 +365,7 @@ export function createGlass(stage, hooks = {}) {
     navigate,
     select,
     closeCamera,
+    syncReply,
     paintSettings,
     dispose() {
       window.clearInterval(bootTimer);

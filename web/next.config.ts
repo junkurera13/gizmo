@@ -10,7 +10,7 @@ const nextConfig: NextConfig = {
         headers: [
           {
             key: "Permissions-Policy",
-            value: 'camera=(), microphone=(self "https://gizmo-brain-production.up.railway.app" "http://127.0.0.1:43148")',
+            value: 'camera=(self "https://gizmo-brain-production.up.railway.app" "http://127.0.0.1:43148"), microphone=(self "https://gizmo-brain-production.up.railway.app" "http://127.0.0.1:43148")',
           },
           { key: "X-Robots-Tag", value: "noindex, nofollow" },
         ],

@@ -1,5 +1,7 @@
 # Firmware handoff: voice, camera, and clock
 
+For generated stills and motion, also run [SHOW_TESTING.md](SHOW_TESTING.md).
+
 Branch: `cursor/firmware-overnight-fixes-6357` (PR #2). Keep it unmerged until
 this board pass. The pin map, 16 kHz device audio rate, and audio-only PTT are
 unchanged. Assets and public TLS roots are committed; no asset export is
