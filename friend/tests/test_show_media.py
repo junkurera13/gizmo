@@ -1,14 +1,18 @@
 from __future__ import annotations
 
 import subprocess
+import io
+import json
 import tempfile
 import unittest
 from pathlib import Path
 from unittest.mock import patch
 
 import imageio_ffmpeg
+from PIL import Image
 
 from gizmo_friend.brain import show_media
+from gizmo_friend.brain.shows import ShowStore
 
 
 class ShowMediaTests(unittest.TestCase):
@@ -56,6 +60,41 @@ class ShowMediaTests(unittest.TestCase):
         self.assertIn('FFmpeg exited with status', str(raised.exception))
         self.assertIsInstance(raised.exception.__cause__, subprocess.CalledProcessError)
         self.assertNotIn(str(self.source), str(raised.exception))
+
+    def test_every_mjpeg_frame_has_esp32_supported_sampling(self):
+        target = self.root / 'device.mjpeg'
+        count = show_media.encode_mjpeg(self.source, target, width=320, height=240, fps=12)
+        data = target.read_bytes()
+        decoded = 0
+        while data:
+            end = data.index(b'\xff\xd9') + 2
+            with Image.open(io.BytesIO(data[:end])) as frame:
+                frame.load()
+                self.assertEqual(frame.size, (320, 240))
+                self.assertFalse(frame.info.get('progressive', False))
+                # ROM TJpgDec requires 1x1 Cb/Cr, and Y 1x1, 2x1, or 2x2.
+                # Desktop JPEG decoders also accept FFmpeg's incompatible 1x2.
+                self.assertEqual([(x[1], x[2]) for x in frame.layer], [(2, 2), (1, 1), (1, 1)])
+            decoded += 1
+            data = data[end:]
+        self.assertEqual(decoded, count)
+
+    def test_old_incompatible_mjpeg_cache_is_rebuilt_once(self):
+        store = ShowStore(self.root / 'device', device_id='fixture')
+        show_id = 'a' * 32
+        cache = store.directory / '.cache' / show_id
+        cache.mkdir(parents=True)
+        old = cache / '320x240@12fps.mjpeg'
+        old.write_bytes(b'old incompatible jpeg')
+        old.with_suffix('.mjpeg.json').write_text(json.dumps({'bytes': old.stat().st_size, 'frame_count': 12}))
+        with patch.object(store, 'clip_path', return_value=self.source), patch(
+            'gizmo_friend.brain.shows.encode_mjpeg', wraps=show_media.encode_mjpeg,
+        ) as encode:
+            rebuilt = store.mjpeg(show_id)
+            self.assertNotEqual(rebuilt.path, old)
+            self.assertEqual(rebuilt.frame_count, 12)
+            self.assertEqual(store.mjpeg(show_id), rebuilt)
+            self.assertEqual(encode.call_count, 1)
 
     def test_header_only_output_cannot_be_committed(self):
         self.target.write_bytes(b'mp4 header only')

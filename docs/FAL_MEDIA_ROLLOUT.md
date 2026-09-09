@@ -72,3 +72,11 @@ See `deploy/memobase/scripts/README.md` for the migration sequence and retained 
 `python -m pytest friend/tests -q`: 79 passed, 18 subtests. Coverage includes Fal credentials/no Google fallback, image safety results, story reference edits, request timeout/cancellation, JSON fences, early transcript previews, exactly one generation, and existing remux/session behavior. `git diff --check` and Python compilation passed.
 
 Local diagnostic artifacts are under `data/fal-images-20260909/` (ignored by git): benchmark images/scripts, `before-transcript-fix.json`, `live-events.json`, and the verified `live.mjpeg`. Earlier Linux/Fal remux reproduction is under `data/show-motion-fix/`.
+
+## Physical follow-up: ESP32 JPEG format rejection
+
+The cofounder's flashed XIAO subsequently logged `show: ready motion frames=62`, followed by `JPG Header Parse Failed! Not supported JPEG standard`. The file downloaded successfully; the embedded decoder rejected it. Desktop decoding and the firmware framing parser had passed because neither enforced the ROM decoder's component-sampling restrictions.
+
+FFmpeg `yuvj444p` emitted Y/Cb/Cr sampling factors of 1×2 each. ESP32's TJpgDec requires Cb/Cr to be 1×1 and supports Y 1×1, 2×1, or 2×2. Espressif's software implementation of the ROM decoder API reproduced error 8 on frame zero of a real device clip. Re-encoding to `yuvj420p` produced 2×2/1×1/1×1 and all 62 frames fully decompressed with that decoder.
+
+The server now emits 4:2:0 and uses internal MJPEG cache version 2, rebuilding old caches from saved MP4s at the same authenticated public URL. No firmware change is needed for this correction. Tests validate actual generated JPEG sampling and rebuilding of legacy caches. Local reproduction source, files, and results are in `data/rocket-device-debug/RESULT.md`. Physical panel playback must still be rechecked after deployment.

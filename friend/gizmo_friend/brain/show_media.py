@@ -12,6 +12,7 @@ MAX_FRAME_DIMENSION = 1024
 MAX_FRAME_FPS = 24
 TRANSCODE_TIMEOUT_SECONDS = 30
 MAX_MEDIA_BYTES = 64 * 1024 * 1024
+MJPEG_ENCODING_VERSION = 2
 _WORKERS = threading.BoundedSemaphore(2)
 
 
@@ -81,5 +82,7 @@ def encode_mjpeg(source: Path, target: Path, *, width: int, height: int, fps: in
         f"crop={width}:{height}:exact=1,setsar=1"
     )
     return _run(source, target, [
-        "-vf", filters, "-c:v", "mjpeg", "-q:v", "4", "-pix_fmt", "yuvj444p", "-f", "mjpeg",
+        # FFmpeg's 4:4:4 JPEGs use 1x2 sampling for every component. The ESP32
+        # ROM TJpgDec rejects that layout; 4:2:0 emits supported 2x2/1x1/1x1.
+        "-vf", filters, "-c:v", "mjpeg", "-q:v", "4", "-pix_fmt", "yuvj420p", "-f", "mjpeg",
     ])

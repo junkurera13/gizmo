@@ -20,7 +20,7 @@ from PIL import Image, ImageOps
 
 from gizmo_friend.brain.images import ConjuredStill
 from gizmo_friend.brain.clips import ConjuredClip
-from gizmo_friend.brain.show_media import MAX_FRAME_DIMENSION, MAX_FRAME_FPS, encode_mjpeg, strip_audio
+from gizmo_friend.brain.show_media import MAX_FRAME_DIMENSION, MAX_FRAME_FPS, MJPEG_ENCODING_VERSION, encode_mjpeg, strip_audio
 
 MAX_IMAGE_DIMENSION = 2048
 _SHOW_ID = re.compile(r"[0-9a-f]{32}")
@@ -237,7 +237,7 @@ class ShowStore:
         if not 1 <= fps <= MAX_FRAME_FPS:
             raise ValueError(f"fps must be between 1 and {MAX_FRAME_FPS}")
         source = self.clip_path(show_id)
-        name = f"{width}x{height}@{fps}fps"
+        name = f"{width}x{height}@{fps}fps-v{MJPEG_ENCODING_VERSION}"
         directory = self.directory / ".cache" / show_id
         cached = directory / f"{name}.mjpeg"
         sidecar = directory / f"{name}.mjpeg.json"
