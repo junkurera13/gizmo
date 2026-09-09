@@ -334,6 +334,19 @@ class MotionSessionTests(ShowSessionFixture):
         self.assertTrue(self.friend.shows.clip_path(saved.id).exists())
         self.transport.clear_pending_image.assert_awaited_once()
 
+    async def test_completed_clip_emits_matching_motion_and_playable_frames(self):
+        saved = await self.moving_show()
+        self.events()
+        await self.finish_clip()
+        expected = {
+            "type": "glass", "clip": saved.clip_url,
+            "frames": saved.frames_url, "viewing": True,
+        }
+        self.assertTrue(any(expected.items() <= event.items() for event in self.events()))
+        frames = self.friend.shows.mjpeg(saved.id)
+        self.assertGreater(frames.frame_count, 1)
+        self.assertEqual(frames.path.read_bytes().count(b"\xff\xd8"), frames.frame_count)
+
     async def test_replacement_cannot_receive_old_clip_and_clears_snapshot(self):
         old = await self.moving_show()
         await self.ask_show("trilobite")

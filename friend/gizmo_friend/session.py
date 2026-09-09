@@ -19,6 +19,7 @@ from gizmo_friend.brain.images import ImageProvider, NullImageProvider, image_pr
 from gizmo_friend.brain.memory import MemoryProvider, memory_provider_from_env
 from gizmo_friend.brain.reasoning import ReasoningProvider, reasoning_provider_from_env
 from gizmo_friend.brain.show_budget import MotionBudget, ShowBudget
+from gizmo_friend.brain.show_media import MediaError
 from gizmo_friend.brain.shows import ShowStore, StoredShow
 from gizmo_friend.brain.transcripts import TranscriptStore
 from gizmo_friend.brain.visual_director import (
@@ -1268,6 +1269,7 @@ class GizmoSession:
             if clip is None:
                 return
             await asyncio.to_thread(self.shows.save_clip, stored.id, clip)
+            logger.info("Show motion saved: show=%s bytes=%d", stored.id, stored.clip_path.stat().st_size)
             # Started jobs may finish after Select, replacement, sleep or power.
             # Keep their result on disk, but only the owning still can receive it.
             if not self._owns_glass(stored, session_id):
@@ -1279,6 +1281,13 @@ class GizmoSession:
             })
         except asyncio.CancelledError:
             raise
+        except MediaError as error:
+            logger.warning(
+                "Show motion failed: show=%s error=%s message=%s cause=%s: %s",
+                stored.id, type(error).__name__, str(error),
+                type(error.__cause__).__name__ if error.__cause__ else "none",
+                str(error.__cause__) if error.__cause__ else "none",
+            )
         except Exception as error:
             logger.warning("Show motion failed: error=%s", type(error).__name__)
         finally:

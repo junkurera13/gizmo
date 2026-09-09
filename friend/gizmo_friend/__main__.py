@@ -3,6 +3,7 @@ from __future__ import annotations
 import argparse
 import asyncio
 import json
+import logging
 import os
 from pathlib import Path
 
@@ -14,6 +15,8 @@ from gizmo_friend.session import GizmoSession
 
 
 def main() -> None:
+    logging.basicConfig(format="%(levelname)s %(name)s: %(message)s")
+    logging.getLogger("gizmo_friend").setLevel(logging.INFO)
     # Keys live in .env at the repo root; the simulator launches the brain from there.
     from dotenv import load_dotenv
 
