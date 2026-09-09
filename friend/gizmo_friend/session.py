@@ -29,6 +29,7 @@ from gizmo_friend.brain.visual_director import (
     NO_MOTION_SENTINELS,
     VisualDirector,
     is_bare_animate_request,
+    is_explicit_visual_request,
     opening_narration,
     visual_director_from_env,
 )
@@ -106,10 +107,10 @@ class GizmoSession:
         if not self.gemini_key and not self._transport_factory:
             raise RuntimeError("GEMINI_API_KEY is required: Gizmo has no offline brain")
         self.memory_provider = memory_provider or memory_provider_from_env()
-        self.reasoning = reasoning_provider or reasoning_provider_from_env(self.gemini_key)
-        self.visual_director = visual_director or visual_director_from_env(self.gemini_key)
+        self.reasoning = reasoning_provider or reasoning_provider_from_env()
+        self.visual_director = visual_director or visual_director_from_env()
         self.user_id = user_id or os.environ.get("GIZMO_USER_ID", "gizmo-local-user")
-        self.images = image_provider or image_provider_from_env(self.gemini_key)
+        self.images = image_provider or image_provider_from_env()
         self.clips = clip_provider or clip_provider_from_env()
         self.shows = ShowStore(self.data_dir, device_id=self.user_id)
         # The server/CLI pass a common root budget. Direct session callers can
@@ -136,6 +137,8 @@ class GizmoSession:
         self._visual_narration = ""
         self._visual_narration_delta = ""
         self._visual_completion = asyncio.Event()
+        self._visual_started_at = 0.0
+        self._voice_started = False
         self._suppress_live_output = False
         self._current_clip_id: str | None = None
         self._show_idle_task: asyncio.Task[None] | None = None
@@ -828,6 +831,11 @@ class GizmoSession:
         if kind == "audio":
             if self._suppress_live_output:
                 return
+            if self._visual_turn_open and not self._voice_started:
+                self._voice_started = True
+                logger.info("Turn latency: stage=voice-first seconds=%.3f", self._visual_elapsed())
+                if self._can_direct_before_voice(self._visual_utterance):
+                    self._schedule_visual_direction(self._visual_utterance, self._ask_revision)
             await self._start_talking()
             self._item_id = event.item_id or self._item_id
             self.mouth.speak_pcm(event.pcm)
@@ -857,6 +865,17 @@ class GizmoSession:
                 self._direct_opening_narration()
             await self.emit({"type": "transcript", "role": "gizmo", "text": event.text})
             return
+        if kind == "user_transcript_preview":
+            if self._visual_turn_open:
+                self._visual_utterance = event.text.strip()[:MAX_CONTEXT_TEXT]
+                # Wait until the model begins answering, so a partial transcript
+                # during the microphone hold cannot spend the visual budget.
+                if self._voice_started:
+                    if self._can_direct_before_voice(self._visual_utterance):
+                        self._schedule_visual_direction(self._visual_utterance, self._ask_revision)
+                    else:
+                        self._direct_opening_narration()
+            return
         if kind == "user_transcript":
             self._record_transcript("user", event.text)
             if self._visual_turn_open:
@@ -865,7 +884,7 @@ class GizmoSession:
                 self._suppress_live_output = True
                 if self._transport:
                     await self._transport.interrupt()
-            if self._visual_turn_open and is_bare_animate_request(event.text):
+            if self._visual_turn_open and self._can_direct_before_voice(event.text):
                 self._schedule_visual_direction(event.text, self._ask_revision)
             elif self._visual_turn_open:
                 # Live may finalize microphone transcription after the opening
@@ -923,10 +942,19 @@ class GizmoSession:
         self._visual_narration = ""
         self._visual_narration_delta = ""
         self._visual_completion = asyncio.Event()
-        # This request intentionally has no narration. Keep its existing
-        # immediate, silent path rather than waiting for suppressed Live output.
-        if is_bare_animate_request(utterance):
+        self._visual_started_at = asyncio.get_running_loop().time()
+        self._voice_started = False
+        if self._can_direct_before_voice(utterance):
             self._schedule_visual_direction(utterance, self._ask_revision)
+
+    def _can_direct_before_voice(self, utterance: str) -> bool:
+        return is_bare_animate_request(utterance) or (
+            not self.story_character and not self.current_story_setting
+            and is_explicit_visual_request(utterance)
+        )
+
+    def _visual_elapsed(self) -> float:
+        return asyncio.get_running_loop().time() - self._visual_started_at
 
     def _direct_opening_narration(self) -> None:
         if not self._visual_utterance or self._suppress_live_output:
@@ -990,6 +1018,7 @@ class GizmoSession:
 
         async def direct() -> None:
             try:
+                started = asyncio.get_running_loop().time()
                 decision = await self.visual_director.decide(
                     cleaned,
                     has_visual=has_visual,
@@ -999,6 +1028,10 @@ class GizmoSession:
                     narration_complete=narration_complete,
                     current_story_setting=current_story_setting,
                     current_character=self.story_character,
+                )
+                logger.info(
+                    "Turn latency: stage=director route=%s seconds=%.3f turn_seconds=%.3f",
+                    decision.route, asyncio.get_running_loop().time() - started, self._visual_elapsed(),
                 )
                 if decision.follow_narration and not narration_complete:
                     # A provisional words-only story decision may inspect the
@@ -1144,14 +1177,17 @@ class GizmoSession:
             self._current_clip_id = None
             self._show_visible_at = asyncio.get_running_loop().time()
             await self.emit(self.show_event())
+            logger.info("Turn latency: stage=still-glass show=%s seconds=%.3f", stored.id, self._visual_elapsed())
+            if motion:
+                # Do not let staging the visual into the voice connection delay
+                # the paid motion request. The still is already committed.
+                await self._start_motion(stored, motion, subject, session_id)
             if self._transport:
                 await self._transport.send_image(
                     f"data:image/jpeg;base64,{base64.b64encode(still.jpeg).decode('ascii')}"
                 )
             if self.show_idle_s > 0 and (self._show_idle_task is None or self._show_idle_task.done()):
                 self._show_idle_task = asyncio.create_task(self._watch_show_idle())
-            if motion:
-                await self._start_motion(stored, motion, subject, session_id)
         except asyncio.CancelledError:
             raise
         except Exception as error:
@@ -1279,6 +1315,7 @@ class GizmoSession:
                 "type": "glass", "clip": stored.clip_url,
                 "frames": stored.frames_url, "viewing": True,
             })
+            logger.info("Turn latency: stage=motion-glass show=%s seconds=%.3f", stored.id, self._visual_elapsed())
         except asyncio.CancelledError:
             raise
         except MediaError as error:

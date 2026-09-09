@@ -9,7 +9,7 @@ from unittest.mock import AsyncMock
 from gizmo_friend.body_protocol import TextLine
 from gizmo_friend.brain.visual_director import (
     DialogueTurn,
-    GeminiVisualDirector,
+    FalVisualDirector,
     MAX_CONTEXT_TEXT,
     MAX_CONTEXT_TURNS,
     VisualDecision,
@@ -220,16 +220,16 @@ class DirectorContextTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(opening_narration(text), "Right. Copper entered the underwater city.")
 
     async def test_provider_receives_bounded_dialogue_and_current_narration(self):
-        generate = AsyncMock(return_value=SimpleNamespace(parsed={"route": "words"}))
-        director = GeminiVisualDirector.__new__(GeminiVisualDirector)
+        generate = AsyncMock(return_value='{"route": "words"}')
+        director = FalVisualDirector.__new__(FalVisualDirector)
         director.model = "fixture"
-        director._client = SimpleNamespace(aio=SimpleNamespace(models=SimpleNamespace(generate_content=generate)))
+        director._client = SimpleNamespace(complete=generate)
         await director.decide(
             "Then what?", has_visual=True, current_subject="castle",
             narration="He enters a forest.",
             recent_dialogue=tuple(DialogueTurn(str(i), "x" * 3000) for i in range(20)),
         )
-        payload = json.loads(generate.call_args.kwargs["contents"])
+        payload = json.loads(generate.call_args.args[1])
         self.assertEqual(payload["narration"], "He enters a forest.")
         self.assertEqual(payload["current_subject"], "castle")
         self.assertEqual(len(payload["recent_dialogue"]), MAX_CONTEXT_TURNS)

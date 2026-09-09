@@ -35,7 +35,7 @@ web/              public site (Next.js on Vercel, /gizmo)
 python3 -m venv .venv
 source .venv/bin/activate
 pip install -e .
-cp .env.example .env   # then set GEMINI_API_KEY
+cp .env.example .env   # then set GEMINI_API_KEY and FAL_KEY
 gizmo                  # http://127.0.0.1:43147
 ```
 
@@ -45,8 +45,9 @@ Or: `python -m gizmo_friend` from a venv with this repo installed.
 
 | Variable | Required | What |
 | --- | --- | --- |
-| `GEMINI_API_KEY` | yes | Gemini Live voice/vision, the Flash-Lite visual director, still generation, and Gemini 3.7 Flash `deep_think()`. Gizmo has no offline brain; if Gemini is unreachable he reports the outage and retries. |
-| `GIZMO_DIRECTOR_MODEL` | no | Visual-director override. Default `gemini-3.1-flash-lite`. |
+| `GEMINI_API_KEY` | yes | Gemini Live voice conversation, plus Oddity speech and transcription. All separate planning, reasoning, and generated media use Fal. Gizmo has no offline brain; if Gemini is unreachable he reports the outage and retries. |
+| `FAL_KEY` | for visuals and planning | Klein 9B images, H3 Max clips, Claude director and reasoning. |
+| `GIZMO_DIRECTOR_MODEL` | no | Visual-director override. Default `anthropic/claude-haiku-4.5` through Fal. |
 | `GIZMO_USER_ID` | optional | Fallback identity for a body that sends no `X-Gizmo-Device` header. Each device otherwise gets its own memory. |
 | `MEMOBASE_URL` | for persistent memory | Root URL of the self-hosted Railway Memobase service. |
 | `MEMOBASE_API_KEY` | for persistent memory | Memobase project token. |
@@ -76,7 +77,7 @@ For cloud mode, set `GIZMO_BRAIN_URL` to the Railway HTTPS domain and `GIZMO_DEV
 
 Self-hosted Memobase is behind a `MemoryProvider` interface. `GizmoSession` fetches compact context once at session start and appends it after the stable system prompt. Final user/Gizmo transcripts are saved to `$GIZMO_DATA_DIR/transcripts/<session>.jsonl`; completed turns are sent to Memobase in background tasks and flushed on sleep or shutdown.
 
-Railway contains four services: `gizmo-brain`, `memobase`, `postgres`, and `redis`. The complete Singapore-region project is declared in `.railway/railway.ts`. Railway manages the database credentials and volumes; its Postgres 18 image includes pgvector. `gizmo-brain` has its own persistent `/data` volume for transcripts. Memobase uses Gemini 3.1 Flash-Lite and Gemini Embedding 2 through Google's OpenAI-compatible endpoint; an OpenAI account is not required.
+Railway contains four services: `gizmo-brain`, `memobase`, `postgres`, and `redis`. The complete Singapore-region project is declared in `.railway/railway.ts`. Railway manages the database credentials and volumes; its Postgres 18 image includes pgvector. `gizmo-brain` has its own persistent `/data` volume for transcripts. Memobase uses Claude Haiku 4.5 and Qwen3 Embedding 8B through Fal's OpenAI-compatible endpoint; no Google calls or separate OpenAI account are needed. Existing embeddings must be regenerated before changing embedding models.
 
 After creating and linking an empty Railway project, provision it with:
 
@@ -88,11 +89,11 @@ npx @railway/cli up --service memobase
 npx @railway/cli up --service gizmo-brain
 ```
 
-Set `GEMINI_API_KEY` and a randomly generated `GIZMO_DEVICE_TOKEN` on `gizmo-brain`, and a random `ACCESS_TOKEN` plus the Gemini key as `MEMOBASE_LLM_API_KEY` on `memobase`, using Railway secrets rather than source files. The IaC file marks those values with `preserve()` so future applies retain them. Generate a public Railway domain for `gizmo-brain` after its first healthy deployment; Postgres, Redis, and Memobase remain on Railway's private network. All public device/data routes require the device token; `/health` is the only unauthenticated cloud route.
+Set `GEMINI_API_KEY`, `FAL_KEY`, and a randomly generated `GIZMO_DEVICE_TOKEN` on `gizmo-brain`, and a random `ACCESS_TOKEN` plus the Fal key as `MEMOBASE_LLM_API_KEY` on `memobase`, using Railway secrets rather than source files. The IaC file marks those values with `preserve()` so future applies retain them. Generate a public Railway domain for `gizmo-brain` after its first healthy deployment; Postgres, Redis, and Memobase remain on Railway's private network. All public device/data routes require the device token; `/health` is the only unauthenticated cloud route.
 
 ## Tools and Show
 
-Gemini Live can call only `deep_think(question)` and the placeholder `set_expression()` bus (not the character). Google Search is Gemini's native grounding tool, not a custom search function. A separate structured visual director reads the same final user utterance and silently executes `show` or `animate`; stills use Gemini image generation, and optional motion uses H3 Max on fal when `FAL_KEY` is configured.
+Gemini Live can call only `deep_think(question)` and the placeholder `set_expression()` bus (not the character). Google Search is Gemini's native grounding tool, not a custom search function. A separate structured visual director reads the same final user utterance and silently executes `show` or `animate`; stills use FLUX.2 Klein 9B on Fal, and motion uses H3 Max on Fal. Explicit standalone visual requests start directing before narration completes. Google has no image-generation fallback.
 
 ## Who owns what
 

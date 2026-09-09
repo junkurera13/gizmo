@@ -200,6 +200,7 @@ class GeminiLiveTransport:
 
     async def begin_audio(self) -> None:
         self._suppress_audio = True
+        self._input_transcript = ""
         self._output_transcript = ""
         self._audio_received = False
         self._pre_gate.clear()
@@ -374,6 +375,14 @@ class GeminiLiveTransport:
                     TransportEvent(kind="user_transcript", text=self._input_transcript.strip(), raw=raw)
                 )
                 self._input_transcript = ""
+            else:
+                # Live can send the entire utterance without `finished`, then
+                # defer turn_complete until its spoken answer has ended. Expose
+                # a preview for visual planning, while retaining the final
+                # transcript boundary for memory and conversation history.
+                events.append(TransportEvent(
+                    kind="user_transcript_preview", text=self._input_transcript.strip(), raw=raw,
+                ))
 
         if (
             not self._suppress_audio

@@ -136,6 +136,7 @@ class ShowStore:
             "source_width": still.source_width,
             "source_height": still.source_height,
             "generation_latency_seconds": still.latency_seconds,
+            "generation_timings": still.timings,
         }
         encoded = (json.dumps(metadata, ensure_ascii=False, indent=2) + "\n").encode("utf-8")
         _atomic_write(result.still_path, still.jpeg)

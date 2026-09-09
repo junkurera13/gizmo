@@ -7,6 +7,7 @@ from gizmo_friend.brain.visual_director import (
     VisualDecision,
     decision_from_payload,
     is_bare_animate_request,
+    is_explicit_visual_request,
 )
 from gizmo_friend.transport.gemini_live import live_config
 
@@ -42,6 +43,12 @@ class VisualDecisionTests(unittest.TestCase):
             self.assertTrue(is_bare_animate_request(utterance))
         for utterance in ("Make it move and explain why.", "Can it move?", "Move it to the left"):
             self.assertFalse(is_bare_animate_request(utterance))
+
+    def test_only_explicit_standalone_visuals_can_start_before_voice(self):
+        for utterance in ("Show me a volcano.", "Can you draw a jellyfish?", "Make a short video of a rocket."):
+            self.assertTrue(is_explicit_visual_request(utterance))
+        for utterance in ("Tell me a story about a fox.", "Show me the next story chapter.", "Then what?", "Why is the sky blue?"):
+            self.assertFalse(is_explicit_visual_request(utterance))
 
     def test_stories_are_scenes_even_if_the_model_asks_for_a_diagram(self):
         payload = {

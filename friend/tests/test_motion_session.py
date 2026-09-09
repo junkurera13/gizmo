@@ -239,6 +239,59 @@ class MotionSessionTests(ShowSessionFixture):
         metadata = json.loads(self.friend.current_show.metadata_path.read_text())
         self.assertIsNone(metadata["motion"])
 
+    async def test_explicit_visual_starts_before_any_voice_narration(self):
+        director = FixedDirector(VisualDecision(route="motion", subject="jellyfish", motion="bell pulses"))
+        self.friend.visual_director = director
+        await self.friend.handle(TextLine(text="Make a short video of a jellyfish."))
+        await self.images.wait_for_calls(1)
+        self.assertEqual(len(director.calls), 1)
+        self.assertEqual(director.contexts[0][0], "")
+        await self.finish_show()
+        await self.clips.wait_for_calls(1)
+        await self.friend._on_transport(TransportEvent(kind="transcript", text="A jellyfish pushes water to swim."))
+        await self.friend._on_transport(TransportEvent(kind="done"))
+        self.assertEqual(len(director.calls), 1)
+        self.assertEqual(len(self.images.calls), 1)
+
+    async def test_explicit_voice_request_starts_at_final_input_transcript(self):
+        director = FixedDirector(VisualDecision(route="still", subject="volcano"))
+        self.friend.visual_director = director
+        self.friend._ask_revision += 1
+        self.friend._begin_visual_turn("")
+        await self.friend._on_transport(TransportEvent(kind="user_transcript", text="Show me a volcano."))
+        await self.images.wait_for_calls(1)
+        self.assertEqual(director.contexts[0][0], "")
+
+    async def test_input_preview_starts_visual_at_voice_start_without_duplicate_final(self):
+        director = FixedDirector(VisualDecision(route="still", subject="jellyfish"))
+        self.friend.visual_director = director
+        self.friend._ask_revision += 1
+        self.friend._begin_visual_turn("")
+        await self.friend._on_transport(TransportEvent(kind="user_transcript_preview", text="Show me a jellyfish."))
+        await asyncio.sleep(0)
+        self.assertEqual(director.calls, [])
+        self.assertFalse(any(e.get("type") == "transcript" for e in self.events()))
+        await self.friend._on_transport(TransportEvent(kind="audio", pcm=b"\x00\x00" * 240))
+        await self.images.wait_for_calls(1)
+        self.assertEqual(director.calls[0][0], "Show me a jellyfish.")
+        await self.finish_show()
+        await self.friend._on_transport(TransportEvent(kind="user_transcript", text="Show me a jellyfish."))
+        await self.friend._on_transport(TransportEvent(kind="done"))
+        self.assertEqual(len(director.calls), 1)
+        self.assertEqual(len(self.images.calls), 1)
+
+    async def test_story_visual_still_waits_for_narration(self):
+        director = FixedDirector(VisualDecision())
+        self.friend.visual_director = director
+        self.friend.story_character = "Fen the fox"
+        self.friend.current_story_setting = "castle"
+        await self.friend.handle(TextLine(text="Show him in a submarine."))
+        await asyncio.sleep(0)
+        self.assertEqual(director.calls, [])
+        await self.friend._on_transport(TransportEvent(kind="transcript", text="Fen stood inside a submarine beneath the ocean."))
+        await self.friend._director_task
+        self.assertEqual(len(director.calls), 1)
+
     async def test_director_animate_uses_the_existing_show_and_stays_one_per_ask(self):
         await self.ask_show("jellyfish")
         await self.finish_show()

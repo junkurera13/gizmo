@@ -103,9 +103,9 @@ async def main():
     load_dotenv(ROOT / ".env")
     output = ROOT / "data/show-checkpoints" / datetime.now(UTC).strftime("%Y-%m-%d-kid-story-%H%M%S")
     output.mkdir(parents=True)
-    images = RecordingImages(image_provider_from_env(os.environ["GEMINI_API_KEY"]), output)
+    images = RecordingImages(image_provider_from_env(), output)
     clips = RecordingClips(clip_provider_from_env(), output)
-    director = RecordingDirector(os.environ["GEMINI_API_KEY"])
+    director = RecordingDirector(os.environ["FAL_KEY"])
     result = {
         "media": "fresh Gemini stills and fal clips; inspect files before claiming character consistency",
         "turns": [],

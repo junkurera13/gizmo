@@ -24,7 +24,7 @@ from gizmo_friend.brain.clips import ClipProvider, ConjuredClip
 from gizmo_friend.brain.images import ConjuredStill, ImageProvider
 from gizmo_friend.brain.memory import NullMemoryProvider
 from gizmo_friend.brain.reasoning import NullReasoningProvider
-from gizmo_friend.brain.visual_director import GeminiVisualDirector
+from gizmo_friend.brain.visual_director import FalVisualDirector
 from gizmo_friend.session import GizmoSession
 from gizmo_friend.states import State
 
@@ -72,7 +72,7 @@ class ReplayClips(ClipProvider):
         )
 
 
-class RecordingDirector(GeminiVisualDirector):
+class RecordingDirector(FalVisualDirector):
     def __init__(self, api_key):
         super().__init__(api_key)
         self.calls = []
@@ -170,7 +170,7 @@ async def main():
     result = {"media": "saved replay fixtures only; no fresh scene or motion fidelity claim",
               "image_generation_requests": 0, "video_generation_requests": 0, "turns": []}
     images, clips = ReplayImages(), ReplayClips()
-    director = RecordingDirector(os.environ["GEMINI_API_KEY"])
+    director = RecordingDirector(os.environ["FAL_KEY"])
     with tempfile.TemporaryDirectory() as temporary:
         friend = GizmoSession(
             Path(temporary), user_id="story-checkpoint", gemini_key=os.environ["GEMINI_API_KEY"],

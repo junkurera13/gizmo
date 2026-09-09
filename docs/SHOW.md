@@ -107,17 +107,16 @@ clip when he did. Same object either way, which is what makes `animate` free.
 class ImageProvider(ABC):
     async def conjure(self, subject: str) -> ConjuredStill | None
 class NullImageProvider     # no key → Show declared but returns "unavailable"
-class GeminiImageProvider   # gemini-3.1-flash-image, 512px, 4:3, JPEG out
+class FalImageProvider      # fal-ai/flux-2/klein/9b, 768×576, JPEG out
 ```
 
-- Model `gemini-3.1-flash-image` (Nano Banana 2). 512px is the smallest it makes and is
-  plenty for a ~320×240 panel; 4:3 is the closest supported ratio to the 69∶50 glass.
-  About $0.07 a picture. `gemini-3.1-flash-lite-image` is an optional later speed
-  experiment (1K only, faster), not required for V1 acceptance.
-- Same `google-genai` client as `deep_think`. No new dependency for generation; Pillow
-  for resizing (new, small).
-- Kid safety settings from `safety.py` on the request, plus the style prefix below,
-  which also carries the content rules.
+- Model `fal-ai/flux-2/klein/9b`: four-step generation at 768×576, normalized
+  to the existing 512×384 master. Story references use its `/edit` endpoint.
+- One direct Fal request returns an inline JPEG; no additional CDN round trip.
+  `FAL_KEY` is required. There is no Google image fallback.
+- Fal safety checking is enabled; missing or blocked safety results are discarded.
+- September 9 scene samples took 1.2–2.7 seconds. Diagram labels were unreliable
+  in manual checks; do not treat generated diagrams as verified factual references.
 - Hard timeout 12 s. Past that the still is dropped, not shown late.
 - Never given the camera frame. Show draws the subject, not the room or the kid.
 
@@ -312,7 +311,7 @@ an `animate` is ~$0.32. (75% off on fal until Sep 7; plan on list.)
   directory. Restarts and concurrent sessions share the same UTC day. Failed or
   superseded requests still count; no automatic retry spends another slot.
 - Two vendors, two keys: `GEMINI_API_KEY` (already) and `FAL_KEY` (new, Railway secret).
-  No `FAL_KEY` or fal down → stills only, nothing said to the kid, a loud warning in the
+  No `FAL_KEY` or Fal down → no generated media, with a loud warning in the
   logs. That is a degraded brain, not a mode.
 
 ### Glass rendering (simulator)

@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 import asyncio
+import base64
+import json
 import io
 import hashlib
 import logging
@@ -10,12 +12,18 @@ import os
 import time
 from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
+from urllib.parse import urlsplit
+
+import httpx
 
 from PIL import Image, ImageOps
 
 logger = logging.getLogger(__name__)
 
-IMAGE_MODEL = "gemini-3.1-flash-image"
+IMAGE_MODEL = "fal-ai/flux-2/klein/9b"
+GENERATION_SIZE = (768, 576)
+MAX_IMAGE_BYTES = 8 * 1024 * 1024
+MAX_RESPONSE_BYTES = 12 * 1024 * 1024
 STILL_SIZE = (512, 384)
 IMAGE_TIMEOUT_SECONDS = 12.0
 
@@ -67,6 +75,7 @@ class ConjuredStill:
     source_width: int
     source_height: int
     latency_seconds: float
+    timings: dict[str, float] = field(default_factory=dict)
 
 
 class ImageProvider(ABC):
@@ -100,36 +109,54 @@ def _jpeg_still(data: bytes) -> tuple[bytes, tuple[int, int]]:
 
 
 @dataclass
-class GeminiImageProvider(ImageProvider):
+class FalImageProvider(ImageProvider):
+    """Fast Fal-only stills, including reference editing for story continuity."""
+
     api_key: str = field(repr=False)
     model: str = IMAGE_MODEL
+    timeout_seconds: float = IMAGE_TIMEOUT_SECONDS
+    _client: httpx.AsyncClient = field(init=False, repr=False)
 
     def __post_init__(self) -> None:
-        from google import genai
-        from google.genai import types
+        self._client = httpx.AsyncClient(timeout=self.timeout_seconds, follow_redirects=False)
 
-        self._client = genai.Client(
-            api_key=self.api_key,
-            http_options=types.HttpOptions(
-                timeout=int(IMAGE_TIMEOUT_SECONDS * 1000),
-                # Retrying a paid request can create a second image after the beat.
-                retry_options=types.HttpRetryOptions(attempts=1),
-            ),
-        )
+    async def _image_bytes(self, value: object) -> bytes:
+        if not isinstance(value, str):
+            raise ValueError("Missing image URL")
+        if value.startswith("data:"):
+            header, separator, encoded = value.partition(",")
+            if (not separator or header not in {"data:image/jpeg;base64", "data:image/png;base64", "data:image/webp;base64"}
+                    or len(encoded) > 4 * ((MAX_IMAGE_BYTES + 2) // 3)):
+                raise ValueError("Invalid inline image")
+            data = base64.b64decode(encoded, validate=True)
+        else:
+            parsed = urlsplit(value)
+            if (parsed.scheme != "https" or parsed.username or parsed.password
+                    or parsed.port not in {None, 443}
+                    or not (parsed.hostname or "").endswith(".fal.media")):
+                raise ValueError("Unexpected image host")
+            data = bytearray()
+            # Never send the queue credential to a media host, or follow redirects.
+            async with self._client.stream("GET", value) as response:
+                response.raise_for_status()
+                async for chunk in response.aiter_bytes():
+                    data.extend(chunk)
+                    if len(data) > MAX_IMAGE_BYTES:
+                        raise ValueError("Image exceeds size limit")
+        if not data or len(data) > MAX_IMAGE_BYTES:
+            raise ValueError("Empty or oversized image")
+        return bytes(data)
 
     async def conjure(self, subject: str, *, kind: str = "scene",
                       character: str = "", reference: bytes | None = None) -> ConjuredStill | None:
-        from google.genai import types
-
-        from gizmo_friend.safety import KID_SAFETY_SETTINGS
-
         subject = subject.strip()
         if not subject:
             return None
         kind = kind if kind in PICTURE_KINDS else "scene"
         instruction = still_instruction(kind)
         content = f"Subject to depict: {subject}"
-        if character and kind == "scene":
+        anchored = bool(character and kind == "scene")
+        if anchored:
             instruction += (
                 " Include the fictional non-human protagonist prominently, roughly one third "
                 "of the frame height, with a clear silhouette. Preserve their species, "
@@ -140,65 +167,63 @@ class GeminiImageProvider(ImageProvider):
                 "No duplicate characters or reference-sheet layout."
             )
             content += f"\nEstablished character identity: {character[:600]}"
-        contents = [types.Part.from_text(text=content)]
-        if reference and character and kind == "scene":
-            contents.append(types.Part.from_bytes(data=reference, mime_type="image/jpeg"))
+        prompt = f"{instruction}\n\n{content}"
+        model = self.model + "/edit" if reference and anchored else self.model
+        payload = {
+            "prompt": prompt, "image_size": {"width": GENERATION_SIZE[0], "height": GENERATION_SIZE[1]},
+            "num_images": 1, "num_inference_steps": 4,
+            "enable_safety_checker": True, "output_format": "jpeg",
+            # Inline JPEG avoids a second CDN request before the still can appear.
+            "sync_mode": True,
+        }
+        if reference and anchored:
+            payload["image_urls"] = ["data:image/jpeg;base64," + base64.b64encode(reference).decode("ascii")]
         started = time.perf_counter()
         try:
-            async with asyncio.timeout(IMAGE_TIMEOUT_SECONDS):
-                response = await self._client.aio.models.generate_content(
-                    model=self.model,
-                    contents=contents,
-                    config=types.GenerateContentConfig(
-                        system_instruction=instruction,
-                        safety_settings=KID_SAFETY_SETTINGS,
-                        response_modalities=["IMAGE"],
-                        image_config=types.ImageConfig(
-                            aspect_ratio="4:3", image_size="512"
-                        ),
-                    ),
+            async with asyncio.timeout(self.timeout_seconds):
+                raw = bytearray()
+                # One paid submission, no automatic retry or provider fallback.
+                async with self._client.stream(
+                    "POST", f"https://fal.run/{model}", json=payload,
+                    headers={"Authorization": f"Key {self.api_key}", "X-Fal-No-Retry": "1"},
+                ) as response:
+                    response.raise_for_status()
+                    async for chunk in response.aiter_bytes():
+                        raw.extend(chunk)
+                        if len(raw) > MAX_RESPONSE_BYTES:
+                            raise ValueError("Image response exceeds size limit")
+                result = json.loads(raw)
+                flags = result.get("has_nsfw_concepts")
+                if not isinstance(flags, list) or not flags or flags[0] is not False:
+                    logger.warning("Show still unavailable: model=%s safety result not clear", model)
+                    return None
+                data = await self._image_bytes(result["images"][0]["url"])
+                jpeg, source_size = await asyncio.to_thread(_jpeg_still, data)
+                elapsed = time.perf_counter() - started
+                logger.info("Show still generated: model=%s seconds=%.3f bytes=%d", model, elapsed, len(jpeg))
+                return ConjuredStill(
+                    subject=subject, jpeg=jpeg,
+                    prompt=prompt + (f"\nCharacter reference SHA-256: {hashlib.sha256(reference).hexdigest()}" if reference and anchored else ""),
+                    model=model, width=STILL_SIZE[0], height=STILL_SIZE[1],
+                    source_width=source_size[0], source_height=source_size[1],
+                    latency_seconds=elapsed, timings=result.get("timings") or {},
                 )
-                for candidate in response.candidates or []:
-                    if candidate.finish_reason != types.FinishReason.STOP:
-                        continue
-                    if candidate.content is None:
-                        continue
-                    for part in candidate.content.parts or []:
-                        blob = part.inline_data
-                        if part.thought or blob is None or not blob.data:
-                            continue
-                        if not (blob.mime_type or "").startswith("image/"):
-                            continue
-                        jpeg, source_size = await asyncio.to_thread(_jpeg_still, blob.data)
-                        return ConjuredStill(
-                            subject=subject,
-                            jpeg=jpeg,
-                            prompt=f"{instruction}\n\n{content}" + (f"\nCharacter reference SHA-256: {hashlib.sha256(reference).hexdigest()}" if reference and character and kind == "scene" else ""),
-                            model=self.model,
-                            width=STILL_SIZE[0],
-                            height=STILL_SIZE[1],
-                            source_width=source_size[0],
-                            source_height=source_size[1],
-                            latency_seconds=time.perf_counter() - started,
-                        )
-                logger.warning("Show still unavailable: model=%s no finished image", self.model)
         except TimeoutError:
-            logger.warning("Show still dropped: model=%s exceeded 12 seconds", self.model)
-        except Exception as exc:
-            # Do not log request contents, credentials, or provider response bodies.
+            logger.warning("Show still dropped: model=%s exceeded %.1f seconds", model, self.timeout_seconds)
+        except Exception as error:
             logger.warning(
-                "Show still failed: model=%s error=%s code=%s",
-                self.model, type(exc).__name__, getattr(exc, "code", None),
+                "Show still failed: model=%s error=%s status=%s", model, type(error).__name__,
+                error.response.status_code if isinstance(error, httpx.HTTPStatusError) else None,
             )
         return None
 
     async def close(self) -> None:
-        await self._client.aio.aclose()
-        self._client.close()
+        await self._client.aclose()
 
 
 def image_provider_from_env(api_key: str | None = None) -> ImageProvider:
-    key = (api_key or os.environ.get("GEMINI_API_KEY") or "").strip()
+    key = (api_key or os.environ.get("FAL_KEY") or "").strip()
     if not key:
+        logger.warning("SHOW STILL UNAVAILABLE: FAL_KEY missing")
         return NullImageProvider()
-    return GeminiImageProvider(api_key=key)
+    return FalImageProvider(api_key=key)

@@ -12,7 +12,9 @@ from dataclasses import asdict, dataclass
 
 logger = logging.getLogger(__name__)
 
-DIRECTOR_MODEL = "gemini-3.1-flash-lite"
+from gizmo_friend.brain.fal_text import FalTextClient, TEXT_MODEL
+
+DIRECTOR_MODEL = TEXT_MODEL
 DIRECTOR_TIMEOUT_SECONDS = 4.0
 MAX_CONTEXT_TURNS = 8
 MAX_CONTEXT_TEXT = 2000
@@ -93,6 +95,10 @@ STILL
 - An explicit request to draw, show, or make a picture gets a still unless meaningful change over time is the point.
 
 MOTION
+- An explicit request for a video, animation, or moving picture gets MOTION
+  for a new subject, or ANIMATE when it refers to the existing illustration.
+  Do not downgrade an explicit video request to a still merely because the
+  subject could also be explained with a still.
 - Use motion only when seeing meaningful change over time explains the answer: a rocket lifting, a wave breaking, a heart beating, a volcano erupting, or the Moon orbiting Earth.
 - Never add motion merely because a subject is alive or capable of moving. Appearance, maps, anatomy, objects, and places remain still.
 - A story's opening or an actual move to a new setting gets one moving scene.
@@ -189,6 +195,23 @@ def is_bare_animate_request(utterance: str) -> bool:
     return cleaned in {"animate it", "make it move", "make that move", "make this move", "move it"}
 
 
+def is_explicit_visual_request(utterance: str) -> bool:
+    """An explicit standalone visual can be directed before voice narration.
+
+    Story scenes still wait for narration to establish the actual characters
+    and setting. This only schedules the director; it never chooses a subject.
+    """
+    cleaned = " ".join(utterance.casefold().split())
+    if re.search(r"\b(story|chapter|tale|continue)\b", cleaned):
+        return False
+    return bool(re.match(
+        r"^(?:please\s+)?(?:(?:can|could|would) you\s+)?(?:please\s+)?"
+        r"(?:show\b|draw\b|illustrate\b|animate\b|"
+        r"(?:make|generate|create)\b.{0,40}\b(?:picture|image|video|animation|diagram|map)\b)",
+        cleaned,
+    ))
+
+
 def decision_from_payload(
     payload: object, *, has_visual: bool, current_story_setting: str = "",
     narration_complete: bool = True,
@@ -254,21 +277,10 @@ class NullVisualDirector(VisualDirector):
         return VisualDecision()
 
 
-class GeminiVisualDirector(VisualDirector):
+class FalVisualDirector(VisualDirector):
     def __init__(self, api_key: str, *, model: str = DIRECTOR_MODEL) -> None:
-        from google import genai
-        from google.genai import types
-
         self.model = model
-        self._client = genai.Client(
-            api_key=api_key,
-            http_options=types.HttpOptions(
-                # Gemini rejects HTTP deadlines below ten seconds. The tighter
-                # product deadline is enforced by asyncio around each call.
-                timeout=10_000,
-                retry_options=types.HttpRetryOptions(attempts=1),
-            ),
-        )
+        self._client = FalTextClient(api_key, model=model)
 
     async def decide(
         self, utterance: str, *, has_visual: bool, current_subject: str = "",
@@ -277,10 +289,6 @@ class GeminiVisualDirector(VisualDirector):
         current_story_setting: str = "",
         current_character: str = "",
     ) -> VisualDecision:
-        from google.genai import types
-
-        from gizmo_friend.safety import KID_SAFETY_SETTINGS
-
         cleaned = utterance.strip()
         if not cleaned:
             return VisualDecision()
@@ -300,25 +308,11 @@ class GeminiVisualDirector(VisualDirector):
             ensure_ascii=False,
         )
         try:
-            async with asyncio.timeout(DIRECTOR_TIMEOUT_SECONDS):
-                response = await self._client.aio.models.generate_content(
-                    model=self.model,
-                    contents=request,
-                    config=types.GenerateContentConfig(
-                        system_instruction=DIRECTOR_INSTRUCTIONS,
-                        safety_settings=KID_SAFETY_SETTINGS,
-                        response_mime_type="application/json",
-                        response_json_schema=DIRECTOR_SCHEMA,
-                        automatic_function_calling=types.AutomaticFunctionCallingConfig(
-                            disable=True
-                        ),
-                        temperature=0,
-                        max_output_tokens=256,
-                    ),
-                )
-            parsed = response.parsed
-            if parsed is None:
-                parsed = json.loads(response.text or "{}")
+            response = await self._client.complete(
+                DIRECTOR_INSTRUCTIONS, request, schema=DIRECTOR_SCHEMA,
+                timeout=DIRECTOR_TIMEOUT_SECONDS, max_tokens=512,
+            )
+            parsed = json.loads(response)
             return decision_from_payload(
                 parsed, has_visual=has_visual, current_story_setting=current_story_setting,
                 narration_complete=narration_complete,
@@ -336,15 +330,14 @@ class GeminiVisualDirector(VisualDirector):
             return VisualDecision()
 
     async def close(self) -> None:
-        await self._client.aio.aclose()
-        self._client.close()
+        await self._client.close()
 
 
 def visual_director_from_env(api_key: str | None = None) -> VisualDirector:
-    key = (api_key or os.environ.get("GEMINI_API_KEY") or "").strip()
+    key = (api_key or os.environ.get("FAL_KEY") or "").strip()
     if not key:
         return NullVisualDirector()
-    return GeminiVisualDirector(
+    return FalVisualDirector(
         api_key=key,
         model=os.environ.get("GIZMO_DIRECTOR_MODEL", DIRECTOR_MODEL),
     )
