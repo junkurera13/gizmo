@@ -231,7 +231,7 @@ void FriendConnection::build_headers() {
   extra_headers_[0] = '\0';
   char* p = extra_headers_;
   size_t left = sizeof(extra_headers_);
-  int n = snprintf(p, left, "X-Gizmo-Device: %s\r\nX-Gizmo-Protocol: %u", device_id_,
+  int n = snprintf(p, left, "X-Gizmo-Device: %s\r\nX-Gizmo-Protocol: %u\r\nX-Gizmo-Glass-Cues: 1", device_id_,
                    static_cast<unsigned>(kProtocolVersion));
   if (n < 0 || static_cast<size_t>(n) >= left) {
     extra_headers_[0] = '\0';
@@ -307,6 +307,8 @@ void FriendConnection::forget() {
 void FriendConnection::disconnect() {
   show_ = ShowRequest{};
   show_changed_ = true;
+  held_ = ShowRequest{};
+  held_changed_ = false;
   hello_ok_ = false;
   session_ready_ = false;
   glass_seen_ = false;
@@ -422,6 +424,8 @@ void FriendConnection::on_socket_event(int type, uint8_t* payload, size_t length
     case WStype_DISCONNECTED:
       show_ = ShowRequest{};
       show_changed_ = true;
+      held_ = ShowRequest{};
+      held_changed_ = false;
       interrupt_speaker();
       Serial.println("friend ws: disconnected");
       if (phase_ == FriendPhase::kOnline || phase_ == FriendPhase::kConnecting) {
@@ -566,8 +570,10 @@ void FriendConnection::on_message(const char* json, size_t len) {
     return;
   }
 
-  StaticJsonDocument<256> filter;
-  for (const char* key : {"type", "state", "protocol_version", "viewing", "still", "frames"}) filter[key] = true;
+  StaticJsonDocument<320> filter;
+  for (const char* key : {"type", "state", "protocol_version", "viewing", "still", "frames", "cue", "hold", "go"}) {
+    filter[key] = true;
+  }
   DynamicJsonDocument document(len > 2048 ? 2048 : len + 512);
   if (deserializeJson(document, json, len, DeserializationOption::Filter(filter))) return;
   type = document["type"] | "";
@@ -597,16 +603,38 @@ void FriendConnection::on_message(const char* json, size_t len) {
 
   if (strcmp(type, "glass") == 0) {
     if (hello_ok_) {
+      const uint32_t cue = document["cue"] | 0u;
+      const bool hold = document["hold"] | false;
+      const char* still = document["still"] | "";
+      const char* frames = document["frames"] | "";
       if (document["viewing"].is<bool>() && !document["viewing"].as<bool>()) {
         show_ = ShowRequest{};
         show_changed_ = true;
+        held_ = ShowRequest{};
+        held_changed_ = false;
+      } else if (cue != 0 && hold) {
+        // The next beat of a story: fetch it now, keep the current picture up.
+        if (show_path(still, device_id_, ".jpg")) {
+          if (held_.cue != cue || strcmp(held_.still, still)) held_ = ShowRequest{};
+          strlcpy(held_.still, still, sizeof(held_.still));
+          held_.cue = cue;
+          held_.hold = true;
+          held_.viewing = true;
+          held_changed_ = true;
+        }
+        if (held_.viewing && held_.cue == cue && show_path(frames, device_id_, ".mjpeg") &&
+            show_same(held_.still, frames)) {
+          strlcpy(held_.frames, frames, sizeof(held_.frames));
+          held_changed_ = true;
+        }
       } else {
-        const char* still = document["still"] | "";
-        const char* frames = document["frames"] | "";
+        const bool go = document["go"] | false;
         if (show_path(still, device_id_, ".jpg")) {
           if (strcmp(show_.still, still)) show_ = ShowRequest{};
           strlcpy(show_.still, still, sizeof(show_.still));
           show_.viewing = true;
+          show_.cue = cue;
+          show_.go = go;
           show_changed_ = true;
         }
         if (show_.viewing && show_path(frames, device_id_, ".mjpeg") && show_same(show_.still, frames)) {
@@ -640,9 +668,15 @@ void FriendConnection::on_message(const char* json, size_t len) {
 }
 
 bool FriendConnection::take_show(ShowRequest& request) {
-  if (!show_changed_) return false;
-  show_changed_ = false;
-  request = show_;
+  if (held_changed_) {
+    held_changed_ = false;
+    request = held_;
+  } else if (show_changed_) {
+    show_changed_ = false;
+    request = show_;
+  } else {
+    return false;
+  }
   strlcpy(request.base, url_, sizeof(request.base));
   strlcpy(request.token, token_, sizeof(request.token));
   strlcpy(request.device, device_id_, sizeof(request.device));
@@ -701,7 +735,18 @@ bool FriendConnection::send_ptt(bool active) {
 bool FriendConnection::send_select() {
   show_ = ShowRequest{};
   show_changed_ = true;
+  held_ = ShowRequest{};
+  held_changed_ = false;
   return send_json("{\"type\":\"select\"}");
+}
+
+bool FriendConnection::send_glass_ready(uint32_t cue, bool motion, bool ok) {
+  if (cue == 0 || !ready()) return false;
+  char json[96];
+  const int n = snprintf(json, sizeof(json), "{\"type\":\"glass_ready\",\"cue\":%lu,\"kind\":\"%s\",\"ok\":%s}",
+                         static_cast<unsigned long>(cue), motion ? "motion" : "still", ok ? "true" : "false");
+  if (n < 0 || static_cast<size_t>(n) >= sizeof(json)) return false;
+  return send_json(json);
 }
 
 bool FriendConnection::send_pcm16k(const int16_t* samples, size_t count) {

@@ -784,13 +784,16 @@ void loop() {
   gizmo::ShowRequest show_request;
   if (friend_link.take_show(show_request)) {
     if (state == State::kSettings || state == State::kCamera || state == State::kPlayback) {
-      if (show_request.viewing) friend_link.send_select();
+      // A held story cue is not a picture yet; only a real one is declined with Select.
+      if (show_request.viewing && !show_request.hold) friend_link.send_select();
       show_player.cancel();
     } else {
       show_player.submit(show_request);
     }
   }
   show_player.update();
+  gizmo::GlassReady glass_ack;
+  while (show_player.take_glass_ready(glass_ack)) friend_link.send_glass_ready(glass_ack);
   if (had_show != show_player.available()) dirty = true;
   audio.update();
   pump_friend_audio();

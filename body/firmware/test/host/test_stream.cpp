@@ -71,7 +71,10 @@ int main() {
 
   // A full downstream queue pauses reads, but a local interrupt immediately
   // frees the receive window and discards the old resampler tail.
-  assert(connection.enqueue_speaker(wire.data(), 60001));
+  // The ring holds twenty seconds so a long narration burst never blocks the
+  // glass cues queued behind it on the socket.
+  static_assert(gizmo::FriendConnection::kSpeakerCap == 16000 * 20, "stream test sized for a 20 s ring");
+  assert(connection.enqueue_speaker(wire.data(), 465001)); // 310000 of 320000 samples, one left over
   const size_t queued = connection.speaker_n_;
   assert(!connection.enqueue_speaker(wire.data(), 24000));
   assert(connection.speaker_n_ == queued && connection.down_n_ == 1);
@@ -86,7 +89,7 @@ int main() {
   connection.update(true);
   assert(reads == 1);
   // Wi-Fi loss must still clear a full ring even while reads are paused.
-  assert(connection.enqueue_speaker(wire.data(), 60000));
+  assert(connection.enqueue_speaker(wire.data(), 465000));
   connection.update(false);
   assert(!connection.ready() && !connection.speaker_pending());
   mock_socket_loop = nullptr;

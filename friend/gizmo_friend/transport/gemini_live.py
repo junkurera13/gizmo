@@ -198,6 +198,20 @@ class GeminiLiveTransport:
             turn_complete=True,
         )
 
+    async def remember(self, text: str) -> None:
+        """Append words he already said (scripted narration) to the conversation, silently.
+
+        The storytelling conductor speaks through its own voice, so Live never
+        hears those words. Adding them as a model turn without completing the
+        turn keeps his memory of the story straight for the next question.
+        """
+        if not text.strip() or self._activity_open:
+            return
+        await self._require_session().send_client_content(
+            turns=types.Content(role="model", parts=[types.Part(text=text)]),
+            turn_complete=False,
+        )
+
     async def begin_audio(self) -> None:
         self._suppress_audio = True
         self._input_transcript = ""

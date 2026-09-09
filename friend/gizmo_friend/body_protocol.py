@@ -29,6 +29,10 @@ simulator and real hardware behave identically.
       Current body clients do not emit this. See needs its own explicit
       interaction; it must never be inferred from push-to-talk.
   mic audio while holding    -> MicChunk (pcm16, 24kHz mono)
+  held picture decoded       -> GlassReady(cue, kind, ok)
+      The body's reply to a glass event carrying "cue" and "hold": the
+      still or motion is on the device and waiting for "go". Storytelling
+      uses it to change the picture on the sentence, not on the download.
 
 These are Python controller events, not serialized WebSocket messages.
 On /ws, microphone input and speaker output both use type="audio" with
@@ -63,6 +67,7 @@ class BodyEventType(str, Enum):
     FRAME = "frame"
     MIC = "mic"  # Internal event name; canonical /ws message type is "audio".
     TEXT = "text"  # laptop keyboard stand-in for a spoken line
+    GLASS_READY = "glass_ready"
 
 
 @dataclass(frozen=True)
@@ -108,7 +113,15 @@ class TextLine:
     type: str = BodyEventType.TEXT.value
 
 
-BodyEvent = Union[Select, Power, PushToTalk, Navigate, Frame, MicChunk, TextLine]
+@dataclass(frozen=True)
+class GlassReady:
+    cue: int
+    kind: str = "still"  # "still" or "motion"
+    ok: bool = True
+    type: str = BodyEventType.GLASS_READY.value
+
+
+BodyEvent = Union[Select, Power, PushToTalk, Navigate, Frame, MicChunk, TextLine, GlassReady]
 
 
 @dataclass

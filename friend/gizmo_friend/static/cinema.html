@@ -1,0 +1,14 @@
+<!doctype html>
+<html lang="en">
+<head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Gizmo</title><link rel="stylesheet" href="/static/cinema.css"></head>
+<body data-phase="idle">
+  <main>
+    <div class="picture"><img class="poster" src="/static/cinema-poster.jpg" alt="An illustrated rocket climbing into space"><video id="film" playsinline></video><canvas id="freeze" hidden></canvas><div class="shade"></div></div>
+    <header><a class="brand" href="/cinema">gizmo<span>✳</span></a><button id="sound" aria-label="Mute sound" title="Mute sound">Sound on</button></header>
+    <section class="welcome" id="welcome"><h1>Follow your<br>curiosity.</h1><p>A question. A whole world.</p><div class="suggestions"><button data-question="Why do rockets need so much fire?">Why so much fire?</button><button data-question="Take me inside a thundercloud. How does lightning happen?">Inside a thundercloud</button><button data-question="Show me how an octopus changes colour.">An octopus in disguise</button></div></section>
+    <section class="film-info" aria-live="polite"><h2 id="title"></h2><p id="status">Ask something. See where it takes us.</p></section>
+    <button id="resume" hidden>Play with sound</button>
+    <div class="bottom"><div id="progress" role="progressbar" aria-label="Film progress" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0"><i></i></div><div class="conversation"><button id="pause" aria-label="Interrupt film" title="Interrupt film" hidden>Ⅱ</button><form id="question"><label class="sr-only" for="ask">Ask Gizmo</label><input id="ask" autocomplete="off" maxlength="1200" placeholder="What are you curious about?"><button id="send" aria-label="Send question">↑</button></form><button id="talk" aria-label="Hold to talk" title="Hold to talk"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" aria-hidden="true"><rect x="9" y="3" width="6" height="12" rx="3"/><path d="M5 10v2a7 7 0 0014 0v-2M12 19v3m-4 0h8"/></svg></button></div><p class="hint" id="hint">Hold the pink button to talk · You can interrupt anytime</p></div>
+    <dialog id="access"><form method="dialog"><h2>Come on in.</h2><label for="code">Preview access code</label><input id="code" type="password" autocomplete="off"><button id="unlock">Continue</button><p id="access-error" role="alert"></p></form></dialog>
+  </main><script type="module" src="/static/cinema.js"></script>
+</body></html>

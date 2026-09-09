@@ -36,6 +36,8 @@ class FriendConnection {
   bool send_select();
   // Latest camera JPEG. Brain limit is 128 KiB; the WS frame budget is smaller.
   bool send_frame(const uint8_t* jpeg, size_t length);
+  // A held story cue is decoded (or failed); the brain cuts the picture on this.
+  bool send_glass_ready(uint32_t cue, bool motion, bool ok);
 
   size_t take_speaker(int16_t* dest, size_t cap);
   void interrupt_speaker();
@@ -78,7 +80,11 @@ class FriendConnection {
   char detail_[56] = "";
   char extra_headers_[280] = "";
 
-  static constexpr size_t kSpeakerCap = 16000 * 3;  // 16 kHz after 24→16
+  // 20 s at 16 kHz (640 KiB, PSRAM). The socket is only read while this ring
+  // has room, so a small ring made every glass event queue behind a burst of
+  // speech: the picture landed when the words ran out. A voice model answers
+  // faster than real time; a whole reply must fit so pictures keep flowing.
+  static constexpr size_t kSpeakerCap = 16000 * 20;  // 16 kHz after 24→16
   // Reserve enough room for an entire maximum-size JSON/base64 WS frame,
   // including the resampler's two carried input samples. No audio is dropped
   // to catch up with a provider generating faster than real time.
@@ -97,6 +103,9 @@ class FriendConnection {
   bool barge_in_ = false;
   ShowRequest show_;
   bool show_changed_ = false;
+  // A story beat sent ahead of its words. Handed to the player before show_.
+  ShowRequest held_;
+  bool held_changed_ = false;
 };
 
 const char* friend_phase_name(FriendPhase phase);

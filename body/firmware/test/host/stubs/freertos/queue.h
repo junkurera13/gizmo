@@ -20,6 +20,7 @@ inline int xQueueReceive(QueueHandle_t q,void* p,TickType_t wait) {
 }
 inline void xQueueReset(QueueHandle_t q) {std::lock_guard<std::mutex> lock(q->lock);q->data.clear();}
 inline unsigned uxQueueSpacesAvailable(QueueHandle_t q) {std::lock_guard<std::mutex> lock(q->lock);return q->cap-q->data.size();}
+inline unsigned uxQueueMessagesWaiting(QueueHandle_t q) {std::lock_guard<std::mutex> lock(q->lock);return q->data.size();}
 inline void xQueueOverwrite(QueueHandle_t q,const void* p) {
   std::lock_guard<std::mutex> lock(q->lock);q->data.clear();auto* bytes=static_cast<const char*>(p);q->data.emplace_back(bytes,bytes+q->size);
 }

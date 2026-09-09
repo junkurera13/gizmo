@@ -21,6 +21,7 @@ from gizmo_friend.body_protocol import (
     BODY_PROTOCOL_VERSION,
     BODY_SETTING_STEPS,
     Frame,
+    GlassReady,
     MicChunk,
     Navigate,
     Power,
@@ -87,6 +88,7 @@ def app_factory(data_dir: Path) -> FastAPI:
     # devices never share a mind. Sessions outlive their sockets: a reconnect
     # picks up the same Gizmo mid-thought.
     sessions: dict[str, GizmoSession] = {}
+    director_devices: set[str] = set()
     default_device = _device_id(os.environ.get("GIZMO_USER_ID", ""), "gizmo-local-user")
     show_budget = ShowBudget(data_dir)
     motion_budget = MotionBudget(data_dir)
@@ -124,6 +126,8 @@ def app_factory(data_dir: Path) -> FastAPI:
             request.url.path in {"/oddity", "/oddity/session", "/oddity/moments"}
             or request.url.path.startswith("/oddity/media/")
             or request.url.path in ODDITY_PUBLIC_ASSETS
+            or request.url.path == "/cinema" or request.url.path.startswith("/cinema/")
+            or request.url.path in {"/static/cinema.css", "/static/cinema.js", "/static/cinema-poster.jpg"}
         )
         if request.url.path != "/health" and not public_oddity and not authorized(request):
             return JSONResponse({"detail": "unauthorized"}, status_code=401)
@@ -142,7 +146,7 @@ def app_factory(data_dir: Path) -> FastAPI:
             "body_protocol": {
                 "version": BODY_PROTOCOL_VERSION,
                 "websocket_path": "/ws",
-                "input_events": ["power", "ptt", "navigate", "select", "frame", "audio"],
+                "input_events": ["power", "ptt", "navigate", "select", "frame", "audio", "glass_ready"],
                 "output_events": [
                     "hello", "state", "glass", "audio", "ptt", "navigate",
                     "select", "frame", "transcript", "interrupted", "error",
@@ -254,9 +258,23 @@ def app_factory(data_dir: Path) -> FastAPI:
             await socket.close(code=1002, reason="unsupported body protocol")
             return
         device_id = _device_id(socket.headers.get("x-gizmo-device", ""), default_device)
+        if os.environ.get("GIZMO_DIRECTOR_DEVICE", "") == device_id:
+            if socket.headers.get("x-gizmo-glass-cues") != "1":
+                await socket.close(code=1008, reason="Director needs held-cue firmware")
+                return
+            if device_id in director_devices or not os.environ.get("FAL_KEY") or not os.environ.get("GEMINI_API_KEY"):
+                await socket.close(code=1013, reason="Director device is busy or unavailable")
+                return
+            from gizmo_friend.cinema.device import DeviceFilm
+            director_devices.add(device_id)
+            try:
+                await DeviceFilm(socket, data_dir, device_id).run()
+            finally:
+                director_devices.discard(device_id)
+            return
         friend = session_for(device_id)
         await socket.accept()
-        queue = friend.subscribe()
+        queue = friend.subscribe(glass_cues=socket.headers.get("x-gizmo-glass-cues") == "1")
         await socket.send_json(
             {
                 "type": "hello",
@@ -299,6 +317,8 @@ def app_factory(data_dir: Path) -> FastAPI:
         from gizmo_friend.oddity.routes import router as oddity_router
 
         app.include_router(oddity_router(data_dir, STATIC))
+        from gizmo_friend.cinema.routes import router as cinema_router
+        app.include_router(cinema_router(data_dir, STATIC))
         app.mount("/static", StaticFiles(directory=STATIC), name="static")
     return app
 
@@ -326,6 +346,12 @@ async def _dispatch(friend: GizmoSession, message: dict, *, source: object | Non
             event = Navigate(direction=direction)
     elif kind == "text":
         event = TextLine(text=str(message.get("text") or ""))
+    elif kind == "glass_ready":
+        cue = message.get("cue")
+        glass_kind = str(message.get("kind") or "still")
+        if (isinstance(cue, int) and not isinstance(cue, bool) and 0 < cue <= 0xFFFFFFFF
+                and glass_kind in {"still", "motion"} and isinstance(message.get("ok", True), bool)):
+            event = GlassReady(cue=cue, kind=glass_kind, ok=bool(message.get("ok", True)))
     elif kind in {"audio", "mic"}:
         # `audio` is the wire name used by the native body. Keep `mic` as
         # an alias for firmware based on the earlier body handoff notes.

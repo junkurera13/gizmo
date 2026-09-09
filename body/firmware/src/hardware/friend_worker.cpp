@@ -62,6 +62,15 @@ bool FriendLink::send_ptt(bool active) {
   return queue(active ? Kind::kPttDown : Kind::kPttUp);
 }
 bool FriendLink::send_select() { return ready() && queue(Kind::kSelect); }
+bool FriendLink::send_glass_ready(const GlassReady& ack) {
+  if (!commands_ || !ready() || ack.cue == 0) return false;
+  Command command{};
+  command.kind = Kind::kGlassReady;
+  command.generation = status_.generation;
+  command.data.glass = ack;
+  // A dropped ack only costs the brain its short wait; never cancel the turn for it.
+  return xQueueSend(commands_, &command, 0) == pdTRUE;
+}
 bool FriendLink::send_jpeg(const uint8_t* jpeg, size_t length) {
   if (!ready() || jpeg == nullptr || length == 0 || length > kJpegMax || jpeg_slot_[0] == nullptr ||
       jpeg_slot_[1] == nullptr) {
@@ -148,6 +157,9 @@ void FriendLink::run() {
           case Kind::kPttUp: if (ptt) ok = connection.send_ptt(false); ptt = false; break;
           case Kind::kPcm: if (ptt) ok = connection.send_pcm16k(command.data.pcm, command.count); break;
           case Kind::kSelect: ok = connection.send_select(); break;
+          case Kind::kGlassReady:
+            connection.send_glass_ready(command.data.glass.cue, command.data.glass.motion, command.data.glass.ok);
+            break;
           default: break;
         }
         if (!ok) { connection.abort(); ptt = false; }

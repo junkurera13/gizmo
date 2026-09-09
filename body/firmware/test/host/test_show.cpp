@@ -76,6 +76,46 @@ int main(int argc,char** argv) {
   ShowRequest cleared;player.submit(cleared);
   player.submit(request);assert(player.viewing()); // network clear alone permits reconnect restoration
   assert(!player.download(job,true,media)); // old revision never starts a request
+  // Storytelling: a held cue is fetched behind the current picture, acked, and
+  // swapped in on "go" without a download in between.
+  player.held_jobs_=xQueueCreate(1,sizeof(ShowPlayer::Job));
+  player.results_=xQueueCreate(4,sizeof(ShowPlayer::Media));
+  response(false);player.submit(request);
+  assert(xQueueReceive(player.jobs_,&job,0)&&player.download(job,false,media));
+  player.publish(media);player.update();assert(player.available());
+  const uint8_t* on_glass=player.still_.bytes;
+  ShowRequest held=request;held.cue=5;held.hold=true;held.frames[0]=0;
+  held.still[20]='2';
+  player.submit(held);
+  assert(!xQueueReceive(player.jobs_,&job,0)); // nothing for the glass
+  assert(xQueueReceive(player.held_jobs_,&job,0)&&job.held&&job.still&&job.request.cue==5);
+  response(false);assert(player.download(job,false,media));assert(media.held&&media.cue==5);
+  player.publish(media);player.update();
+  assert(player.still_.bytes==on_glass); // the current picture did not change
+  assert(player.held_still_.bytes!=nullptr);
+  GlassReady ack;
+  assert(player.take_glass_ready(ack)&&ack.cue==5&&!ack.motion&&ack.ok&&!player.take_glass_ready(ack));
+  ShowRequest go=held;go.hold=false;go.go=true;
+  strcpy(go.frames,go.still);memcpy(go.frames+strlen(go.frames)-4,".mjpeg",7);
+  const uint8_t* was_held=player.held_still_.bytes;
+  player.submit(go);
+  assert(player.still_.bytes==was_held&&player.held_still_.bytes==nullptr&&player.request_.cue==5);
+  assert(player.render(pixels)); // no download between go and the new picture
+  assert(!xQueueReceive(player.jobs_,&job,0));
+  assert(xQueueReceive(player.held_jobs_,&job,0)&&job.held&&!job.still); // frames the hold did not carry
+  response(true);assert(player.download(job,true,media));
+  player.publish(media);player.update();
+  assert(player.clip_.count==2&&player.clip_.cue==5); // adopted by the picture that already went
+  assert(player.take_glass_ready(ack)&&ack.cue==5&&ack.motion&&ack.ok);
+  // A held fetch that fails reports so; the brain speaks over the picture it has.
+  ShowPlayer::Media failed;failed.failed=true;failed.held=true;failed.cue=6;failed.revision=player.held_revision_.load();
+  player.publish(failed);player.update();
+  assert(player.take_glass_ready(ack)&&ack.cue==6&&!ack.ok);
+  // A plain conversation picture drops whatever was held.
+  ShowRequest later=held;later.cue=9;later.still[21]='3';player.submit(later);
+  assert(player.held_request_.cue==9);
+  ShowRequest plain=request;plain.still[22]='4';plain.frames[0]=0;player.submit(plain);
+  assert(player.held_request_.cue==0&&player.held_still_.bytes==nullptr);
   // A genuinely blocked HTTP request never runs on the body loop.
   ShowPlayer async;
   mock_health_entered=false;mock_health_blocked=true;

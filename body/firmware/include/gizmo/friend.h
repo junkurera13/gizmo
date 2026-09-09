@@ -30,18 +30,19 @@ class FriendLink {
   bool send_select();
   bool send_pcm16k(const int16_t* samples, size_t count);
   bool send_jpeg(const uint8_t* jpeg, size_t length);
+  bool send_glass_ready(const GlassReady& ack);
   size_t take_speaker(int16_t* dest, size_t cap);
   void interrupt_speaker();
   bool take_barge_in();
   bool take_show(ShowRequest& request);
 
  private:
-  enum class Kind : uint8_t { kUrl, kToken, kForget, kPttDown, kPttUp, kPcm, kSelect, kInterrupt };
+  enum class Kind : uint8_t { kUrl, kToken, kForget, kPttDown, kPttUp, kPcm, kSelect, kInterrupt, kGlassReady };
   struct Command {
     Kind kind;
     uint32_t generation = 0;
     size_t count = 0;
-    union { char text[160]; int16_t pcm[256]; } data;
+    union { char text[160]; int16_t pcm[256]; GlassReady glass; } data;
   };
   struct Speaker { uint32_t generation; size_t count; int16_t pcm[256]; };
   struct Status {

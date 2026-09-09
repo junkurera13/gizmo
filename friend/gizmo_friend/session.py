@@ -3,6 +3,7 @@ from __future__ import annotations
 import asyncio
 import base64
 import json
+import inspect
 import logging
 import os
 import uuid
@@ -17,10 +18,12 @@ from gizmo_friend.audio_out import Mouth
 from gizmo_friend.brain.clips import ClipProvider, NullClipProvider, clip_provider_from_env
 from gizmo_friend.brain.images import ImageProvider, NullImageProvider, image_provider_from_env
 from gizmo_friend.brain.memory import MemoryProvider, memory_provider_from_env
+from gizmo_friend.brain.narration import Narration, NarrationProvider, narration_provider_from_env
 from gizmo_friend.brain.reasoning import ReasoningProvider, reasoning_provider_from_env
 from gizmo_friend.brain.show_budget import MotionBudget, ShowBudget
 from gizmo_friend.brain.show_media import MediaError
 from gizmo_friend.brain.shows import ShowStore, StoredShow
+from gizmo_friend.brain.story import NullStoryPlanner, StoryContext, StoryIntent, StoryPlanner, story_gate, story_planner_from_env
 from gizmo_friend.brain.transcripts import TranscriptStore
 from gizmo_friend.brain.visual_director import (
     DialogueTurn,
@@ -36,6 +39,7 @@ from gizmo_friend.brain.visual_director import (
 from gizmo_friend.body_protocol import (
     BodyEvent,
     Frame,
+    GlassReady,
     MicChunk,
     Navigate,
     Power,
@@ -47,8 +51,9 @@ from gizmo_friend.body_protocol import (
 from gizmo_friend.prompt import FROZEN_PROMPT
 from gizmo_friend.settings import DeviceSettings
 from gizmo_friend.states import State, StateMachine
+from gizmo_friend.story_run import StoryRun
 from gizmo_friend.tools.allowlist import ALLOWED_TOOLS
-from gizmo_friend.transport.base import Transport
+from gizmo_friend.transport.base import Transport, TransportEvent
 from gizmo_friend.transport.gemini_live import GeminiLiveTransport
 
 Listener = Callable[[dict[str, Any]], Any]
@@ -56,6 +61,19 @@ logger = logging.getLogger(__name__)
 
 EXPRESSIONS = {"idle", "curious", "thinking", "happy", "concerned", "surprised"}
 # Placeholder vocabulary for set_expression. Not the character. Glass ignores it.
+
+# Storytelling. Live's answer is held (not played) while the scout decides
+# whether the kid asked for a told piece. The hold is short and fails open.
+HOLD_PROVISIONAL_SECONDS = 0.7   # no story running: wait this long past first audio for a transcript
+HOLD_STORY_SECONDS = 5.0         # a story is running, or the ask matched the gate: wait for the scout
+STORY_CHUNK_BYTES = 11_520       # 240 ms of 24 kHz PCM16 per audio event to the body
+STORY_AUDIO_LEAD_SECONDS = 1.5   # how far ahead of real time narration is sent; small so a press stops it fast
+GLASS_NO_ACK_GRACE_SECONDS = 1.0 # a body that never acks gets this long to fetch a cued picture
+STORY_RESUME_DELAY_SECONDS = 0.8 # breath between his answer to a side question and the story going on
+STORY_FALLBACK_NUDGE = (
+    "(The pictures could not be made for this part. Carry on in words, briefly, in your own voice, "
+    "without mentioning pictures or that anything failed.)"
+)
 
 
 def _today() -> str:
@@ -92,6 +110,8 @@ class GizmoSession:
         clip_provider: ClipProvider | None = None,
         motion_budget: MotionBudget | None = None,
         visual_director: VisualDirector | None = None,
+        story_planner: StoryPlanner | None = None,
+        narration_provider: NarrationProvider | None = None,
     ) -> None:
         self.data_dir = Path(data_dir)
         self.data_dir.mkdir(parents=True, exist_ok=True)
@@ -109,6 +129,9 @@ class GizmoSession:
         self.memory_provider = memory_provider or memory_provider_from_env()
         self.reasoning = reasoning_provider or reasoning_provider_from_env()
         self.visual_director = visual_director or visual_director_from_env()
+        self._story_enabled = story_planner is not None or os.environ.get("GIZMO_STORY_ENABLED", "").lower() in {"1", "true"}
+        self.story_planner = story_planner or (story_planner_from_env() if self._story_enabled else NullStoryPlanner())
+        self.narration = narration_provider or narration_provider_from_env(gemini_key)
         self.user_id = user_id or os.environ.get("GIZMO_USER_ID", "gizmo-local-user")
         self.images = image_provider or image_provider_from_env()
         self.clips = clip_provider or clip_provider_from_env()
@@ -182,17 +205,37 @@ class GizmoSession:
         self._camera_dirty = False
         self._closing = False
         self.settings = DeviceSettings(self.data_dir / "settings.json")
+        # Storytelling: one told piece at a time, played by the conductor.
+        self.story: StoryRun | None = None
+        self._story_task: asyncio.Task[bool] | None = None
+        self._story_resume_after_done = False
+        # Hold-and-decide: Live's reply is buffered here until the scout speaks.
+        self._hold: list[TransportEvent] | None = None
+        self._hold_started_at: float | None = None
+        self._hold_timer: asyncio.Task[None] | None = None
+        self._hold_utterance = ""
+        self._scout_task: asyncio.Task[None] | None = None
+        self._scouted_ask_revision = -1
+        # Body acknowledgements for cued pictures, keyed by (cue, kind).
+        self._glass_ready: dict[tuple[int, str], asyncio.Future[bool]] = {}
+        self._cue_listeners: set[asyncio.Queue] = set()
+        self._last_story_cue = 0
+        self._glass_ready_timeout = 6.0
+        self._story_audio_lead = STORY_AUDIO_LEAD_SECONDS
 
     @property
     def state(self) -> State:
         return self.machine.state
 
-    def subscribe(self) -> asyncio.Queue[dict[str, Any]]:
+    def subscribe(self, *, glass_cues: bool = False) -> asyncio.Queue[dict[str, Any]]:
         queue: asyncio.Queue[dict[str, Any]] = asyncio.Queue()
         self._listeners.append(queue)
+        if glass_cues:
+            self._cue_listeners.add(queue)
         return queue
 
     def unsubscribe(self, queue: asyncio.Queue[dict[str, Any]]) -> None:
+        self._cue_listeners.discard(queue)
         if queue in self._listeners:
             self._listeners.remove(queue)
 
@@ -217,10 +260,13 @@ class GizmoSession:
 
     async def body_disconnected(self, source: object) -> None:
         """Drop abandoned input without committing it or forgetting the session."""
+        if not self._listeners:
+            await self._pause_story(reason="body_disconnected")
         async with self._body_input_lock:
             if self._ptt_owner is not source:
                 return
             self._visual_turn_open = False
+            await self._drop_hold(interrupt=False)
             self._reset_ptt()
             self._cancel_warm()
             if self._reconnect_task:
@@ -261,6 +307,8 @@ class GizmoSession:
             "transport": self.transport_name,
         }
         for queue in list(self._listeners):
+            if event.get("type") == "glass" and event.get("hold") and queue not in self._cue_listeners:
+                continue
             await queue.put(event)
 
     async def handle(self, event: BodyEvent) -> None:
@@ -278,6 +326,8 @@ class GizmoSession:
             await self.on_text(event.text)
         elif isinstance(event, MicChunk):
             await self.on_mic(event.pcm)
+        elif isinstance(event, GlassReady):
+            self._on_glass_ready(event)
         elif isinstance(event, Frame):
             self.camera.inject(image=event.image, hint=event.hint, mime=event.mime)
             self._camera_dirty = bool(event.image)
@@ -295,6 +345,13 @@ class GizmoSession:
             return
         if self.settings.select():
             await self.emit(self.settings.snapshot())
+            return
+        if self.story is not None:
+            # Select keeps its existing physical contract: dismiss the Show.
+            # PTT pauses a story; spoken requests resume or steer it.
+            await self._end_story()
+            await self._drop_hold()
+            await self._dismiss_show(reason="select", cancel_pending=False)
             return
         if self.current_show is not None:
             await self._dismiss_show(reason="select", cancel_pending=False)
@@ -342,6 +399,8 @@ class GizmoSession:
             return
         self._cancel_visual_direction()
         self._visual_turn_open = False
+        await self._end_story()
+        await self._drop_hold(interrupt=False)
         if self._boot_task and not self._boot_task.done():
             self._boot_task.cancel()
             self._boot_task = None
@@ -409,9 +468,13 @@ class GizmoSession:
                 return
             self._cancel_visual_direction()
             self._cancel_pending_show()
+            await self._drop_hold(interrupt=False)
+            if self.story is not None:
+                await self._pause_story(reason="ptt")
             self._suppress_live_output = False
             self._ask_revision += 1
             self._begin_visual_turn("")
+            self._begin_hold()
             self._ptt_pressed = True
             self._ptt_open_task = asyncio.create_task(self._open_mic())
             return
@@ -482,11 +545,18 @@ class GizmoSession:
         if not self._ready_for_input():
             return
         self._cancel_pending_show()
+        await self._drop_hold(interrupt=False)
+        if self.story is not None:
+            await self._pause_story(reason="text")
         self._ask_revision += 1
         self._suppress_live_output = is_bare_animate_request(cleaned)
         self._cancel_visual_direction()
         self._begin_visual_turn(cleaned)
         self._record_transcript("user", cleaned)
+        # A typed line is known in full at once: the scout can start before Live answers.
+        if self.story is not None or story_gate(cleaned):
+            self._begin_hold()
+            await self._consider_scout(cleaned, final=True)
         await self._ensure_connected()
         if self._transport:
             await self._send_camera_frame()
@@ -508,6 +578,8 @@ class GizmoSession:
     async def close(self) -> None:
         self._closing = True
         self._cancel_visual_direction()
+        await self._end_story()
+        await self._drop_hold(interrupt=False)
         if self._director_tasks:
             await asyncio.gather(*tuple(self._director_tasks), return_exceptions=True)
         await self._dismiss_show(reason="close")
@@ -543,6 +615,8 @@ class GizmoSession:
         await self.memory_provider.close()
         await self.reasoning.close()
         await self.visual_director.close()
+        await self.story_planner.close()
+        await self.narration.close()
 
     def _ready_for_input(self) -> bool:
         return self.machine.state not in {State.POWERED_OFF, State.ASLEEP, State.BOOTING}
@@ -581,6 +655,8 @@ class GizmoSession:
         if not self.machine.can("sleep"):
             return
         self._cancel_visual_direction()
+        await self._end_story()
+        await self._drop_hold(interrupt=False)
         self._reset_ptt()
         self._flush_transcript_turns()
         self._background_memory(self.memory_provider.flush(self.user_id))
@@ -828,6 +904,28 @@ class GizmoSession:
     async def _on_transport(self, event: Any) -> None:
         self._touch()
         kind = event.kind
+        if self._hold is not None and kind in {
+            "audio", "transcript_delta", "transcript", "function_call", "done", "cancelled",
+        }:
+            # Live has started answering while the scout is still deciding whether
+            # this is a story ask. Keep the reply, do not play it yet.
+            if kind == "function_call":
+                # Tools still answer during the hold; only the glass tools wait for the ruling.
+                if event.name in {"show", "animate"}:
+                    result: dict[str, Any] = {"ok": False, "reason": "deciding"}
+                else:
+                    result = await self._run_tool(event.name, event.arguments)
+                if self._transport:
+                    await self._transport.submit_tool_output(event.call_id, json.dumps(result))
+                return
+            self._hold.append(event)
+            if kind == "audio" and self._hold_started_at is None:
+                self._hold_started_at = asyncio.get_running_loop().time()
+                self._arm_hold_timer()
+            if kind == "audio" and self._hold_utterance:
+                # The voice model has begun, so its transcript of the kid is settled.
+                await self._consider_scout(self._hold_utterance, final=False, voice_started=True)
+            return
         if kind == "audio":
             if self._suppress_live_output:
                 return
@@ -866,6 +964,9 @@ class GizmoSession:
             await self.emit({"type": "transcript", "role": "gizmo", "text": event.text})
             return
         if kind == "user_transcript_preview":
+            if self._hold is not None:
+                self._hold_utterance = event.text.strip()[:MAX_CONTEXT_TEXT]
+                await self._consider_scout(self._hold_utterance, final=False, voice_started=self._hold_has_audio())
             if self._visual_turn_open:
                 self._visual_utterance = event.text.strip()[:MAX_CONTEXT_TEXT]
                 # Wait until the model begins answering, so a partial transcript
@@ -878,6 +979,9 @@ class GizmoSession:
             return
         if kind == "user_transcript":
             self._record_transcript("user", event.text)
+            if self._hold is not None:
+                self._hold_utterance = event.text.strip()[:MAX_CONTEXT_TEXT]
+                await self._consider_scout(self._hold_utterance, final=True)
             if self._visual_turn_open:
                 self._visual_utterance = event.text.strip()[:MAX_CONTEXT_TEXT]
             if is_bare_animate_request(event.text):
@@ -898,13 +1002,14 @@ class GizmoSession:
                 await self._transport.submit_tool_output(event.call_id, json.dumps(result))
             return
         if kind == "speech_started":
-            if self.machine.state is State.TALKING:
+            if self.machine.state is State.TALKING and not self._story_speaking():
                 await self._interrupt()
                 self.machine.apply("select")
                 await self.emit({"type": "interrupted"})
             return
         if kind in {"done", "cancelled"}:
-            self.mouth.mark_idle()
+            if not self._story_speaking():
+                self.mouth.mark_idle()
             if kind == "done" and not (self._ptt_pressed or self._ptt_active):
                 self._flush_transcript_turns()
                 self._finish_visual_turn()
@@ -914,10 +1019,14 @@ class GizmoSession:
                 self._cancel_pending_show()
             if kind == "done" and event.text:
                 await self.emit({"type": "transcript", "role": "gizmo", "text": event.text})
-            if self.machine.state is State.TALKING and self.machine.can("done"):
+            if self.machine.state is State.TALKING and self.machine.can("done") and not self._story_speaking():
                 self.machine.apply("done")
             await self.emit({"type": "state"})
             self._suppress_live_output = False
+            if kind == "done" and self._story_resume_after_done and self.story is not None:
+                # He answered the side question; the story picks up where it stopped.
+                self._story_resume_after_done = False
+                self._continue_story(delay=STORY_RESUME_DELAY_SECONDS)
             return
         if kind == "grounding":
             await self.emit({"type": "grounding", "metadata": event.raw})
@@ -1006,7 +1115,10 @@ class GizmoSession:
             or ask_revision == self._directed_ask_revision
             or self._closing
             or not self._ready_for_input()
+            or self.story is not None
+            or self._hold is not None
         ):
+            # A told piece owns the glass; conversation pictures wait until it ends.
             return
         self._directed_ask_revision = ask_revision
         self._cancel_visual_direction()
@@ -1134,6 +1246,8 @@ class GizmoSession:
                     await asyncio.sleep(min(remaining, 1.0))
                     continue
                 if self.machine.state is State.LISTENING and not self._ptt_pressed:
+                    # A story nobody pulled forward for this long is over.
+                    await self._end_story()
                     await self._dismiss_show(reason="idle", cancel_pending=False)
                     return
                 await asyncio.sleep(1.0)
@@ -1214,6 +1328,8 @@ class GizmoSession:
             motion = None
         if not self._ready_for_input() or self._closing:
             return {"ok": False, "reason": "asleep"}
+        if self.story is not None:
+            return {"ok": False, "reason": "story running"}
         if isinstance(self.images, NullImageProvider):
             return {"ok": False, "reason": "unavailable"}
         ask_revision = self._ask_revision
@@ -1337,6 +1453,8 @@ class GizmoSession:
         stored = self.current_show
         if stored is None or not self._owns_glass(stored, self.session_id):
             return {"ok": False, "reason": "nothing up"}
+        if self.story is not None:
+            return {"ok": False, "reason": "story running"}
         if self._ask_revision in {self._show_ask_revision, self._motion_ask_revision}:
             return {"ok": False, "reason": "one per ask"}
         self._motion_ask_revision = self._ask_revision
@@ -1346,6 +1464,384 @@ class GizmoSession:
         if result["ok"]:
             await self.emit({"type": "tool", "name": "animate", "result": result})
         return result
+
+    # ----- storytelling: hold-and-decide ------------------------------------------------
+
+    def _begin_hold(self) -> None:
+        """Buffer Live's reply to this ask until the scout has ruled on it."""
+        if not self._story_enabled or self._hold is not None:
+            return
+        self._hold = []
+        self._hold_started_at = None
+        self._hold_utterance = ""
+        self._cancel_hold_timer()
+
+    def _hold_has_audio(self) -> bool:
+        return self._hold is not None and any(event.kind == "audio" for event in self._hold)
+
+    def _arm_hold_timer(self) -> None:
+        self._cancel_hold_timer()
+        seconds = HOLD_STORY_SECONDS if (self.story is not None or self._scout_task) else HOLD_PROVISIONAL_SECONDS
+        ask_revision = self._ask_revision
+
+        async def expire() -> None:
+            try:
+                await asyncio.sleep(seconds)
+            except asyncio.CancelledError:
+                return
+            if self._hold is None or ask_revision != self._ask_revision:
+                return
+            if self.story is None and not self._scout_task:
+                # No transcript arrived in time to gate on: let him answer.
+                await self._release_hold()
+                return
+            logger.warning("Story scout late; releasing Live's answer")
+            self._cancel_scout()
+            await self._release_hold()
+
+        self._hold_timer = asyncio.create_task(expire())
+
+    def _cancel_hold_timer(self) -> None:
+        if self._hold_timer and self._hold_timer is not asyncio.current_task() and not self._hold_timer.done():
+            self._hold_timer.cancel()
+        self._hold_timer = None
+
+    def _cancel_scout(self) -> None:
+        if self._scout_task and not self._scout_task.done():
+            self._scout_task.cancel()
+        self._scout_task = None
+
+    async def _release_hold(self) -> None:
+        """Not a story move: play what Live said, in order, as if never held."""
+        ask_revision = self._ask_revision
+        events = self._hold
+        self._hold = None
+        self._hold_started_at = None
+        self._cancel_hold_timer()
+        if not events:
+            return
+        for event in events:
+            if self._hold is not None or ask_revision != self._ask_revision:
+                # A new ask began while replaying; the rest belongs to the old turn.
+                return
+            await self._on_transport(event)
+
+    async def _drop_hold(self, *, interrupt: bool = True) -> None:
+        """A story move: Live's improvised answer is never heard. The conductor speaks instead."""
+        had_hold = self._hold is not None
+        self._hold = None
+        self._hold_started_at = None
+        self._hold_utterance = ""
+        self._cancel_hold_timer()
+        self._cancel_scout()
+        if not had_hold or not interrupt:
+            return
+        self._suppress_live_output = True
+        self._visual_turn_open = False
+        self._cancel_visual_direction()
+        if self._transport:
+            try:
+                await self._transport.interrupt()
+            except Exception as error:  # noqa: BLE001 - the adapter already mutes locally
+                logger.warning("Live interrupt failed: error=%s", type(error).__name__)
+
+    async def _consider_scout(self, utterance: str, *, final: bool, voice_started: bool = False) -> None:
+        """Start the scout once per ask, as soon as the kid's words are settled enough."""
+        if self._hold is None or self._scouted_ask_revision == self._ask_revision or self._closing:
+            return
+        cleaned = utterance.strip()
+        if not cleaned:
+            return
+        if self.story is None and not story_gate(cleaned):
+            # Ordinary conversation: no scout, no added latency.
+            if final or voice_started:
+                self._scouted_ask_revision = self._ask_revision
+                await self._release_hold()
+            return
+        if not final and not voice_started:
+            # A partial transcript of a story ask: keep holding; the words are still arriving.
+            return
+        self._scouted_ask_revision = self._ask_revision
+        ask_revision = self._ask_revision
+        context = self.story.context if self.story is not None else StoryContext()
+
+        async def scout() -> None:
+            try:
+                started = asyncio.get_running_loop().time()
+                intent = await self.story_planner.scout(cleaned, context)
+                logger.info(
+                    "Story scout: route=%s seconds=%.3f", intent.route,
+                    asyncio.get_running_loop().time() - started,
+                )
+            except asyncio.CancelledError:
+                raise
+            except Exception as error:  # noqa: BLE001 - a broken scout means an ordinary answer
+                logger.warning("Story scout failed: error=%s", type(error).__name__)
+                intent = StoryIntent()
+            if ask_revision != self._ask_revision or self._closing:
+                return
+            self._scout_task = None
+            await self._apply_intent(intent, cleaned)
+
+        self._scout_task = asyncio.create_task(scout())
+        if self._hold_started_at is not None:
+            # Audio is already waiting; give the scout its full window, not the provisional one.
+            self._arm_hold_timer()
+
+    async def _apply_intent(self, intent: StoryIntent, utterance: str) -> None:
+        route = intent.route
+        story = self.story
+        if route == "begin":
+            await self._drop_hold()
+            await self._end_story()
+            self._cancel_pending_show()
+            self._start_story(intent.premise, intent.opener)
+            return
+        if story is None:
+            await self._release_hold()
+            return
+        if route == "continue":
+            if story.finished:
+                # Nothing left to tell. He answers this in his own voice, knowing the story.
+                await self._end_story()
+                await self._release_hold()
+                return
+            await self._drop_hold()
+            self._continue_story()
+            return
+        if route == "steer":
+            await self._drop_hold()
+            edit = intent.edit or utterance
+            self._run_story(story.steer(edit, intent.opener), what="steer")
+            return
+        if route == "leave":
+            await self._end_story()
+            await self._release_hold()
+            return
+        # "question" or "none" while a story runs: he answers, then the story goes on.
+        self._story_resume_after_done = True
+        await self._release_hold()
+
+    # ----- storytelling: lifecycle -------------------------------------------------------
+
+    def _start_story(self, premise: str, opener: str) -> None:
+        self.story = StoryRun(
+            stage=self, planner=self.story_planner, narration=self.narration, images=self.images,
+            clips=self.clips, shows=self.shows, show_budget=self.show_budget,
+            motion_budget=self.motion_budget, user_id=self.user_id, session_id=self.session_id,
+            premise=premise, next_cue=self._issue_story_cue,
+        )
+        self._run_story(self.story.begin(opener), what="begin")
+
+    def _run_story(self, call: Any, *, what: str) -> None:
+        if self._story_task and not self._story_task.done():
+            self._story_task.cancel()
+        story = self.story
+
+        async def run() -> None:
+            try:
+                ok = await call
+            except asyncio.CancelledError:
+                raise
+            except Exception as error:  # noqa: BLE001 - the story fails soft into words
+                logger.warning("Story %s failed: error=%s", what, type(error).__name__)
+                ok = False
+            if ok or self.story is not story or story is None:
+                return
+            # The chapter could not be written or drawn. The voice model carries it in words.
+            await self._end_story()
+            await self._nudge_words()
+
+        self._story_task = asyncio.create_task(run())
+        if inspect.iscoroutine(call):
+            # Cancellation may happen before the wrapper starts awaiting it.
+            self._story_task.add_done_callback(lambda _task: call.close())
+
+    def _continue_story(self, *, delay: float = 0.0) -> None:
+        story = self.story
+        if story is None:
+            return
+
+        async def go_on() -> bool:
+            if delay:
+                await asyncio.sleep(delay)
+            if self.story is not story or not self._ready_for_input():
+                return True
+            return await story.continue_()
+
+        self._run_story(go_on(), what="continue")
+
+    async def _pause_story(self, reason: str) -> None:
+        """Stop the narration where it is; the picture stays. Resume is the kid's call."""
+        story = self.story
+        if story is None:
+            return
+        was_speaking = self._story_speaking()
+        task, self._story_task = self._story_task, None
+        if task and task is not asyncio.current_task():
+            task.cancel()
+            await asyncio.gather(task, return_exceptions=True)
+        story.pause()
+        self._story_resume_after_done = False
+        if was_speaking and self.machine.state is State.TALKING:
+            # Live's own answers are cut by the caller; this only silences the conductor.
+            self.mouth.cancel()
+            if self.machine.can("select"):
+                self.machine.apply("select")
+            await self.emit({"type": "interrupted", "reason": reason})
+
+    async def _end_story(self) -> None:
+        story = self.story
+        was_speaking = self._story_speaking()
+        self.story = None
+        self._story_resume_after_done = False
+        task, self._story_task = self._story_task, None
+        if task and task is not asyncio.current_task():
+            task.cancel()
+            await asyncio.gather(task, return_exceptions=True)
+        if story is None:
+            return
+        story.end()
+        if was_speaking and self.machine.state is State.TALKING and self.machine.can("done"):
+            self.mouth.cancel()
+            self.machine.apply("done")
+            await self.emit({"type": "interrupted", "reason": "story_end"})
+        self._flush_transcript_turns()
+        await story.close()
+
+    async def failed(self) -> None:
+        await self._end_story()
+        await self._nudge_words()
+
+    async def _nudge_words(self) -> None:
+        if self._closing or not self._ready_for_input():
+            return
+        self._suppress_live_output = False
+        try:
+            await self._ensure_connected()
+            if self._transport:
+                await self._transport.send_text(STORY_FALLBACK_NUDGE)
+        except Exception as error:  # noqa: BLE001 - silence beats a crash
+            logger.warning("Story fallback failed: error=%s", type(error).__name__)
+
+    def _story_speaking(self) -> bool:
+        """The conductor owns the voice: a beat is playing, or an opener/continue is in flight."""
+        if self.story is None:
+            return False
+        return self.story.playing or bool(self._story_task and not self._story_task.done())
+
+    # ----- storytelling: the stage (device + voice) as the conductor sees them ------------
+
+    def _issue_story_cue(self) -> int:
+        self._last_story_cue += 1
+        return self._last_story_cue
+
+    def _on_glass_ready(self, event: GlassReady) -> None:
+        key = (event.cue, event.kind)
+        future = self._glass_ready.get(key)
+        if future is None:
+            return  # Only acknowledge cues actually offered by this session.
+        if not future.done():
+            future.set_result(event.ok)
+        # Keep only acks near the present; a body may report cues nobody waits for.
+        for stale in [k for k in self._glass_ready if k[0] < event.cue - 4]:
+            self._glass_ready.pop(stale, None)
+
+    async def cue_still(self, stored: StoredShow, subject: str, cue: int) -> None:
+        self._expect_glass(cue, "still")
+        await self.emit({
+            "type": "glass", "still": stored.still_url, "subject": subject,
+            "viewing": True, "cue": cue, "hold": True,
+        })
+
+    async def cue_motion(self, stored: StoredShow, cue: int, *, hold: bool) -> None:
+        self._expect_glass(cue, "motion")
+        event = {
+            "type": "glass", "still": stored.still_url, "clip": stored.clip_url,
+            "frames": stored.frames_url, "viewing": True, "cue": cue, "hold": hold,
+        }
+        if not hold and self.current_show is not None and self.current_show.id == stored.id:
+            self._current_clip_id = stored.id
+        await self.emit(event)
+
+    def _expect_glass(self, cue: int, kind: str) -> None:
+        for stale in [key for key in self._glass_ready if key[0] < cue - 4]:
+            self._glass_ready.pop(stale, None)
+        self._glass_ready.setdefault((cue, kind), asyncio.get_running_loop().create_future())
+
+    async def wait_ready(self, cue: int, kind: str, timeout: float) -> bool:
+        if not self._cue_listeners:
+            return False
+        key = (cue, kind)
+        future = self._glass_ready.get(key)
+        if future is None:
+            future = asyncio.get_running_loop().create_future()
+            self._glass_ready[key] = future
+        timeout = min(timeout, self._glass_ready_timeout)
+        try:
+            return bool(await asyncio.wait_for(asyncio.shield(future), timeout))
+        except TimeoutError:
+            return False
+        finally:
+            self._glass_ready.pop(key, None)
+
+    async def go(self, cue: int, stored: StoredShow, subject: str, motion: bool) -> None:
+        if self._show_idle_task and self._show_idle_task is not asyncio.current_task():
+            self._show_idle_task.cancel()
+        self.current_show = stored
+        self.current_show_subject = subject
+        self._current_clip_id = stored.id if motion else None
+        self._show_visible_at = asyncio.get_running_loop().time()
+        event = {**(self.show_event() or {}), "cue": cue, "go": True}
+        await self.emit(event)
+        if self.show_idle_s > 0:
+            self._show_idle_task = asyncio.create_task(self._watch_show_idle())
+        if self._transport:
+            # Live sees the picture too, so a "what's that?" lands on the right thing.
+            try:
+                still = await asyncio.to_thread(stored.still_path.read_bytes)
+                await self._transport.send_image(
+                    f"data:image/jpeg;base64,{base64.b64encode(still).decode('ascii')}"
+                )
+            except Exception as error:  # noqa: BLE001 - the picture on the glass is what matters
+                logger.debug("Story image to Live skipped: error=%s", type(error).__name__)
+
+    async def speak(self, narration: Narration) -> None:
+        """Send one beat's voice at real time, a little ahead, so a press can stop it fast."""
+        await self._start_talking()
+        self.mouth.mark_playing()
+        loop = asyncio.get_running_loop()
+        started = loop.time()
+        sent_seconds = 0.0
+        pcm = narration.pcm
+        for offset in range(0, len(pcm), STORY_CHUNK_BYTES):
+            chunk = pcm[offset:offset + STORY_CHUNK_BYTES]
+            ahead = sent_seconds - (loop.time() - started)
+            if ahead > self._story_audio_lead:
+                await asyncio.sleep(ahead - self._story_audio_lead)
+            self.mouth.speak_pcm(chunk)
+            await self.emit({"type": "audio", "pcm": base64.b64encode(chunk).decode("ascii")})
+            sent_seconds += len(chunk) / 2 / 24_000
+        remaining = sent_seconds - (loop.time() - started)
+        if remaining > 0:
+            await asyncio.sleep(remaining)
+
+    async def rest(self) -> None:
+        self.mouth.mark_idle()
+        if self.machine.state is State.TALKING and self.machine.can("done"):
+            self.machine.apply("done")
+        self._flush_transcript_turns()
+        await self.emit({"type": "state", "reason": "chapter"})
+
+    async def remember(self, text: str) -> None:
+        self._record_transcript("assistant", text)
+        remember = getattr(self._transport, "remember", None)
+        if remember is None:
+            return
+        try:
+            await remember(text)
+        except Exception as error:  # noqa: BLE001 - his memory of the chapter is best-effort
+            logger.warning("Story context sync failed: error=%s", type(error).__name__)
 
     async def _run_tool(self, name: str, arguments: dict[str, Any]) -> dict[str, Any]:
         if name not in ALLOWED_TOOLS:
