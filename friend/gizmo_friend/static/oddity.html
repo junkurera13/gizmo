@@ -7,7 +7,7 @@
   <link rel="icon" href="data:,">
   <link rel="stylesheet" href="/static/oddity-boot.css?v=gate14">
   <link rel="stylesheet" href="/static/oddity.css">
-  <link rel="stylesheet" href="/static/oddity-device.css?v=gate30">
+  <link rel="stylesheet" href="/static/oddity-device.css?v=gate31">
   <link rel="stylesheet" href="/static/oddity-experience.css">
   <link rel="preload" as="image" href="/static/device-reference-ptt-pressed.png">
   <link rel="preload" as="image" href="/static/oddity-boot-00.jpg">
@@ -27,14 +27,17 @@
   <link rel="preload" as="image" href="/static/oddity-boot-14.jpg">
   <script>
     try {
-      if (!(sessionStorage.getItem('oddity-preview-v1') || localStorage.getItem('oddity-preview-v1'))) {
+      const lab = /(?:^|[?&])lab=1(?:&|$)/.test(location.search);
+      const key = lab ? 'oddity-lab-code-v1' : 'oddity-preview-v1';
+      if (lab) document.documentElement.classList.add('oddity-lab');
+      if (!(sessionStorage.getItem(key) || localStorage.getItem(key))) {
         document.documentElement.classList.add('oddity-locked');
       }
     } catch (error) {
       document.documentElement.classList.add('oddity-locked');
     }
   </script>
-  <script type="module" src="/static/oddity.js?v=gate30"></script>
+  <script type="module" src="/static/oddity.js?v=gate31"></script>
 </head>
 <body>
   <header class="masthead">
@@ -129,6 +132,14 @@
           <span class="power-track" aria-hidden="true"><span class="power-knob"></span></span>
           <span id="power-state">Off</span>
         </button>
+      </div>
+      <div id="moments" class="moments" hidden>
+        <button id="moment-prev" type="button" aria-label="Previous moment">‹</button>
+        <div class="moment-copy">
+          <p id="moment-line"></p>
+          <button id="moment-say" type="button">Say this</button>
+        </div>
+        <button id="moment-next" type="button" aria-label="Next moment">›</button>
       </div>
       <div class="below-screen"><p id="status" role="status">A friend, and whatever comes next.</p><button id="reconnect" class="quiet" hidden>Reconnect</button><button id="pause" class="quiet" hidden>Pause</button></div>
       <p id="notice" class="notice" role="alert" hidden></p>

@@ -4,7 +4,7 @@ Railway project: https://railway.com/project/4e9d895f-7559-4def-8700-bea6a530132
 
 Brain health: https://gizmo-brain-production.up.railway.app/health
 
-All four services run in Singapore: `gizmo-brain`, `memobase`, `postgres`, and `redis`. Only the brain has a public domain. Device/data routes and the device WebSocket require `Authorization: Bearer <GIZMO_DEVICE_TOKEN>`. The OddityOS shell and its exact static assets are public so `oddware.xyz/gizmo/oddity` can embed them; live browser sessions require `ODDITY_PREVIEW_TOKEN`, use isolated random identities, enforce same-origin sockets, and have separate daily spend caps.
+All four services run in Singapore: `gizmo-brain`, `memobase`, `postgres`, and `redis`. Only the brain has a public domain. Device/data routes and the device WebSocket require `Authorization: Bearer <GIZMO_DEVICE_TOKEN>`. The OddityOS shell and its exact static assets are public so `oddware.xyz/gizmo/oddity` can embed them; live public sessions require `ODDITY_PREVIEW_TOKEN`, and the unlisted lab at `/gizmo/oddity/lab` requires `ODDITY_LAB_TOKEN`. Public sessions use isolated random identities, enforce same-origin sockets, and have separate daily spend caps. Lab sessions skip those caps.
 
 Deploy the committed repository with `npx @railway/cli up --service gizmo-brain` and `npx @railway/cli up --service memobase`. Railway's GitHub App currently lacks access to `junkurera13/gizmo`, so automatic GitHub deployments are not enabled. GitHub source connection must be explicitly configured after repository access is granted.
 

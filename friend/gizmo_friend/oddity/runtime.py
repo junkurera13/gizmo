@@ -55,6 +55,10 @@ class ExperienceSession:
         self.memory_task: asyncio.Task | None = None
         self.media_slots = asyncio.Semaphore(2)
         self.character_lock = asyncio.Lock()
+        self.mode = "preview"
+        self.moment_id = ""
+        self.seed_memory = ""
+        self.director_addendum = ""
         path = self.directory / "session.json"
         if path.exists():
             saved = json.loads(path.read_text())
@@ -64,10 +68,15 @@ class ExperienceSession:
             self.library = saved.get("library", [])[-40:]
             self.character = saved.get("character", "")
             self.reference = saved.get("reference")
+            self.mode = saved.get("mode", "preview")
+            self.moment_id = saved.get("moment", "")
+            self.seed_memory = saved.get("seed_memory", "")
+            self.director_addendum = saved.get("director_addendum", "")
             if self.current.get("playing"):
                 self.current.update(playing=False, interrupted=True)
             if self.current.get("awaiting"):
                 self.turn = self.current.get("invitation_turn", "")
+        self.bounded = self.mode != "lab"
 
     def save(self):
         _atomic_write(self.directory / "session.json", json.dumps({
@@ -75,14 +84,18 @@ class ExperienceSession:
             "library": self.library[-40:], "character": self.character,
             "reference": self.reference,
             "journey": self.journey,
+            "mode": self.mode, "moment": self.moment_id,
+            "seed_memory": self.seed_memory, "director_addendum": self.director_addendum,
         }).encode())
 
     async def load_memory(self):
+        remote = ""
         try:
             async with asyncio.timeout(3):
-                self.memory_context = await self.memory.context("oddity-" + self.identity)
+                remote = await self.memory.context("oddity-" + self.identity)
         except Exception:
             logger.info("Oddity memory context unavailable; using local conversation")
+        self.memory_context = "\n\n".join(part for part in (self.seed_memory, remote) if part)
 
     async def event(self, kind: str, turn: str, **values):
         if turn == self.turn:
@@ -135,7 +148,7 @@ class ExperienceSession:
             if beat.visual not in {"image", "diagram", "video"}:
                 return
             async with self.media_slots:
-                if not await asyncio.to_thread(self.image_budget.reserve, "oddity-" + self.identity):
+                if self.bounded and not await asyncio.to_thread(self.image_budget.reserve, "oddity-" + self.identity):
                     result["warnings"].append("Today's image allowance is used up.")
                     result["visual"] = "keep"
                     return
@@ -167,7 +180,7 @@ class ExperienceSession:
                     await self.event("preparing", turn, index=index, stage="video")
                     if isinstance(self.clips, NullClipProvider):
                         result["warnings"].append("Video generation is not configured on this server. Showing the drawing.")
-                    elif await asyncio.to_thread(self.video_budget.reserve, "oddity-" + self.identity):
+                    elif not self.bounded or await asyncio.to_thread(self.video_budget.reserve, "oddity-" + self.identity):
                         clip = await self.clips.animate(still.jpeg, beat.motion)
                         if clip:
                             result["video"] = self.asset(clip.mp4, ".mp4")
@@ -197,7 +210,8 @@ class ExperienceSession:
             await self.event("transcript", turn, role="user", text=text)
             await self.event("status", turn, stage="thinking")
             context = {**self.current, "journey": self.journey}
-            plan = await self.director.plan(text, self.history[:-1], context, self.memory_context)
+            plan = await self.director.plan(text, self.history[:-1], context, self.memory_context,
+                                           contract=self.director_addendum)
             if plan.thread == "new":
                 self.journey = {"goal": plan.goal or text[:240], "observations": []}
             elif plan.thread == "detour":

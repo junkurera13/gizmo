@@ -1,0 +1,138 @@
+"""Curated OddityOS moments for the public browser preview."""
+from __future__ import annotations
+
+import os
+from collections.abc import Callable
+from dataclasses import dataclass
+from datetime import datetime, timedelta
+from zoneinfo import ZoneInfo
+
+
+@dataclass(frozen=True)
+class Moment:
+    id: str
+    line: str
+    seed: str | Callable[[], str]
+    contract: str
+
+    def seed_text(self) -> str:
+        return self.seed() if callable(self.seed) else self.seed
+
+    def public(self) -> dict[str, str]:
+        return {"id": self.id, "line": self.line}
+
+
+def _today():
+    tz_name = os.environ.get("GIZMO_TZ", "UTC").strip() or "UTC"
+    try:
+        zone = ZoneInfo(tz_name)
+    except Exception:
+        zone = ZoneInfo("UTC")
+    return datetime.now(zone).date()
+
+
+def birthday_seed() -> str:
+    today = _today()
+    when = today + timedelta(days=11)
+    return (
+        f"Today is {today.strftime('%B')} {today.day}, {today.year}. The kid's birthday is "
+        f"{when.strftime('%B')} {when.day}, {when.year}. They have already asked you to remember it. "
+        "Do not mention the date unless the current question needs it."
+    )
+
+
+MOMENTS: dict[str, Moment] = {}
+ORDER: tuple[str, ...] = (
+    "birthday",
+    "draw",
+    "ants",
+    "homework",
+    "trex",
+    "pompeii",
+)
+
+
+def _register(*moments: Moment) -> None:
+    for moment in moments:
+        MOMENTS[moment.id] = moment
+
+
+_register(
+    Moment(
+        id="birthday",
+        line="How many more sleeps until my birthday?",
+        seed=birthday_seed,
+        contract=(
+            "The kid is asking how long until their birthday. You already know the date "
+            "from memory. Answer with the number of sleeps, warmly and briefly. A small "
+            "generated visual of the wait is welcome; do not ask them to restate the date."
+        ),
+    ),
+    Moment(
+        id="draw",
+        line="What should I draw?",
+        seed=(
+            "The kid loves sharks and space, especially combining them. They have asked "
+            "you to remember that. Offer ideas that use those interests unless they ask "
+            "for something else."
+        ),
+        contract=(
+            "They want a drawing idea. Use what you remember about their interests. "
+            "Propose one concrete subject and put a simple visual reference on screen. "
+            "Do not ask them to pick a medium or app."
+        ),
+    ),
+    Moment(
+        id="ants",
+        line="Who would win, 100 ants or one spider?",
+        seed="",
+        contract=(
+            "This is a playful matchup, not a gore fight. Clarify the kinds of ants and "
+            "spider so the contest is fair, then reason out loud with a tiny battle-card "
+            "or diagram. Keep it short, funny, and specific. Do not declare a winner "
+            "before the comparison is visible."
+        ),
+    ),
+    Moment(
+        id="homework",
+        line="I don't get this.",
+        seed="",
+        contract=(
+            "They are stuck on schoolwork. If the problem is not in this turn, ask once "
+            "what they are looking at, then wait. When you have the problem, find the "
+            "actual confusion, teach one idea with a concrete visual analogy (pizza "
+            "slices for fractions when that fits), and check understanding. Do not invent "
+            "a worksheet. Stay with them if they are still lost."
+        ),
+    ),
+    Moment(
+        id="trex",
+        line="Could a T-Rex beat an elephant?",
+        seed="",
+        contract=(
+            "Do not give the conclusion first. Ask what they think, let them make a case, "
+            "challenge one assumption, and bring in visual comparisons (size, bite, tusks, "
+            "speed) as evidence. Help them reach a conclusion together. The value is "
+            "reasoning, not crowning a winner."
+        ),
+    ),
+    Moment(
+        id="pompeii",
+        line="What happened to Pompeii?",
+        seed="",
+        contract=(
+            "This is a living encyclopedia, not an article. Set the scene, reconstruct "
+            "what happened, and change the picture as the story moves. If they interrupt, "
+            "answer that curiosity first, then continue. Do not spoil later beats before "
+            "they ask. Keep Vesuvius serious but not gory."
+        ),
+    ),
+)
+
+
+def catalog() -> list[dict[str, str]]:
+    return [MOMENTS[key].public() for key in ORDER if key in MOMENTS]
+
+
+def lookup(moment_id: str) -> Moment | None:
+    return MOMENTS.get(moment_id)

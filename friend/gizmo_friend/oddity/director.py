@@ -195,9 +195,13 @@ class Director:
             timeout=90_000, retry_options=types.HttpRetryOptions(attempts=1),
         ))
 
-    async def plan(self, text: str, history: list[dict], current: dict, memory: str = "") -> Experience:
+    async def plan(self, text: str, history: list[dict], current: dict, memory: str = "",
+                   contract: str = "") -> Experience:
+        instruction = INSTRUCTIONS
+        if contract.strip():
+            instruction = INSTRUCTIONS + "\n\nMOMENT CONTRACT\n" + contract.strip()
         response = await self.planner.complete(
-            INSTRUCTIONS, json.dumps({"request": text, "history": history[-24:],
+            instruction, json.dumps({"request": text, "history": history[-24:],
                                       "current": current, "memory": memory[:6000]}),
             schema=Experience.model_json_schema(), timeout=30, max_tokens=6000,
         )

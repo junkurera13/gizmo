@@ -13,7 +13,7 @@ source .venv/bin/activate
 gizmo --host 127.0.0.1 --port 43148
 ```
 
-Open [OddityOS 1](http://127.0.0.1:43148/oddity). No separate frontend build or Node server is required. `gizmo` loads the existing root `.env`; all provider keys stay on the server.
+Open [OddityOS 1](http://127.0.0.1:43148/oddity). No separate frontend build or Node server is required. `gizmo` loads the existing root `.env`; all provider keys stay on the server. Local `/oddity` is the full sandbox. Add `?embedded=1` to see the public moment rail, or `?lab=1` for the explicit lab gate.
 
 Click **Wake Gizmo**. Hold the pink button or Space to record; release to send. Typing works too. Select pauses or continues playback. Up and Down revisit scenes already presented. The return arrow restores the character. Speaking or sending a new thought interrupts the old sequence. Session notes show the conversation and the current plan's short editorial labels.
 
@@ -42,7 +42,7 @@ The initial implementation plans one short sequence per user turn. It does not a
 | Generated video | Existing fal H3 Max provider, five-second MP4, with a browser-specific motion brief and 120-second timeout |
 | Conversation continuity | Local server session history; existing Memobase adapter when both Memobase settings are configured |
 
-Files live under `data/oddity/<random-browser-id>/`. The preview provisions a random, unguessable browser-session token after the reviewer enters `ODDITY_PREVIEW_TOKEN`; the provider and device credentials never enter browser code. A matching HttpOnly, SameSite cookie supports direct same-origin use, while the explicit session token keeps the embedded `oddware.xyz/gizmo/oddity` client working when browsers partition iframe storage. Media endpoints only serve that session's files, and filenames are opaque validated IDs. The socket also checks its origin. A second tab for the same session must wait until the first closes. Each session has its own identity; it is not automatically paired with a physical Gizmo.
+Files live under `data/oddity/<random-browser-id>/`. The public preview provisions a random, unguessable browser-session token after the reviewer enters `ODDITY_PREVIEW_TOKEN`; the unlisted lab uses a separate `ODDITY_LAB_TOKEN`. The provider and device credentials never enter browser code. A matching HttpOnly, SameSite cookie supports direct same-origin use, while the explicit session token keeps the embedded `oddware.xyz/gizmo/oddity` client working when browsers partition iframe storage. Media endpoints only serve that session's files, and filenames are opaque validated IDs. The socket also checks its origin. A second tab for the same session must wait until the first closes. Each session has its own identity; it is not automatically paired with a physical Gizmo.
 
 Generated media is retained on disk for revisiting. Conversation context is bounded to 24 entries and the visible scene archive to 40. There is no automatic disk cleanup yet. The public preview has separate durable daily limits: 16 turns, 8 stills, and 4 videos per browser session, with default global caps of 120, 80, and 20. Failed or superseded requests still consume a reservation, and there is no automatic paid retry. The global caps can be changed with `ODDITY_DAILY_TURN_LIMIT`, `ODDITY_DAILY_SHOW_LIMIT`, and `ODDITY_DAILY_MOTION_LIMIT`.
 
@@ -52,7 +52,7 @@ The browser interface, director, narrated playback, image/video pipeline, interr
 
 Provider failures are visible: a failed video keeps its generated first-frame drawing with a notice, while unavailable voice shows captions and requires explicit continuation. Media generation latency is real and can leave gaps between beats. This is a working preview, not yet the finished editorial quality of the reference films.
 
-The private reviewer page is `https://oddware.xyz/gizmo/oddity`. The website embeds the Railway-hosted simulator while Railway provisions isolated sessions behind `ODDITY_PREVIEW_TOKEN`. The route is framed as an adult product preview because the current [Gemini API terms](https://ai.google.dev/gemini-api/terms) prohibit API clients directed toward or likely to be accessed by people under 18. A child-facing release needs a provider contract that permits the intended audience; this deployment does not certify child-testing readiness. Games, simulations, camera input, and live web grounding are not part of this first client.
+The private reviewer page is `https://oddware.xyz/gizmo/oddity`. It is a moment player: visitors cycle through a small set of curated first lines and talk to Gizmo inside that window. The website embeds the Railway-hosted simulator while Railway provisions isolated moment sessions behind `ODDITY_PREVIEW_TOKEN`. The unlisted sandbox is `https://oddware.xyz/gizmo/oddity/lab` (`?lab=1` on the brain), gated by `ODDITY_LAB_TOKEN`, with the full composer and no public daily caps. The route is framed as an adult product preview because the current [Gemini API terms](https://ai.google.dev/gemini-api/terms) prohibit API clients directed toward or likely to be accessed by people under 18. A child-facing release needs a provider contract that permits the intended audience; this deployment does not certify child-testing readiness. Games, simulations, camera input, and live web grounding are not part of this first client.
 
 ## Validation
 
@@ -71,8 +71,11 @@ node --check friend/gizmo_friend/static/oddity.js
 
 - `friend/gizmo_friend/oddity/director.py`: structured plan, speech generation, transcription.
 - `friend/gizmo_friend/oddity/runtime.py`: preparation, cancellation, playback-aware history, private media.
+- `friend/gizmo_friend/oddity/moments.py`: public moment catalog, seed memory, director addenda.
 - `friend/gizmo_friend/oddity/routes.py`: browser session and WebSocket routes.
 - `friend/gizmo_friend/static/oddity.*`: simulator UI and playback controller.
 - `friend/gizmo_friend/static/oddity-timing.mjs`: bounded caption cues.
+- `web/app/oddity/page.tsx`: public embedded moment player.
+- `web/app/oddity/lab/page.tsx`: unlisted full-chrome sandbox.
 
 The character and font are copies of the current assets in `glass/`, not a new Gizmo design. The font license is bundled alongside them.

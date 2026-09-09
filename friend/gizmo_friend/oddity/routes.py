@@ -16,10 +16,21 @@ from fastapi import APIRouter, HTTPException, Request, WebSocket, WebSocketDisco
 from fastapi.responses import FileResponse, JSONResponse
 
 from gizmo_friend.brain.show_budget import OddityTurnBudget
+from gizmo_friend.oddity.moments import ORDER, catalog, lookup
 from gizmo_friend.oddity.runtime import ExperienceSession, MEDIA_NAME
 
 COOKIE = "oddity_session"
+LAB_COOKIE = "oddity_lab_session"
 IDENTITY = re.compile(r"[0-9a-f]{32}")
+
+
+def _token_ok(provided: str, expected: str) -> bool:
+    if not expected:
+        return True
+    return hmac.compare_digest(
+        hashlib.sha256(provided.encode()).digest(),
+        hashlib.sha256(expected.encode()).digest(),
+    )
 
 
 def router(root: Path, static: Path) -> APIRouter:
@@ -32,18 +43,53 @@ def router(root: Path, static: Path) -> APIRouter:
             connection.query_params.get("session", ""),
             connection.headers.get("x-oddity-session", ""),
             connection.cookies.get(COOKIE, ""),
+            connection.cookies.get(LAB_COOKIE, ""),
         )
         for value in values:
             if IDENTITY.fullmatch(value) and (root / "oddity" / value / "session.json").exists():
                 return value
         return ""
 
-    def create_session() -> str:
+    def session_payload(mode: str, moment_id: str = "") -> dict:
+        payload = {"mode": mode, "moment": moment_id, "seed_memory": "", "director_addendum": ""}
+        moment = lookup(moment_id) if moment_id else None
+        if moment:
+            payload["seed_memory"] = moment.seed_text()
+            payload["director_addendum"] = moment.contract
+        return payload
+
+    def create_session(mode: str, moment_id: str = "") -> str:
         session_id = secrets.token_hex(16)
         directory = root / "oddity" / session_id
         directory.mkdir(parents=True, exist_ok=False)
-        (directory / "session.json").write_text("{}")
+        (directory / "session.json").write_text(json.dumps(session_payload(mode, moment_id)))
         return session_id
+
+    def session_matches(session_id: str, mode: str, moment_id: str) -> bool:
+        path = root / "oddity" / session_id / "session.json"
+        if not IDENTITY.fullmatch(session_id) or not path.is_file():
+            return False
+        saved = json.loads(path.read_text() or "{}")
+        if saved.get("mode") != mode:
+            return False
+        if mode == "moment" and saved.get("moment") != moment_id:
+            return False
+        return True
+
+    def authenticate(request: Request, *, lab: bool) -> None:
+        preview_token = os.environ.get("ODDITY_PREVIEW_TOKEN", "").strip()
+        lab_token = os.environ.get("ODDITY_LAB_TOKEN", "").strip()
+        cloud = bool(os.environ.get("RAILWAY_ENVIRONMENT_ID"))
+        if lab:
+            if cloud and not lab_token:
+                raise HTTPException(503, "lab access is not configured")
+            if not _token_ok(request.headers.get("x-oddity-lab", ""), lab_token):
+                raise HTTPException(401, "lab code required")
+            return
+        if cloud and not preview_token:
+            raise HTTPException(503, "preview access is not configured")
+        if not _token_ok(request.headers.get("x-oddity-preview", ""), preview_token):
+            raise HTTPException(401, "preview code required")
 
     @api.get("/oddity")
     async def index():
@@ -61,20 +107,38 @@ def router(root: Path, static: Path) -> APIRouter:
         })
         return response
 
+    @api.get("/oddity/moments")
+    async def moments():
+        return JSONResponse({"moments": catalog()}, headers={"Cache-Control": "no-store"})
+
     @api.post("/oddity/session")
     async def provision(request: Request):
-        preview_token = os.environ.get("ODDITY_PREVIEW_TOKEN", "").strip()
-        if os.environ.get("RAILWAY_ENVIRONMENT_ID") and not preview_token:
-            raise HTTPException(503, "preview access is not configured")
-        provided = request.headers.get("x-oddity-preview", "")
-        if preview_token and not hmac.compare_digest(
-            hashlib.sha256(provided.encode()).digest(),
-            hashlib.sha256(preview_token.encode()).digest(),
-        ):
-            raise HTTPException(401, "preview code required")
-        session_id = identity(request) or create_session()
-        response = JSONResponse({"session": session_id}, headers={"Cache-Control": "no-store"})
-        response.set_cookie(COOKIE, session_id, httponly=True, samesite="strict",
+        mode_header = request.headers.get("x-oddity-mode", "").strip()
+        wants_lab = mode_header == "lab"
+        moment_id = request.headers.get("x-oddity-moment", "").strip()
+        if wants_lab:
+            authenticate(request, lab=True)
+            mode, moment_id = "lab", ""
+        elif moment_id or os.environ.get("RAILWAY_ENVIRONMENT_ID"):
+            authenticate(request, lab=False)
+            if not moment_id:
+                moment_id = ORDER[0]
+            if not lookup(moment_id):
+                raise HTTPException(400, "unknown moment")
+            mode = "moment"
+        else:
+            authenticate(request, lab=False)
+            mode, moment_id = "lab", ""
+        existing = identity(request)
+        if existing and session_matches(existing, mode, moment_id):
+            session_id = existing
+        else:
+            session_id = create_session(mode, moment_id)
+        body = {"session": session_id, "mode": mode, "moment": moment_id,
+                "moments": catalog() if mode == "moment" else []}
+        response = JSONResponse(body, headers={"Cache-Control": "no-store"})
+        cookie = LAB_COOKIE if mode == "lab" else COOKIE
+        response.set_cookie(cookie, session_id, httponly=True, samesite="strict",
                             secure=request.url.scheme == "https", max_age=60 * 60 * 24 * 30, path="/oddity")
         return response
 
@@ -107,7 +171,8 @@ def router(root: Path, static: Path) -> APIRouter:
         try:
             friend = ExperienceSession(root, session_id, socket.send_json)
             await socket.send_json({"type": "hello", "history": friend.history,
-                                    "library": friend.library, "current": friend.current})
+                                    "library": friend.library, "current": friend.current,
+                                    "mode": friend.mode, "moment": friend.moment_id})
             await friend.load_memory()
             last_request = 0.0
             while True:
@@ -131,7 +196,7 @@ def router(root: Path, static: Path) -> APIRouter:
                         # Validate first. Invalid/stale/duplicate clicks cannot spend.
                         from gizmo_friend.oddity.interactions import interaction_answer
                         interaction_answer(friend.current, message, friend.turn)
-                        if not await asyncio.to_thread(turn_budget.reserve, "oddity-" + session_id):
+                        if friend.bounded and not await asyncio.to_thread(turn_budget.reserve, "oddity-" + session_id):
                             await socket.send_json({"type": "error", "message": "Today's preview allowance is used up. You can keep exploring."})
                             continue
                         await friend.begin(friend.answer(message))
@@ -143,7 +208,7 @@ def router(root: Path, static: Path) -> APIRouter:
                             await socket.send_json({"type": "error", "message": "Give that thought a moment, then try again."})
                             continue
                         last_request = time.monotonic()
-                        if not await asyncio.to_thread(turn_budget.reserve, "oddity-" + session_id):
+                        if friend.bounded and not await asyncio.to_thread(turn_budget.reserve, "oddity-" + session_id):
                             await socket.send_json({"type": "error", "message": "Today's preview allowance is used up. Come back tomorrow."})
                             continue
                         if kind == "text":

@@ -30,7 +30,13 @@ function invite(beat) {
   status(beat.interaction.kind === 'orbit' ? 'Change the speed. See what happens.' : 'Take your time. You can always tell me something else.', 'exploring');
 }
 const embedded = /(?:^|[?&])embedded=1(?:&|$)/.test(globalThis.location?.search || '');
+const lab = /(?:^|[?&])lab=1(?:&|$)/.test(globalThis.location?.search || '');
 if (embedded) document.documentElement.classList.add('embedded');
+if (lab) document.documentElement.classList.add('oddity-lab');
+let playMoments = embedded && !lab;
+const CODE_KEY = lab ? 'oddity-lab-code-v1' : 'oddity-preview-v1';
+const SESSION_KEY = lab ? 'oddity-lab-session-v1' : 'oddity-session-v1';
+const MOMENT_KEY = 'oddity-moment-v1';
 
 function stored(key) {
   try { return sessionStorage.getItem(key) || localStorage.getItem(key) || ''; }
@@ -40,7 +46,15 @@ function remember(key, value) {
   try { sessionStorage.setItem(key, value); } catch { /* Private mode may disable storage. */ }
   try { localStorage.setItem(key, value); } catch { /* Private mode may disable storage. */ }
 }
-let session = stored('oddity-session-v1');
+function forget(key) {
+  try { sessionStorage.removeItem(key); } catch { /* Private mode may disable storage. */ }
+  try { localStorage.removeItem(key); } catch { /* Private mode may disable storage. */ }
+}
+let session = stored(SESSION_KEY);
+let moments = [];
+let momentIndex = 0;
+let momentId = stored(MOMENT_KEY);
+let pendingSay = '';
 voice.addEventListener('timeupdate', () => {
   if (playing && currentBeat?.audio && !voice.paused) setCaption(captionAt(captions, voice.currentTime, voice.duration));
 });
@@ -97,23 +111,103 @@ async function revealDevice() {
   deviceReady = true;
   await mountDevice($('device'));
 }
-async function connect(previewCode) {
+function currentMoment() {
+  return moments[momentIndex] || moments.find(item => item.id === momentId) || moments[0] || null;
+}
+function renderRail() {
+  const rail = $('moments');
+  if (!rail) return;
+  const item = currentMoment();
+  if (!playMoments || !item) {
+    rail.hidden = true;
+    return;
+  }
+  rail.hidden = false;
+  $('moment-line').textContent = item.line;
+}
+function syncMoment(id) {
+  if (id) momentId = id;
+  const index = moments.findIndex(item => item.id === momentId);
+  momentIndex = index >= 0 ? index : 0;
+  momentId = currentMoment()?.id || '';
+  if (momentId) remember(MOMENT_KEY, momentId);
+  renderRail();
+}
+async function ensureMoments() {
+  if (!playMoments || moments.length) {
+    renderRail();
+    return;
+  }
+  const response = await fetch('/oddity/moments');
+  if (!response.ok) return;
+  const body = await response.json();
+  moments = body.moments || [];
+  syncMoment(stored(MOMENT_KEY) || momentId);
+}
+function resetConversation() {
+  interrupt();
+  history = []; archive = []; archiveIndex = -1; plan = []; turn = '';
+  restoredInvitation = null; pendingSay = '';
+  renderNotes();
+  $('direction').replaceChildren();
+  if (awake) goHome();
+}
+async function selectMoment(index) {
+  if (!playMoments || !moments.length) return;
+  const next = (index + moments.length) % moments.length;
+  const nextId = moments[next].id;
+  if (nextId === momentId && socket && socket.readyState === WebSocket.OPEN) {
+    syncMoment(nextId);
+    return;
+  }
+  expectedClose = true;
+  socket?.close?.();
+  socket = null;
+  session = '';
+  forget(SESSION_KEY);
+  syncMoment(nextId);
+  resetConversation();
+  await connect(undefined, {fresh: true});
+}
+function sayMoment() {
+  const item = currentMoment();
+  if (!item) return;
+  if (!awake) {
+    pendingSay = item.line;
+    wake();
+    return;
+  }
+  submitThought(item.line);
+}
+async function connect(previewCode, options = {}) {
   if (socket && socket.readyState < WebSocket.CLOSING) return;
   $('reconnect').hidden = true; expectedClose = false; inputEnabled(false);
-  const preview = previewCode ?? stored('oddity-preview-v1');
+  const preview = previewCode ?? stored(CODE_KEY);
+  const fresh = Boolean(options.fresh);
   try {
-    const response = await fetch('/oddity/session', {
-      method: 'POST',
-      headers: {'X-Oddity-Preview': preview, 'X-Oddity-Session': session},
-    });
+    if (playMoments) await ensureMoments();
+    const headers = {'X-Oddity-Mode': playMoments ? 'moment' : 'lab'};
+    if (playMoments) {
+      headers['X-Oddity-Preview'] = preview;
+      if (momentId) headers['X-Oddity-Moment'] = momentId;
+    } else {
+      headers['X-Oddity-Lab'] = preview;
+    }
+    if (session && !fresh) headers['X-Oddity-Session'] = session;
+    const response = await fetch('/oddity/session', {method: 'POST', headers});
     if (response.status === 401) {
       showPreviewGate(preview ? 'That code did not work.' : '');
       return;
     }
     if (!response.ok) throw new Error('The private preview is unavailable right now.');
-    session = (await response.json()).session;
-    remember('oddity-session-v1', session);
-    if (preview) remember('oddity-preview-v1', preview);
+    const body = await response.json();
+    session = body.session;
+    remember(SESSION_KEY, session);
+    if (preview) remember(CODE_KEY, preview);
+    if (Array.isArray(body.moments) && body.moments.length) {
+      moments = body.moments;
+      syncMoment(body.moment || momentId);
+    }
     await revealDevice();
   } catch (error) {
     if (!$('preview-gate').hidden) $('preview-error').textContent = error.message;
@@ -218,8 +312,13 @@ function wake() {
 function onGlassReady() {
   awake = true;
   inputEnabled(socket?.readyState === WebSocket.OPEN);
-  $('starters').hidden = history.length > 0;
+  $('starters').hidden = history.length > 0 || playMoments;
   syncPower();
+  if (pendingSay) {
+    const text = pendingSay;
+    pendingSay = '';
+    submitThought(text);
+  }
   if (restoredInvitation) {
     const beat = archive.find(b => b.id === restoredInvitation.id);
     if (beat?.interaction) {
@@ -478,7 +577,7 @@ $('preview-form').onsubmit = (event) => {
   event.preventDefault();
   const code = $('preview-code').value.trim();
   if (!code) { $('preview-code').focus(); return; }
-  remember('oddity-preview-v1', code); $('preview-error').textContent = ''; connect(code);
+  remember(CODE_KEY, code); $('preview-error').textContent = ''; connect(code);
 };
 $('composer').onsubmit = (event) => { event.preventDefault(); submitThought($('thought').value); };
 $('talk').onpointerdown = pressTalk;
@@ -507,6 +606,9 @@ document.addEventListener('fullscreenchange', () => $('expand').setAttribute('ar
 $('help').onclick = () => $('help-dialog').showModal(); $('open-notes').onclick = () => $('notes-dialog').showModal();
 document.querySelectorAll('[data-close]').forEach(button => button.onclick = () => button.closest('dialog').close());
 document.querySelectorAll('.starters button').forEach(button => button.onclick = () => submitThought(button.textContent));
+$('moment-prev').onclick = () => selectMoment(momentIndex - 1);
+$('moment-next').onclick = () => selectMoment(momentIndex + 1);
+$('moment-say').onclick = sayMoment;
 const typing = () => (document.activeElement?.id !== 'talk' && ['INPUT','TEXTAREA','BUTTON','SUMMARY'].includes(document.activeElement?.tagName)) || document.querySelector('dialog[open]');
 window.addEventListener('keydown', (event) => {
   if (!$('preview-gate').hidden) return;

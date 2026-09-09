@@ -131,6 +131,17 @@ body:has(.about-page) {
   background: #000;
 }
 
+.oddity-lab-page {
+  min-height: 100dvh;
+  overflow: hidden;
+  background: #000;
+}
+
+.oddity-lab-page .oddity-frame {
+  position: fixed;
+  inset: 0;
+}
+
 .about-grid {
   display: flex;
   flex-direction: column;

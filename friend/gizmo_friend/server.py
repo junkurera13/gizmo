@@ -121,7 +121,7 @@ def app_factory(data_dir: Path) -> FastAPI:
     @app.middleware("http")
     async def require_device_token(request: Request, call_next):
         public_oddity = (
-            request.url.path in {"/oddity", "/oddity/session"}
+            request.url.path in {"/oddity", "/oddity/session", "/oddity/moments"}
             or request.url.path.startswith("/oddity/media/")
             or request.url.path in ODDITY_PUBLIC_ASSETS
         )
