@@ -1,4 +1,4 @@
-"""Leftover Fal image-to-video for bare 'make it move'. Product movement is Cinema."""
+"""Fal image-to-video clips for Oddity lab. Friend does not grow short clips."""
 
 from __future__ import annotations
 

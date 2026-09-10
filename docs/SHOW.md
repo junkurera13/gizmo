@@ -1,9 +1,10 @@
 # Show — build plan
 
 **Current movement path:** when the glass should move — hard explanations and
-story scenes that need movement — Friend starts Cinema (H3 Max Director). The
-old still→short Fal `image-to-video` clip is leftover (bare “make it move” only).
-The numbered plan below preserves Show implementation history.
+story scenes that need movement — Friend starts Cinema (H3 Max Director).
+Friend does not grow a short Fal clip. “Make it move” keeps the still.
+The numbered plan below preserves Show implementation history, including the
+old still→clip path.
 
 **Current story checkpoint (Sep 5):** `docs/STORY.md` describes narration-grounded
 scene continuity. The director now reads an opening sentence and recent completed

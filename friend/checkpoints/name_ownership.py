@@ -11,7 +11,6 @@ from types import SimpleNamespace
 
 from dotenv import load_dotenv
 
-from gizmo_friend.brain.clips import NullClipProvider
 from gizmo_friend.brain.images import NullImageProvider
 from gizmo_friend.brain.memory import NullMemoryProvider
 from gizmo_friend.brain.reasoning import NullReasoningProvider
@@ -38,7 +37,7 @@ async def main():
                 Path(directory), user_id="synthetic-name-checkpoint",
                 gemini_key=os.environ["GEMINI_API_KEY"],
                 memory_provider=NullMemoryProvider(), reasoning_provider=NullReasoningProvider(),
-                image_provider=NullImageProvider(), clip_provider=NullClipProvider(),
+                image_provider=NullImageProvider(),
                 visual_director=NullVisualDirector(), idle_sleep_s=0, show_idle_s=0,
             )
             friend._memory_context = memory

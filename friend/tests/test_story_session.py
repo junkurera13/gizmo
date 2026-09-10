@@ -13,7 +13,6 @@ from unittest.mock import AsyncMock
 from PIL import Image
 
 from gizmo_friend.body_protocol import GlassReady, PushToTalk, Select, TextLine
-from gizmo_friend.brain.clips import NullClipProvider
 from gizmo_friend.brain.images import ConjuredStill, ImageProvider
 from gizmo_friend.brain.memory import NullMemoryProvider
 from gizmo_friend.brain.narration import Narration, NarrationProvider
@@ -87,7 +86,7 @@ class StorySessionFixture(unittest.IsolatedAsyncioTestCase):
             self.root / "devices" / "test-a", user_id="test-a", gemini_key="",
             memory_provider=NullMemoryProvider(), reasoning_provider=NullReasoningProvider(),
             image_provider=InstantImages(), show_budget=ShowBudget(self.root),
-            clip_provider=NullClipProvider(), story_planner=self.planner,
+            story_planner=self.planner,
             narration_provider=self.narration,
             transport_factory=lambda handle: self.transport, idle_sleep_s=0, show_idle_s=0,
         )

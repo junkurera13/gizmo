@@ -1,4 +1,4 @@
-"""Late stills must be timed before clip completion, not after the media wait."""
+"""Late stills must be timed before later glass events, not after the media wait."""
 import asyncio
 import importlib.util
 from pathlib import Path
@@ -18,7 +18,7 @@ class TimingTests(unittest.IsolatedAsyncioTestCase):
         queue = asyncio.Queue()
         still_consumed = asyncio.Event()
         friend = SimpleNamespace(current_show=None, _director_task=None,
-                                 _show_tasks=set(), _clip_tasks=set())
+                                 _show_tasks=set())
 
         async def media():
             await queue.put({"type": "glass", "still": "first.jpg"})

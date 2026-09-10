@@ -31,7 +31,7 @@ from gizmo_friend.body_protocol import (
 )
 from gizmo_friend.brain.shows import MAX_IMAGE_DIMENSION, ShowStore, valid_device_id
 from gizmo_friend.brain.show_media import MAX_FRAME_DIMENSION, MAX_FRAME_FPS, MediaError
-from gizmo_friend.brain.show_budget import MotionBudget, ShowBudget
+from gizmo_friend.brain.show_budget import ShowBudget
 from gizmo_friend.session import GizmoSession
 
 STATIC = Path(__file__).parent / "static"
@@ -90,14 +90,13 @@ def app_factory(data_dir: Path) -> FastAPI:
     sessions: dict[str, GizmoSession] = {}
     default_device = _device_id(os.environ.get("GIZMO_USER_ID", ""), "gizmo-local-user")
     show_budget = ShowBudget(data_dir)
-    motion_budget = MotionBudget(data_dir)
 
     def session_for(device_id: str) -> GizmoSession:
         friend = sessions.get(device_id)
         if friend is None:
             friend = GizmoSession(
                 data_dir / "devices" / device_id, user_id=device_id,
-                show_budget=show_budget, motion_budget=motion_budget,
+                show_budget=show_budget,
             )
             sessions[device_id] = friend
         return friend

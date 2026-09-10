@@ -15,7 +15,7 @@ ESP32-S3 (local OS today) or native emulator (protocol body)
             │    ├─ native Google Search grounding
             │    └─ deep_think / set_expression function calls
             ├─ VisualDirector → Gemini 3.1 Flash-Lite
-            │    ├─ words / still / film (leftover: motion alias, animate clip)
+            │    ├─ words / still / film (motion is a leftover alias for film)
             │    ├─ ImageProvider → glass
             │    └─ FriendCinema → H3 Max Director (same runtime as `/cinema`)
             ├─ MemoryProvider → self-hosted Memobase
@@ -66,7 +66,7 @@ The server keeps one `GizmoSession` per device. A body identifies itself with th
   has a separate explicit interaction
 - one applied visual choice per ask, grounded in its opening narration and
   recent dialogue, with stale decisions cancelled when a newer ask arrives
-- Show still/clip generation, persistent budgets, dismissal, and staging the
+- Show still generation, persistent budgets, dismissal, and staging the
   displayed still back into Live for visual follow-ups
 - Cinema as a start/stop capability: H3 Max Director film on the same `/ws`
   glass/audio/held-cue contract, then back to conversation
@@ -109,9 +109,9 @@ Only two custom functions are exposed to Gemini Live in V1:
 
 Google Search is configured as Gemini's native tool beside these functions. There is no custom search service.
 
-Visual routing is deliberately outside Live. `GeminiVisualDirector` receives the user utterance, the current picture's subject, the opening narration, and up to eight completed dialogue turns. It returns a temperature-zero structured `words`, `still`, `film`, or leftover `animate` decision (`motion` is a leftover alias). It has a four-second local deadline, no retries, and degrades to words on any invalid or unavailable result, so a routing failure cannot spend media. New asks cancel stale decisions. Live keeps speaking naturally and cannot call `show` or `animate` itself.
+Visual routing is deliberately outside Live. `GeminiVisualDirector` receives the user utterance, the current picture's subject, the opening narration, and up to eight completed dialogue turns. It returns a temperature-zero structured `words`, `still`, or `film` decision (`motion` is treated as film). It has a four-second local deadline, no retries, and degrades to words on any invalid or unavailable result, so a routing failure cannot spend media. New asks cancel stale decisions. Live keeps speaking naturally and cannot call `show` itself.
 
-Film is gated on difficulty and usefulness, not vocabulary. Super easy questions stay words (a still only if a picture truly helps). Somewhat-to-very-difficult asks where a moving illustration would make understanding better play Cinema (H3 Max Director). Greetings, feelings, jokes, and simple facts never film. The kid does not need to say film, movie, or cinema, and those words are not a reason to film. Story openings and new settings also use Cinema. Same-setting story continuations stay words. A leftover short Fal clip is used only for a bare “make it move” on a still already on the glass — never as the explanatory video.
+Film is gated on difficulty and usefulness, not vocabulary. Super easy questions stay words (a still only if a picture truly helps). Somewhat-to-very-difficult asks where a moving illustration would make understanding better play Cinema (H3 Max Director). Greetings, feelings, jokes, and simple facts never film. The kid does not need to say film, movie, or cinema, and those words are not a reason to film. Story openings and new settings also use Cinema. Same-setting story continuations stay words. Friend does not grow a Fal short clip. “Make it move” on a still already on the glass stays words and keeps the picture.
 
 The director starts once a meaningful complete opening sentence is available in the streamed transcript and the user's utterance is known. Short answers fall back to turn completion. There is at most one applied visual choice per ask, and missing narration does not invent a scene. A provisional words-only story decision can request one follow-up after the chapter completes (bounded to a 35-second wait); the follow-up receives the full narration and cannot recurse. This adds at most one director call and no duplicate media generation. Live establishes the chapter's setting in its first sentence; the director follows that setting rather than writing its own story. Each installed story picture also has a broad setting key (such as "castle"). The director copies that key while the setting is unchanged; the controller normalizes redundant still/film requests for the same key to words unless an explicit redraw/new story was requested. Same-setting continuations and emotional edits preserve the picture; an actual move to a different setting plays Cinema. The director also chooses whether a still is a `scene` or a `diagram`. Stories are always scenes: a lived-in place with no labels. Maps, anatomy, and named parts may be diagrams with sparse labels.
 
@@ -119,7 +119,7 @@ The session retains the completed dialogue separately from the transcript store'
 
 The opt-in `friend/checkpoints/story_continuity.py` exercises real Gemini voice and direction with explicitly injected saved-media providers and no persistent memory. It saves synthetic story transcripts, generated speech, route decisions, and event timings under `data/show-checkpoints/`. It makes no image or video generation calls. See `docs/STORY.md` for the checkpoint scope.
 
-For `still`, the image provider generates and stores the first frame. Explicit no-motion sentinels stay still. Moving explanations use Cinema only, never Fal image-to-video. The leftover clip path (`ClipProvider` / `_start_motion` / bare `animate`) remains only for “make it move” on a still already on the glass. A finished still is staged back into Live as the next visual frame and cleared on dismissal, so follow-up speech can refer to what is actually on the glass.
+For `still`, the image provider generates and stores the first frame. Explicit no-motion sentinels stay still. Moving explanations use Cinema only, never Fal image-to-video. Friend has no short-clip path. A finished still is staged back into Live as the next visual frame and cleared on dismissal, so follow-up speech can refer to what is actually on the glass.
 
 ## Railway
 

@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import asyncio
-import hashlib
 import io
 import tempfile
 import unittest
@@ -11,10 +10,9 @@ from pathlib import Path
 
 from PIL import Image
 
-from gizmo_friend.brain.clips import ClipProvider, ConjuredClip, NullClipProvider
 from gizmo_friend.brain.images import ConjuredStill, ImageProvider
 from gizmo_friend.brain.narration import Narration, NarrationProvider
-from gizmo_friend.brain.show_budget import MotionBudget, ShowBudget
+from gizmo_friend.brain.show_budget import ShowBudget
 from gizmo_friend.brain.shows import ShowStore
 from gizmo_friend.brain.story import Beat, StoryContext, StoryIntent, StoryPlanner, Storyboard
 from gizmo_friend.story_run import StoryRun
@@ -105,9 +103,6 @@ class RecordingStage:
     async def cue_still(self, stored, subject, cue):
         self.log.append(("cue_still", cue, subject))
 
-    async def cue_motion(self, stored, cue, *, hold):
-        self.log.append(("cue_motion", cue, hold))
-
     async def wait_ready(self, cue, kind, timeout):
         self.log.append(("wait_ready", cue, kind))
         return self.ready
@@ -141,8 +136,8 @@ class StoryRunFixture(unittest.IsolatedAsyncioTestCase):
     def run_for(self, planner, images, stage, **overrides) -> StoryRun:
         options = dict(
             stage=stage, planner=planner, narration=InstantNarration(), images=images,
-            clips=NullClipProvider(), shows=ShowStore(self.root / "devices" / "d1", device_id="d1"),
-            show_budget=ShowBudget(self.root), motion_budget=MotionBudget(self.root),
+            shows=ShowStore(self.root / "devices" / "d1", device_id="d1"),
+            show_budget=ShowBudget(self.root),
             user_id="d1", session_id="s1", premise="pompeii", ready_timeout=0.2, still_wait=0.5,
             narration_wait=0.5, silent_beat=0.01,
         )
@@ -250,39 +245,13 @@ class ChapterTests(StoryRunFixture):
         self.assertIn(("go", 2, False), stage.log)
 
 
-class ControlledClips(ClipProvider):
-    def __init__(self, mp4: bytes):
-        self.mp4 = mp4
-        self.calls: list[tuple[bytes, str, asyncio.Future]] = []
-
-    async def animate(self, still, motion):
-        future = asyncio.get_running_loop().create_future()
-        self.calls.append((still, motion, future))
-        return await future
-
-    async def wait_for_calls(self, count):
-        async with asyncio.timeout(2):
-            while len(self.calls) < count:
-                await asyncio.sleep(0.001)
-
-    def finish(self, index):
-        still, motion, future = self.calls[index]
-        if not future.done():
-            future.set_result(ConjuredClip(
-                motion=motion, mp4=self.mp4, prompt="p", model="m", request_id=f"r{index}",
-                source_image_sha256=hashlib.sha256(still).hexdigest(), latency_seconds=0,
-                expanded_prompt=None, timings={},
-            ))
-
-
 class MotionTests(StoryRunFixture):
-    async def test_moving_chapter_plays_cinema_not_a_clip(self):
+    async def test_moving_chapter_plays_cinema(self):
         stage = RecordingStage()
-        clips = ControlledClips(b"not-a-clip")
         images = ControlledImages(auto=True)
         run = self.run_for(
             ScriptedPlanner(board("one", "two", finished=True, motion="clouds drift")),
-            images, stage, clips=clips,
+            images, stage,
         )
         await run.begin("Right.")
         await stage.rested.wait()
@@ -293,22 +262,18 @@ class MotionTests(StoryRunFixture):
             ("remember", "one two"),
             ("rest",),
         ])
-        self.assertEqual(clips.calls, [])
         self.assertEqual(images.calls, [])
 
-    async def test_still_chapter_does_not_play_film_or_clips(self):
+    async def test_still_chapter_does_not_play_film(self):
         stage = RecordingStage()
-        clips = ControlledClips(b"not-a-clip")
         run = self.run_for(
             ScriptedPlanner(board("one", finished=True)),
-            ControlledImages(auto=True), stage, clips=clips,
+            ControlledImages(auto=True), stage,
         )
         await run.begin("")
         await stage.rested.wait()
         await run.close()
         self.assertNotIn("play_film", stage.kinds())
-        self.assertNotIn("cue_motion", stage.kinds())
-        self.assertEqual(clips.calls, [])
         self.assertIn(("speak", "one"), stage.log)
 
 

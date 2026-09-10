@@ -16,11 +16,9 @@ import logging
 from dataclasses import dataclass, field
 from typing import Callable, Protocol
 
-from gizmo_friend.brain.clips import ClipProvider, NullClipProvider
 from gizmo_friend.brain.images import ImageProvider, NullImageProvider
 from gizmo_friend.brain.narration import Narration, NarrationProvider
-from gizmo_friend.brain.show_budget import MotionBudget, ShowBudget
-from gizmo_friend.brain.show_media import MediaError
+from gizmo_friend.brain.show_budget import ShowBudget
 from gizmo_friend.brain.shows import ShowStore, StoredShow
 from gizmo_friend.brain.story import DEFAULT_BEATS, Beat, StoryContext, StoryPlanner, Storyboard
 
@@ -32,13 +30,10 @@ logger = logging.getLogger(__name__)
 STILL_WAIT_SECONDS = 14.0
 NARRATION_WAIT_SECONDS = 20.0
 READY_TIMEOUT_SECONDS = 6.0
-MOTION_READY_GRACE_SECONDS = 1.5
 # A beat whose voice failed keeps its picture up this long, then moves on.
 SILENT_BEAT_SECONDS = 4.0
 # What is warmed for the chapter after this one, before the kid asks for it.
-# "plan": words only. "stills": words and pictures. "all" used to mean Fal clips;
-# leftover — moving chapters play Cinema instead of clips.
-PREFETCH_LEVELS = ("plan", "stills", "all")
+PREFETCH_LEVELS = ("plan", "stills")
 
 
 class Stage(Protocol):
@@ -49,9 +44,6 @@ class Stage(Protocol):
 
     async def play_film(self, utterance: str) -> None:
         """Play one Cinema film for a moving chapter. The film has its own voice."""
-
-    async def cue_motion(self, stored: StoredShow, cue: int, *, hold: bool) -> None:
-        """Leftover Fal clip frames. Product movement is play_film."""
 
     async def wait_ready(self, cue: int, kind: str, timeout: float) -> bool:
         """Wait until the body reports the cue downloaded and indexed. Decode occurs on display."""
@@ -77,10 +69,8 @@ class _BeatRender:
     beat: Beat
     still: asyncio.Future[StoredShow | None] | None = None
     voice: asyncio.Future[Narration | None] | None = None
-    motion: asyncio.Future[bool] | None = None
-    # Set once the body has been sent this beat's picture (and frames), held for go.
+    # Set once the body has been sent this beat's picture, held for go.
     cued: int | None = None
-    motion_cued: bool = False
     played: bool = False
     tasks: set[asyncio.Task[object]] = field(default_factory=set)
 
@@ -112,10 +102,8 @@ class StoryRun:
         planner: StoryPlanner,
         narration: NarrationProvider,
         images: ImageProvider,
-        clips: ClipProvider,
         shows: ShowStore,
         show_budget: ShowBudget,
-        motion_budget: MotionBudget,
         user_id: str,
         session_id: str,
         premise: str,
@@ -126,17 +114,14 @@ class StoryRun:
         still_wait: float = STILL_WAIT_SECONDS,
         narration_wait: float = NARRATION_WAIT_SECONDS,
         silent_beat: float = SILENT_BEAT_SECONDS,
-        motion_grace: float = MOTION_READY_GRACE_SECONDS,
         next_cue: Callable[[], int] | None = None,
     ) -> None:
         self.stage = stage
         self.planner = planner
         self.narration = narration
         self.images = images
-        self.clips = clips
         self.shows = shows
         self.show_budget = show_budget
-        self.motion_budget = motion_budget
         self.user_id = user_id
         self.session_id = session_id
         self.context = StoryContext(premise=premise)
@@ -147,7 +132,6 @@ class StoryRun:
         self.still_wait = still_wait
         self.narration_wait = narration_wait
         self.silent_beat = silent_beat
-        self.motion_grace = motion_grace
         self._cue = 0  # the cue on the glass
         self._issued = 0  # the last cue number handed to the body
         self._reference: bytes | None = None
@@ -156,7 +140,6 @@ class StoryRun:
         self._next: asyncio.Task[_ChapterRender | None] | None = None
         self._play_task: asyncio.Task[None] | None = None
         self._still_slots = asyncio.Semaphore(3)
-        self._clip_slots = asyncio.Semaphore(2)
         self._ended = False
         self._tasks: set[asyncio.Task] = set()
         self._next_cue = next_cue
@@ -278,7 +261,7 @@ class StoryRun:
             render.voice = render.keep(self._spawn(self.narration.narrate(render.beat.narration)))
         # The chapter about to play renders everything now, bounded by the slots.
         # A chapter warmed ahead renders what the prefetch level allows.
-        if not ahead or self.prefetch in {"stills", "all"}:
+        if not ahead or self.prefetch == "stills":
             self._start_pictures(chapter)
         return chapter
 
@@ -292,11 +275,6 @@ class StoryRun:
             chapter.pictures_started = True
             for render in chapter.beats:
                 render.still = render.keep(self._spawn(self._render_still(render.beat, chapter.board)))
-
-    def _ensure_motion(self, render: _BeatRender) -> None:
-        """Leftover Fal still→clip. Product movement is _play_chapter_film."""
-        if render.motion is None and render.still is not None:
-            render.motion = render.keep(self._spawn(self._render_motion(render)))
 
     async def _render_still(self, beat: Beat, board: Storyboard) -> StoredShow | None:
         if board.character and self._reference is None:
@@ -330,36 +308,6 @@ class StoryRun:
         except Exception as error:  # noqa: BLE001 - a missing picture never stops the words
             logger.warning("Story still failed: error=%s", type(error).__name__)
             return None
-
-    async def _render_motion(self, render: _BeatRender) -> bool:
-        """Leftover Fal image-to-video. Moving chapters use play_film instead."""
-        if not self.motion or not render.beat.motion or isinstance(self.clips, NullClipProvider):
-            return False
-        if render.still is None:
-            return False
-        try:
-            stored = await render.still
-            if stored is None:
-                return False
-            async with self._clip_slots:
-                reserved = await asyncio.to_thread(self.motion_budget.reserve, self.user_id)
-                if not reserved:
-                    logger.info("Story motion skipped: quiet day")
-                    return False
-                still = await asyncio.to_thread(stored.still_path.read_bytes)
-                clip = await self.clips.animate(still, render.beat.motion)
-            if clip is None:
-                return False
-            await asyncio.to_thread(self.shows.save_clip, stored.id, clip)
-            return True
-        except asyncio.CancelledError:
-            raise
-        except MediaError as error:
-            logger.warning("Story motion failed: error=%s message=%s", type(error).__name__, error)
-            return False
-        except Exception as error:  # noqa: BLE001 - the still stands
-            logger.warning("Story motion failed: error=%s", type(error).__name__)
-            return False
 
     # ----- playback -----------------------------------------------------------------
 
@@ -426,38 +374,6 @@ class StoryRun:
         if index + 1 < len(chapter.beats):
             self._prefetch_next(chapter.beats[index + 1])
         await self.stage.speak(voice)
-
-    async def _motion_ready(self, render: _BeatRender) -> bool:
-        """Leftover Fal clip readiness. Product movement is Cinema."""
-        if render.motion is None:
-            return False
-        if render.motion.done():
-            return (not render.motion.cancelled()) and render.motion.exception() is None and bool(render.motion.result())
-        # The words are not waiting on the clip; a still under them is the design.
-        # A clip that is seconds from done is worth a short wait so the beat opens moving.
-        try:
-            return bool(await asyncio.wait_for(asyncio.shield(render.motion), self.motion_grace))
-        except TimeoutError:
-            return False
-        except asyncio.CancelledError:
-            if render.motion.cancelled():
-                return False
-            raise
-
-    def _attach_when_ready(self, render: _BeatRender, stored: StoredShow, cue: int) -> None:
-        """Leftover Fal clip attach. Product movement is Cinema."""
-        async def attach() -> None:
-            try:
-                ready = await render.motion
-                if ready and not self._ended and self.playing and not render.motion_cued and self._current is not None and cue == self._cue:
-                    render.motion_cued = True
-                    await self.stage.cue_motion(stored, cue, hold=False)
-            except asyncio.CancelledError:
-                raise
-            except Exception:  # noqa: BLE001 - a late clip is optional
-                return
-
-        render.keep(self._spawn(attach()))
 
     def _prefetch_next(self, render: _BeatRender) -> None:
         """Push the next beat onto the body while this one plays, held until its go."""

@@ -32,15 +32,12 @@ class VisualDecisionTests(unittest.TestCase):
             VisualDecision(route="still", subject="rocket"),
         )
 
-    def test_animate_requires_an_existing_visual_and_motion(self):
+    def test_animate_payload_stays_words(self):
         payload = {"route": "animate", "subject": "ignored", "motion": "tentacles drift"}
         self.assertEqual(decision_from_payload(payload, has_visual=False), VisualDecision())
-        self.assertEqual(
-            decision_from_payload(payload, has_visual=True),
-            VisualDecision(route="animate", motion="tentacles drift"),
-        )
+        self.assertEqual(decision_from_payload(payload, has_visual=True), VisualDecision())
 
-    def test_only_bare_animate_requests_are_locally_silent(self):
+    def test_bare_make_it_move_is_not_a_moving_explanation(self):
         for utterance in ("Make it move.", "please animate it", "Move it, please!"):
             self.assertTrue(is_bare_animate_request(utterance))
         for utterance in ("Make it move and explain why.", "Can it move?", "Move it to the left"):
@@ -139,7 +136,7 @@ class VisualDecisionTests(unittest.TestCase):
                 VisualDecision(route="animate", motion="bell pulses"),
                 "Make it move.",
             ).route,
-            "animate",
+            "words",
         )
 
     def test_film_route_is_accepted_for_explanations_and_story_scenes(self):

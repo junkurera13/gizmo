@@ -15,13 +15,11 @@ from typing import Any
 from zoneinfo import ZoneInfo
 
 from gizmo_friend.audio_out import Mouth
-from gizmo_friend.brain.clips import ClipProvider, NullClipProvider, clip_provider_from_env
 from gizmo_friend.brain.images import ImageProvider, NullImageProvider, image_provider_from_env
 from gizmo_friend.brain.memory import MemoryProvider, memory_provider_from_env
 from gizmo_friend.brain.narration import Narration, NarrationProvider, narration_provider_from_env
 from gizmo_friend.brain.reasoning import ReasoningProvider, reasoning_provider_from_env
-from gizmo_friend.brain.show_budget import MotionBudget, ShowBudget
-from gizmo_friend.brain.show_media import MediaError
+from gizmo_friend.brain.show_budget import ShowBudget
 from gizmo_friend.brain.shows import ShowStore, StoredShow
 from gizmo_friend.brain.story import NullStoryPlanner, StoryContext, StoryIntent, StoryPlanner, story_gate, story_planner_from_env
 from gizmo_friend.brain.transcripts import TranscriptStore
@@ -29,9 +27,7 @@ from gizmo_friend.brain.visual_director import (
     DialogueTurn,
     MAX_CONTEXT_TEXT,
     MAX_CONTEXT_TURNS,
-    NO_MOTION_SENTINELS,
     VisualDirector,
-    is_bare_animate_request,
     is_explicit_visual_request,
     is_moving_explanation_ask,
     opening_narration,
@@ -109,8 +105,6 @@ class GizmoSession:
         image_provider: ImageProvider | None = None,
         show_budget: ShowBudget | None = None,
         show_idle_s: float = 90.0,
-        clip_provider: ClipProvider | None = None,
-        motion_budget: MotionBudget | None = None,
         visual_director: VisualDirector | None = None,
         story_planner: StoryPlanner | None = None,
         narration_provider: NarrationProvider | None = None,
@@ -136,12 +130,10 @@ class GizmoSession:
         self.narration = narration_provider or narration_provider_from_env(gemini_key)
         self.user_id = user_id or os.environ.get("GIZMO_USER_ID", "gizmo-local-user")
         self.images = image_provider or image_provider_from_env()
-        self.clips = clip_provider or clip_provider_from_env()
         self.shows = ShowStore(self.data_dir, device_id=self.user_id)
         # The server/CLI pass a common root budget. Direct session callers can
         # also supply one; otherwise keep a local ledger alongside their data.
         self.show_budget = show_budget or ShowBudget(self.data_dir)
-        self.motion_budget = motion_budget or MotionBudget(self.show_budget.root)
         self.show_idle_s = show_idle_s
         self.current_show: StoredShow | None = None
         self.current_show_subject = ""
@@ -151,8 +143,6 @@ class GizmoSession:
         self._show_revision = 0
         self._show_task: asyncio.Task[None] | None = None
         self._show_tasks: set[asyncio.Task[None]] = set()
-        self._clip_tasks: set[asyncio.Task[None]] = set()
-        self._motion_pending: set[str] = set()
         self._director_task: asyncio.Task[None] | None = None
         self._director_tasks: set[asyncio.Task[None]] = set()
         self._directed_ask_revision = -1
@@ -165,12 +155,10 @@ class GizmoSession:
         self._visual_started_at = 0.0
         self._voice_started = False
         self._suppress_live_output = False
-        self._current_clip_id: str | None = None
         self._show_idle_task: asyncio.Task[None] | None = None
         self._show_visible_at = 0.0
         self._ask_revision = 0
         self._show_ask_revision = -1
-        self._motion_ask_revision = -1
         self.session_id = uuid.uuid4().hex
         self.transcripts = TranscriptStore(self.data_dir / "transcripts")
         self._memory_context = ""
@@ -561,7 +549,7 @@ class GizmoSession:
         if self.story is not None:
             await self._pause_story(reason="text")
         self._ask_revision += 1
-        self._suppress_live_output = is_bare_animate_request(cleaned)
+        self._suppress_live_output = False
         self._cancel_visual_direction()
         self._begin_visual_turn(cleaned)
         self._record_transcript("user", cleaned)
@@ -597,11 +585,6 @@ class GizmoSession:
         await self._dismiss_show(reason="close")
         if self._show_tasks:
             await asyncio.gather(*tuple(self._show_tasks), return_exceptions=True)
-        for task in self._clip_tasks:
-            task.cancel()
-        if self._clip_tasks:
-            await asyncio.gather(*tuple(self._clip_tasks), return_exceptions=True)
-        await self.clips.close()
         await self.images.close()
         self._reset_ptt()
         background = [
@@ -929,7 +912,7 @@ class GizmoSession:
             # this is a story ask. Keep the reply, do not play it yet.
             if kind == "function_call":
                 # Tools still answer during the hold; only the glass tools wait for the ruling.
-                if event.name in {"show", "animate"}:
+                if event.name == "show":
                     result: dict[str, Any] = {"ok": False, "reason": "deciding"}
                 else:
                     result = await self._run_tool(event.name, event.arguments)
@@ -1002,10 +985,6 @@ class GizmoSession:
                 await self._consider_scout(self._hold_utterance, final=True)
             if self._visual_turn_open:
                 self._visual_utterance = event.text.strip()[:MAX_CONTEXT_TEXT]
-            if is_bare_animate_request(event.text):
-                self._suppress_live_output = True
-                if self._transport:
-                    await self._transport.interrupt()
             if self._visual_turn_open and self._can_direct_before_voice(event.text):
                 self._schedule_visual_direction(event.text, self._ask_revision)
             elif self._visual_turn_open:
@@ -1086,7 +1065,7 @@ class GizmoSession:
             return False
         if self._prefers_device_film:
             return True
-        return is_bare_animate_request(cleaned) or (
+        return (
             not self.story_character and not self.current_story_setting
             and (is_explicit_visual_request(cleaned) or is_moving_explanation_ask(cleaned))
         )
@@ -1216,8 +1195,6 @@ class GizmoSession:
                         if chapter:
                             utterance = chapter
                     await self._start_film(utterance)
-                elif decision.route == "animate":
-                    await self._animate({"motion": decision.motion})
                 elif decision.route == "still":
                     arguments: dict[str, Any] = {"subject": decision.subject}
                     arguments["story_setting"] = decision.story_setting
@@ -1330,7 +1307,6 @@ class GizmoSession:
         self.current_show = None
         self.current_show_subject = ""
         self.current_story_setting = ""
-        self._current_clip_id = None
         if was_visible:
             clear_pending_image = getattr(self._transport, "clear_pending_image", None)
             if clear_pending_image:
@@ -1340,15 +1316,12 @@ class GizmoSession:
     def show_event(self) -> dict[str, Any] | None:
         if self.current_show is None:
             return None
-        event = {
+        return {
             "type": "glass",
             "still": self.current_show.still_url,
             "subject": self.current_show_subject,
             "viewing": True,
         }
-        if self._current_clip_id == self.current_show.id:
-            event.update(clip=self.current_show.clip_url, frames=self.current_show.frames_url)
-        return event
 
     async def _watch_show_idle(self) -> None:
         try:
@@ -1369,7 +1342,7 @@ class GizmoSession:
             return
 
     async def _conjure_show(
-        self, subject: str, motion: str | None, revision: int, session_id: str,
+        self, subject: str, revision: int, session_id: str,
         story_setting: str = "", kind: str = "scene",
         character: str = "", reference: bytes | None = None,
     ) -> None:
@@ -1388,9 +1361,7 @@ class GizmoSession:
             still = await self.images.conjure(subject, **options)
             if still is None or not current():
                 return
-            stored = await asyncio.to_thread(
-                self.shows.save, still, session_id=session_id, motion=motion
-            )
+            stored = await asyncio.to_thread(self.shows.save, still, session_id=session_id)
             if not current():
                 return
             # Commit pending -> installed without an await in the middle. Once
@@ -1402,13 +1373,9 @@ class GizmoSession:
             self.current_story_setting = story_setting
             if character and character == self.story_character and self._character_reference is None:
                 self._character_reference = still.jpeg
-            self._current_clip_id = None
             self._show_visible_at = asyncio.get_running_loop().time()
             await self.emit(self.show_event())
             logger.info("Turn latency: stage=still-glass show=%s seconds=%.3f", stored.id, self._visual_elapsed())
-            if motion:
-                # Leftover Fal still→clip. Product movement is Cinema via _start_film.
-                await self._start_motion(stored, motion, subject, session_id)
             if self._transport:
                 await self._transport.send_image(
                     f"data:image/jpeg;base64,{base64.b64encode(still.jpeg).decode('ascii')}"
@@ -1427,18 +1394,11 @@ class GizmoSession:
 
     async def _show(self, arguments: dict[str, Any]) -> dict[str, Any]:
         subject = arguments.get("subject")
-        motion = arguments.get("motion")
         if not isinstance(subject, str) or not subject.strip():
             return {"ok": False, "reason": "subject is required"}
-        if motion is not None and not isinstance(motion, str):
-            return {"ok": False, "reason": "invalid motion"}
         subject = subject.strip()
-        motion = (motion.strip() or None) if motion is not None else None
-        if motion is not None and motion.casefold().rstrip(".") in NO_MOTION_SENTINELS:
-            # Live occasionally fills an optional string with "none" instead
-            # of omitting it. Treat that as the still request it meant; never
-            # spend a motion credit animating a sentinel.
-            motion = None
+        if arguments.get("motion"):
+            logger.info("show motion ignored; Friend has no short clip")
         if not self._ready_for_input() or self._closing:
             return {"ok": False, "reason": "asleep"}
         if self.story is not None:
@@ -1446,7 +1406,7 @@ class GizmoSession:
         if isinstance(self.images, NullImageProvider):
             return {"ok": False, "reason": "unavailable"}
         ask_revision = self._ask_revision
-        if ask_revision in {self._show_ask_revision, self._motion_ask_revision}:
+        if ask_revision == self._show_ask_revision:
             return {"ok": False, "reason": "one per ask"}
         self._show_ask_revision = ask_revision
         self._show_revision += 1
@@ -1473,111 +1433,13 @@ class GizmoSession:
         character = character[:600] if isinstance(character, str) else ""
         reference = self._character_reference if character and character == self.story_character else None
         task = asyncio.create_task(
-            self._conjure_show(subject, motion, revision, session_id, story_setting, kind, character, reference)
+            self._conjure_show(subject, revision, session_id, story_setting, kind, character, reference)
         )
         self._show_task = task
         self._show_tasks.add(task)
         task.add_done_callback(self._show_tasks.discard)
         result = {"ok": True, "status": "conjuring", "subject": subject}
         await self.emit({"type": "tool", "name": "show", "result": result})
-        return result
-
-    def _owns_glass(self, stored: StoredShow, session_id: str) -> bool:
-        return (
-            self.current_show is not None
-            and self.current_show.id == stored.id
-            and self.session_id == session_id
-            and self._ready_for_input()
-            and not self._closing
-        )
-
-    async def _start_motion(
-        self, stored: StoredShow, motion: str, subject: str, session_id: str
-    ) -> dict[str, Any]:
-        """Leftover Fal image-to-video clip. Not the product path; Cinema is."""
-        if not self._owns_glass(stored, session_id):
-            return {"ok": False, "reason": "nothing up"}
-        if self._current_clip_id == stored.id:
-            return {"ok": True, "status": "moving", "subject": subject}
-        if isinstance(self.clips, NullClipProvider):
-            return {"ok": False, "reason": "unavailable"}
-        if stored.id in self._motion_pending:
-            return {"ok": True, "status": "conjuring", "subject": subject}
-        # Claim before the budget await: concurrent tool calls cannot spend twice
-        # on this still. A completed clip is immutable for the life of its show.
-        self._motion_pending.add(stored.id)
-        launched = False
-        try:
-            reserved = await asyncio.to_thread(self.motion_budget.reserve, self.user_id)
-            if not reserved:
-                return {"ok": False, "reason": "quiet day"}
-            if not self._owns_glass(stored, session_id):
-                return {"ok": False, "reason": "nothing up"}
-            task = asyncio.create_task(self._conjure_clip(stored, motion, session_id))
-            self._clip_tasks.add(task)
-            task.add_done_callback(self._clip_tasks.discard)
-            launched = True
-            return {"ok": True, "status": "conjuring", "subject": subject}
-        except Exception as error:
-            logger.warning("Motion budget unavailable: error=%s", type(error).__name__)
-            return {"ok": False, "reason": "unavailable"}
-        finally:
-            if not launched:
-                self._motion_pending.discard(stored.id)
-
-    async def _conjure_clip(self, stored: StoredShow, motion: str, session_id: str) -> None:
-        try:
-            # Read the committed first frame, never a new image or camera frame.
-            still = await asyncio.to_thread(stored.still_path.read_bytes)
-            if not self._owns_glass(stored, session_id):
-                return
-            clip = await self.clips.animate(still, motion)
-            if clip is None:
-                return
-            await asyncio.to_thread(self.shows.save_clip, stored.id, clip)
-            logger.info("Show motion saved: show=%s bytes=%d", stored.id, stored.clip_path.stat().st_size)
-            # Started jobs may finish after Select, replacement, sleep or power.
-            # Keep their result on disk, but only the owning still can receive it.
-            if not self._owns_glass(stored, session_id):
-                return
-            self._current_clip_id = stored.id
-            await self.emit({
-                "type": "glass", "clip": stored.clip_url,
-                "frames": stored.frames_url, "viewing": True,
-            })
-            logger.info("Turn latency: stage=motion-glass show=%s seconds=%.3f", stored.id, self._visual_elapsed())
-        except asyncio.CancelledError:
-            raise
-        except MediaError as error:
-            logger.warning(
-                "Show motion failed: show=%s error=%s message=%s cause=%s: %s",
-                stored.id, type(error).__name__, str(error),
-                type(error.__cause__).__name__ if error.__cause__ else "none",
-                str(error.__cause__) if error.__cause__ else "none",
-            )
-        except Exception as error:
-            logger.warning("Show motion failed: error=%s", type(error).__name__)
-        finally:
-            self._motion_pending.discard(stored.id)
-
-    async def _animate(self, arguments: dict[str, Any]) -> dict[str, Any]:
-        """Leftover: bare 'make it move' still uses a Fal clip on the current still."""
-        motion = arguments.get("motion")
-        if not isinstance(motion, str) or not motion.strip():
-            return {"ok": False, "reason": "motion is required"}
-        stored = self.current_show
-        if stored is None or not self._owns_glass(stored, self.session_id):
-            return {"ok": False, "reason": "nothing up"}
-        if self.story is not None:
-            return {"ok": False, "reason": "story running"}
-        if self._ask_revision in {self._show_ask_revision, self._motion_ask_revision}:
-            return {"ok": False, "reason": "one per ask"}
-        self._motion_ask_revision = self._ask_revision
-        result = await self._start_motion(
-            stored, motion.strip(), self.current_show_subject, self.session_id
-        )
-        if result["ok"]:
-            await self.emit({"type": "tool", "name": "animate", "result": result})
         return result
 
     # ----- storytelling: hold-and-decide ------------------------------------------------
@@ -1742,8 +1604,8 @@ class GizmoSession:
     def _start_story(self, premise: str, opener: str) -> None:
         self.story = StoryRun(
             stage=self, planner=self.story_planner, narration=self.narration, images=self.images,
-            clips=self.clips, shows=self.shows, show_budget=self.show_budget,
-            motion_budget=self.motion_budget, user_id=self.user_id, session_id=self.session_id,
+            shows=self.shows, show_budget=self.show_budget,
+            user_id=self.user_id, session_id=self.session_id,
             premise=premise, next_cue=self._issue_story_cue,
         )
         self._run_story(self.story.begin(opener), what="begin")
@@ -1886,16 +1748,6 @@ class GizmoSession:
             await self._stop_film(reason="interrupt", announce=False)
             raise
 
-    async def cue_motion(self, stored: StoredShow, cue: int, *, hold: bool) -> None:
-        self._expect_glass(cue, "motion")
-        event = {
-            "type": "glass", "still": stored.still_url, "clip": stored.clip_url,
-            "frames": stored.frames_url, "viewing": True, "cue": cue, "hold": hold,
-        }
-        if not hold and self.current_show is not None and self.current_show.id == stored.id:
-            self._current_clip_id = stored.id
-        await self.emit(event)
-
     def _expect_glass(self, cue: int, kind: str) -> None:
         for stale in [key for key in self._glass_ready if key[0] < cue - 4]:
             self._glass_ready.pop(stale, None)
@@ -1922,7 +1774,7 @@ class GizmoSession:
             self._show_idle_task.cancel()
         self.current_show = stored
         self.current_show_subject = subject
-        self._current_clip_id = stored.id if motion else None
+        _ = motion
         self._show_visible_at = asyncio.get_running_loop().time()
         event = {**(self.show_event() or {}), "cue": cue, "go": True}
         await self.emit(event)
@@ -1980,8 +1832,6 @@ class GizmoSession:
             return {"ok": False, "reason": f"unknown tool {name}"}
         if name == "show":
             return await self._show(arguments)
-        if name == "animate":
-            return await self._animate(arguments)
         if name == "deep_think":
             question = str(arguments.get("question") or "").strip()
             if not question:

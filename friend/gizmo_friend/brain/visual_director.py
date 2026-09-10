@@ -29,7 +29,7 @@ NO_MOTION_SENTINELS = {
     "still",
 }
 
-DIRECTOR_INSTRUCTIONS = """You are Gizmo's silent visual director. You do not answer the kid. You only choose whether this one utterance should stay words, show a still illustration, show a short moving illustration, play a narrated film, or animate the illustration already on the glass.
+DIRECTOR_INSTRUCTIONS = """You are Gizmo's silent visual director. You do not answer the kid. You only choose whether this one utterance should stay words, show a still illustration, or play a narrated film.
 
 Return exactly one structured decision.
 
@@ -101,11 +101,11 @@ FILM
 - Somewhat difficult to very difficult asks where a moving illustration would make understanding better are FILM: a process, mechanism, or physical cause-and-effect. Examples: how a rocket lifts, what happens when ice melts, why the Moon orbits, how a heart pumps, why the sky is blue. The film is the answer; it has its own voice over continuous generated pictures.
 - Use film for a story's opening or an actual move to a new setting. That moving scene is the same Cinema path, not a short silent clip. A continuation in the same setting stays WORDS and keeps the current picture.
 - Do not film a thing merely existing (a jellyfish pulsing, a rocket sitting there). A still is enough if seeing helps.
-- Never film for "make it move" of an existing picture (leftover ANIMATE).
+- Never film for "make it move" of an existing picture. Keep the still; do not play a short clip.
 - Never film for appearance, maps, anatomy diagrams, or a short Fal clip. Moving explanations are Cinema only.
 
 MOTION
-- Do not use MOTION. If the glass should move, choose FILM. MOTION is a leftover alias and is treated as FILM.
+- Do not use MOTION. If a hard explanation or a new story setting should move, choose FILM.
 - A story's opening or an actual move to a new setting is FILM, including a setting change after "Then what?".
   A continuation, emotional twist, or changed motive in the same setting stays
   words: keep the current scene. If no picture is on the glass, a story continuation
@@ -124,15 +124,14 @@ You craft the picture. kind is how it is made:
 - If story_setting is set, kind MUST be scene.
 
 ANIMATE
-- Leftover. Use only when an illustration is currently on the glass and the kid directly asks to make it move. The product path for movement is FILM.
-- Never redraw the subject for animate.
+- Do not use ANIMATE. There is no short clip. "Make it move" on a still already on the glass stays WORDS.
 
-For still or film, subject is a short concrete noun phrase with the one important detail and no style instructions. For leftover animate, motion is one short phrase of quiet subject motion. For words, leave subject and motion empty. Never output the literal word "none" as motion."""
+For still or film, subject is a short concrete noun phrase with the one important detail and no style instructions. For words, leave subject and motion empty. Never output the literal word "none" as motion."""
 
 DIRECTOR_SCHEMA = {
     "type": "object",
     "properties": {
-        "route": {"type": "string", "enum": ["words", "still", "motion", "animate", "film"]},
+        "route": {"type": "string", "enum": ["words", "still", "motion", "film"]},
         "subject": {"type": "string"},
         "motion": {"type": "string"},
         "story_setting": {"type": "string"},
@@ -275,11 +274,11 @@ def is_moving_explanation_ask(utterance: str) -> bool:
 def prefer_film_route(decision: VisualDecision, utterance: str) -> VisualDecision:
     """Cinema only when motion would help a hard ask or a moving story scene.
 
-    Leftover animate clips stay leftover. Easy talk and a thing merely
-    existing never become film, even if the model said motion or film.
+    Easy talk, a thing merely existing, and "make it move" never become film
+    or a short clip.
     """
     if decision.route == "animate":
-        return decision
+        return VisualDecision()
     film_fields = dict(
         subject=decision.subject,
         story_setting=decision.story_setting,
@@ -330,13 +329,13 @@ def decision_from_payload(
     if motion.casefold().rstrip(".") in NO_MOTION_SENTINELS:
         motion = ""
     if route == "animate":
-        return VisualDecision(route="animate", motion=motion, story_setting=setting) if has_visual and motion else VisualDecision()
+        return VisualDecision()
     if route == "film":
         return VisualDecision(
             route="film", subject=subject, story_setting=setting, kind=kind, **identity,
         ) if subject else VisualDecision()
     if route == "motion":
-        # Leftover alias: a moving scene is Cinema, not a Fal still→clip.
+        # A moving scene is Cinema, not a Fal still→clip.
         if subject and motion:
             return VisualDecision(
                 route="film", subject=subject, motion=motion, story_setting=setting,
