@@ -133,10 +133,32 @@ _register(
         seed="",
         contract=(
             "This is a living encyclopedia, not an article. Set the scene, reconstruct "
-            "what happened, and change the picture as the story moves. If they interrupt, "
-            "answer that curiosity first, then continue. Do not spoil later beats before "
-            "they ask. Keep Vesuvius serious but not gory."
+            "what happened in three short beats totaling 30 to 40 seconds, and change the "
+            "picture as the story moves. Every visual must be gentle, colorful, kid-friendly, "
+            "and free of injury, bodies, remains, or frightening close-ups. If they interrupt, "
+            "answer that curiosity first, then continue. Keep Vesuvius serious but not gory."
         ),
+        demo={
+            "prompt": "Gizmo, what happened to Pompeii a long time ago?",
+            "prompt_audio": "/static/demo-pompeii-kid.mp3",
+            "beats": [
+                {
+                    "reply": "In 79 AD, Mount Vesuvius erupted without warning. The city of Pompeii, sitting at its base, had no time to escape.",
+                    "reply_audio": "/static/demo-pompeii-1.wav",
+                    "video": "/static/demo-pompeii-1.mp4",
+                },
+                {
+                    "reply": "The eruption sent a column of ash and rock miles into the sky. Within hours, it collapsed and rushed down the mountain as a superheated cloud—so hot it killed people instantly where they stood.",
+                    "reply_audio": "/static/demo-pompeii-2.wav",
+                    "video": "/static/demo-pompeii-2-loop.mp4",
+                },
+                {
+                    "reply": "The ash buried everything—buildings, streets, people. It hardened around them like a mold. When archaeologists dug it out nearly 2,000 years later, they found the city exactly as it was the moment it died.",
+                    "reply_audio": "/static/demo-pompeii-3.wav",
+                    "video": "/static/demo-pompeii-3.mp4",
+                },
+            ],
+        },
     ),
 )
 

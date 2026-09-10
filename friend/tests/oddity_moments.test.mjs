@@ -74,9 +74,16 @@ test('a single completed demo hides scenario navigation', async () => {
   assert.equal(ui.element('moment-next').hidden, true);
 });
 
+test('two completed demos show left and right navigation', async () => {
+  const ui = await app();
+  ui.run('moments = [{id:"birthday", line:"Birthday", demo:{prompt_audio:"kid.mp3", reply_audio:"gizmo.wav"}}, {id:"pompeii", line:"Pompeii", demo:{prompt_audio:"kid.mp3", beats:[{reply_audio:"gizmo.wav"}]}}]; syncMoment("birthday")');
+  assert.equal(ui.element('moment-prev').hidden, false);
+  assert.equal(ui.element('moment-next').hidden, false);
+});
+
 test('only completed moments expose a playable demo', async () => {
   const ui = await app();
-  ui.run('moments = [{id:"birthday", line:"How many more sleeps until my birthday?", demo:{prompt:"Gizmo, how many more sleeps until my birthday?", prompt_audio:"/static/demo-birthday-kid.mp3"}}, {id:"draw", line:"What should I draw?"}]');
+  ui.run('moments = [{id:"birthday", line:"How many more sleeps until my birthday?", demo:{prompt:"Gizmo, how many more sleeps until my birthday?", prompt_audio:"/static/demo-birthday-kid.mp3", reply_audio:"/static/demo-birthday-gizmo.wav"}}, {id:"draw", line:"What should I draw?"}]');
   ui.run('syncMoment("birthday")');
   assert.equal(ui.element('moment-say').disabled, false);
   assert.equal(ui.element('moment-say').textContent, 'Play demo');
@@ -88,7 +95,7 @@ test('only completed moments expose a playable demo', async () => {
 test('the recorded kid question is followed by the real Gizmo voice', async () => {
   const ui = await app();
   ui.context.recorded = [];
-  ui.run('moments = [{id:"birthday", line:"How many more sleeps until my birthday?", demo:{prompt:"Gizmo, how many more sleeps until my birthday?", prompt_audio:"/static/demo-birthday-kid.mp3", reply:"Eleven sleeps.", reply_audio:"/static/demo-birthday-gizmo.wav"}}]; syncMoment("birthday"); playDemoRecording = async (src) => recorded.push(src)');
+  ui.run('moments = [{id:"birthday", line:"How many more sleeps until my birthday?", demo:{prompt:"Gizmo, how many more sleeps until my birthday?", prompt_audio:"/static/demo-birthday-kid.mp3", reply:"Eleven sleeps.", reply_audio:"/static/demo-birthday-gizmo.wav"}}]; syncMoment("birthday"); playDemoRecording = async (src, signal, text) => { recorded.push(src); setCaption(text); }');
   await ui.run('sayMoment()');
   assert.deepEqual([...ui.context.recorded], [
     '/static/demo-birthday-kid.mp3',
@@ -97,6 +104,17 @@ test('the recorded kid question is followed by the real Gizmo voice', async () =
   assert.equal(ui.element('caption').textContent, 'Eleven sleeps.');
   assert.match(ui.element('status').textContent, /Demo finished/);
   assert.equal(ui.element('device').dataset.ptt, 'false');
+});
+
+test('Pompeii plays three synchronized narrated videos', async () => {
+  const ui = await app();
+  ui.context.recorded = []; ui.context.videos = [];
+  ui.run('delay = async () => {}; playDemoRecording = async (src, signal, text) => { recorded.push(src); setCaption(text); }; showDemoVideo = async (src) => videos.push(src); moments = [{id:"pompeii", line:"What happened to Pompeii?", demo:{prompt:"Gizmo, what happened to Pompeii a long time ago?", prompt_audio:"kid.mp3", beats:[{reply:"One", reply_audio:"one.wav", video:"one.mp4"},{reply:"Two", reply_audio:"two.wav", video:"two.mp4"},{reply:"Three", reply_audio:"three.wav", video:"three.mp4"}]}}]; syncMoment("pompeii")');
+  await ui.run('sayMoment()');
+  assert.deepEqual([...ui.context.recorded], ['kid.mp3', 'one.wav', 'two.wav', 'three.wav']);
+  assert.deepEqual([...ui.context.videos], ['one.mp4', 'two.mp4', 'three.mp4']);
+  assert.equal(ui.element('caption').textContent, 'Three');
+  assert.match(ui.element('status').textContent, /Demo finished/);
 });
 
 test('lab mode keeps the rail hidden', async () => {

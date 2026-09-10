@@ -54,9 +54,15 @@ let session = stored(SESSION_KEY);
 let moments = [];
 let momentIndex = 0;
 let momentId = stored(MOMENT_KEY);
-let demoController, demoRunning = false, demoPlayedMoment = '';
+let demoController, demoRunning = false, demoPlayedMoment = '', demoOwnsScene = false;
+let demoCaptions = [];
 voice.addEventListener('timeupdate', () => {
   if (playing && currentBeat?.audio && !voice.paused) setCaption(captionAt(captions, voice.currentTime, voice.duration));
+});
+demoAudio.addEventListener('timeupdate', () => {
+  if (demoRunning && demoCaptions.length && !demoAudio.paused) {
+    setCaption(captionAt(demoCaptions, demoAudio.currentTime, demoAudio.duration));
+  }
 });
 
 function setCaption(text = '') {
@@ -127,7 +133,7 @@ function renderRail() {
   $('moment-prev').hidden = moments.length < 2;
   $('moment-next').hidden = moments.length < 2;
   const button = $('moment-say');
-  const playable = Boolean(item.demo);
+  const playable = Boolean(item.demo?.prompt_audio && (item.demo.reply_audio || item.demo.beats?.length));
   button.disabled = demoRunning || !playable;
   button.textContent = demoRunning ? 'Playing…' : playable ? (demoPlayedMoment === item.id ? 'Replay demo' : 'Play demo') : 'Coming soon';
   button.classList.toggle('is-playing', demoRunning);
@@ -178,7 +184,9 @@ async function selectMoment(index) {
   resetConversation();
   await connect(undefined, {fresh: true});
 }
-async function playDemoRecording(src, signal) {
+async function playDemoRecording(src, signal, text = '') {
+  demoCaptions = captionChunks(text);
+  if (text) setCaption(demoCaptions[0] || text);
   demoAudio.src = src; demoAudio.muted = muted; demoAudio.load();
   const ended = mediaEnded(demoAudio, signal); ended.catch(() => {});
   await startMedia(demoAudio, signal);
@@ -199,9 +207,21 @@ function waitForAwake(signal) {
 function stopDemo() {
   demoController?.abort(); demoController = null;
   demoAudio.pause(); demoAudio.removeAttribute('src'); demoAudio.load();
+  demoCaptions = [];
+  if (demoOwnsScene) {
+    film.pause(); film.removeAttribute('src'); film.load();
+    stage.classList.remove('has-scene'); $('home').hidden = true;
+    demoOwnsScene = false;
+  }
   demoRunning = false; setTalkPressed(false);
   setCaption();
   renderRail();
+}
+async function showDemoVideo(src, signal) {
+  orbitView?.hide(); screenOrbit = false; $('still').hidden = true;
+  film.pause(); film.src = src; film.muted = true; film.loop = false; film.hidden = false; film.load();
+  stage.classList.add('has-scene'); $('home').hidden = false; demoOwnsScene = true;
+  await startMedia(film, signal);
 }
 async function sayMoment() {
   const item = currentMoment();
@@ -215,17 +235,22 @@ async function sayMoment() {
     if (!awake) { wake(); await waitForAwake(signal); }
     status('Listen to the question…', 'listening');
     setTalkPressed(true); $('talk').classList.add('recording');
-    setCaption(item.demo.prompt);
     await delay(260, signal);
-    await playDemoRecording(item.demo.prompt_audio, signal);
+    await playDemoRecording(item.demo.prompt_audio, signal, item.demo.prompt);
     setTalkPressed(false); $('talk').classList.remove('recording');
     setCaption(); status('Gizmo is thinking…', 'thinking');
     await delay(650, signal);
-    setCaption(item.demo.reply);
-    status('Gizmo is answering…', 'playing');
-    await playDemoRecording(item.demo.reply_audio, signal);
-    history.push({role:'user', text:item.demo.prompt}, {role:'assistant', text:item.demo.reply});
-    renderNotes();
+    history.push({role:'user', text:item.demo.prompt});
+    const beats = item.demo.beats?.length ? item.demo.beats : [item.demo];
+    for (let index = 0; index < beats.length; index += 1) {
+      const beat = beats[index];
+      if (beat.video) await showDemoVideo(beat.video, signal);
+      status('Gizmo is answering…', 'playing');
+      await playDemoRecording(beat.reply_audio, signal, beat.reply);
+      history.push({role:'assistant', text:beat.reply}); renderNotes();
+      if (index < beats.length - 1) await delay(180, signal);
+    }
+    if (demoOwnsScene) film.pause();
     demoPlayedMoment = item.id;
     status('Demo finished. Press replay to watch it again.', 'idle');
   } catch (error) {
@@ -732,6 +757,14 @@ document.querySelectorAll('.starters button').forEach(button => button.onclick =
 $('moment-prev').onclick = () => selectMoment(momentIndex - 1);
 $('moment-next').onclick = () => selectMoment(momentIndex + 1);
 $('moment-say').onclick = () => sayMoment();
+let momentSwipeX = null;
+$('moments').addEventListener('pointerdown', (event) => { momentSwipeX = event.clientX; });
+$('moments').addEventListener('pointerup', (event) => {
+  if (momentSwipeX === null || demoRunning) return;
+  const distance = event.clientX - momentSwipeX; momentSwipeX = null;
+  if (Math.abs(distance) >= 44) selectMoment(momentIndex + (distance < 0 ? 1 : -1));
+});
+$('moments').addEventListener('pointercancel', () => { momentSwipeX = null; });
 const typing = () => (document.activeElement?.id !== 'talk' && ['INPUT','TEXTAREA','BUTTON','SUMMARY'].includes(document.activeElement?.tagName)) || document.querySelector('dialog[open]');
 window.addEventListener('keydown', (event) => {
   if (!$('preview-gate').hidden) return;

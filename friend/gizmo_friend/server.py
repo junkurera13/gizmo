@@ -125,6 +125,7 @@ def app_factory(data_dir: Path) -> FastAPI:
         public_oddity = (
             request.url.path in {"/oddity", "/oddity/session", "/oddity/moments"}
             or request.url.path.startswith("/oddity/media/")
+            or request.url.path.startswith("/static/demo-")
             or request.url.path in ODDITY_PUBLIC_ASSETS
             or request.url.path == "/cinema" or request.url.path.startswith("/cinema/")
             or request.url.path in {"/static/cinema.css", "/static/cinema.js", "/static/cinema-poster.jpg"}
