@@ -65,6 +65,13 @@ test('embedded player shows the current kid line on the rail', async () => {
   assert.equal(ui.element('moment-line').textContent, 'What should I draw?');
 });
 
+test('a single completed demo hides scenario navigation', async () => {
+  const ui = await app();
+  ui.run('moments = [{id:"birthday", line:"How many more sleeps until my birthday?", demo:{prompt:"Gizmo, how many more sleeps until my birthday?", reply:"Eleven more sleeps.", sleeps:11}}]; syncMoment("birthday")');
+  assert.equal(ui.element('moment-prev').hidden, true);
+  assert.equal(ui.element('moment-next').hidden, true);
+});
+
 test('only completed moments expose a playable demo', async () => {
   const ui = await app();
   ui.run('moments = [{id:"birthday", line:"How many more sleeps until my birthday?", demo:{prompt:"Gizmo, how many more sleeps until my birthday?", reply:"Eleven more sleeps.", sleeps:11}}, {id:"draw", line:"What should I draw?"}]');

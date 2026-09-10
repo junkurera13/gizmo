@@ -125,6 +125,8 @@ function renderRail() {
   }
   rail.hidden = false;
   $('moment-line').textContent = item.line;
+  $('moment-prev').hidden = moments.length < 2;
+  $('moment-next').hidden = moments.length < 2;
   const button = $('moment-say');
   const playable = Boolean(item.demo);
   button.disabled = demoRunning || !playable;

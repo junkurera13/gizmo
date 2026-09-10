@@ -17,12 +17,12 @@ from test_oddity import FakeCinema, FakeDirector, FakeImages, beat
 class MomentCatalogTests(unittest.TestCase):
     def test_public_catalog_hides_seed_and_contract(self):
         public = catalog()
-        self.assertEqual([item["id"] for item in public], list(ORDER))
-        self.assertEqual(len(public), 6)
+        self.assertEqual([item["id"] for item in public], ["birthday"])
+        self.assertEqual(len(public), 1)
         self.assertNotIn("seed", public[0])
         self.assertNotIn("contract", public[0])
         self.assertEqual(public[0]["demo"]["sleeps"], 11)
-        self.assertNotIn("demo", public[1])
+        self.assertIsNone(lookup("draw").demo)
         self.assertTrue(lookup("trex").contract)
         self.assertIsNone(lookup("missing"))
 

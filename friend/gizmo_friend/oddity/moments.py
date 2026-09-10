@@ -140,7 +140,7 @@ _register(
 
 
 def catalog() -> list[dict[str, object]]:
-    return [MOMENTS[key].public() for key in ORDER if key in MOMENTS]
+    return [MOMENTS[key].public() for key in ORDER if key in MOMENTS and MOMENTS[key].demo]
 
 
 def lookup(moment_id: str) -> Moment | None:
