@@ -12,7 +12,7 @@ from dataclasses import asdict, dataclass
 
 logger = logging.getLogger(__name__)
 
-from gizmo_friend.brain.fal_text import FalTextClient, TEXT_MODEL
+from gizmo_friend.brain.gemini_text import GeminiTextClient, TEXT_MODEL
 
 DIRECTOR_MODEL = TEXT_MODEL
 DIRECTOR_TIMEOUT_SECONDS = 4.0
@@ -381,10 +381,10 @@ class NullVisualDirector(VisualDirector):
         return VisualDecision()
 
 
-class FalVisualDirector(VisualDirector):
+class GeminiVisualDirector(VisualDirector):
     def __init__(self, api_key: str, *, model: str = DIRECTOR_MODEL) -> None:
         self.model = model
-        self._client = FalTextClient(api_key, model=model)
+        self._client = GeminiTextClient(api_key, model=model)
 
     async def decide(
         self, utterance: str, *, has_visual: bool, current_subject: str = "",
@@ -438,10 +438,10 @@ class FalVisualDirector(VisualDirector):
 
 
 def visual_director_from_env(api_key: str | None = None) -> VisualDirector:
-    key = (api_key or os.environ.get("FAL_KEY") or "").strip()
+    key = (api_key or os.environ.get("GEMINI_API_KEY") or "").strip()
     if not key:
         return NullVisualDirector()
-    return FalVisualDirector(
+    return GeminiVisualDirector(
         api_key=key,
         model=os.environ.get("GIZMO_DIRECTOR_MODEL", DIRECTOR_MODEL),
     )

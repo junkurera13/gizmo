@@ -21,12 +21,12 @@ import re
 from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
 
-from gizmo_friend.brain.fal_text import FalTextClient, TEXT_MODEL
+from gizmo_friend.brain.gemini_text import GeminiTextClient, TEXT_MODEL
 
 logger = logging.getLogger(__name__)
 
 SCOUT_MODEL = TEXT_MODEL
-PLAN_MODEL = "anthropic/claude-sonnet-4.6"
+PLAN_MODEL = "gemini-3.7-flash"
 SCOUT_TIMEOUT_SECONDS = 4.0
 PLAN_TIMEOUT_SECONDS = 20.0
 DEFAULT_BEATS = 3
@@ -249,10 +249,10 @@ class NullStoryPlanner(StoryPlanner):
         return None
 
 
-class FalStoryPlanner(StoryPlanner):
+class GeminiStoryPlanner(StoryPlanner):
     def __init__(self, api_key: str, *, scout_model: str = SCOUT_MODEL, plan_model: str = PLAN_MODEL) -> None:
-        self._scout = FalTextClient(api_key, model=scout_model)
-        self._plan = FalTextClient(api_key, model=plan_model)
+        self._scout = GeminiTextClient(api_key, model=scout_model)
+        self._plan = GeminiTextClient(api_key, model=plan_model)
 
     async def scout(self, utterance: str, context: StoryContext) -> StoryIntent:
         cleaned = " ".join(utterance.split())[:MAX_UTTERANCE_CHARS]
@@ -309,11 +309,11 @@ class FalStoryPlanner(StoryPlanner):
 
 
 def story_planner_from_env(api_key: str | None = None) -> StoryPlanner:
-    key = (api_key or os.environ.get("FAL_KEY") or "").strip()
+    key = (api_key or os.environ.get("GEMINI_API_KEY") or "").strip()
     if not key:
-        logger.warning("STORY PLANNER UNAVAILABLE: FAL_KEY missing")
+        logger.warning("STORY PLANNER UNAVAILABLE: GEMINI_API_KEY missing")
         return NullStoryPlanner()
-    return FalStoryPlanner(
+    return GeminiStoryPlanner(
         key,
         scout_model=os.environ.get("GIZMO_STORY_SCOUT_MODEL", SCOUT_MODEL),
         plan_model=os.environ.get("GIZMO_STORY_MODEL", PLAN_MODEL),

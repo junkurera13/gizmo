@@ -9,7 +9,7 @@ from unittest.mock import AsyncMock
 from gizmo_friend.body_protocol import TextLine
 from gizmo_friend.brain.visual_director import (
     DialogueTurn,
-    FalVisualDirector,
+    GeminiVisualDirector,
     MAX_CONTEXT_TEXT,
     MAX_CONTEXT_TURNS,
     VisualDecision,
@@ -223,7 +223,7 @@ class DirectorContextTests(unittest.IsolatedAsyncioTestCase):
 
     async def test_provider_receives_bounded_dialogue_and_current_narration(self):
         generate = AsyncMock(return_value='{"route": "words"}')
-        director = FalVisualDirector.__new__(FalVisualDirector)
+        director = GeminiVisualDirector.__new__(GeminiVisualDirector)
         director.model = "fixture"
         director._client = SimpleNamespace(complete=generate)
         await director.decide(

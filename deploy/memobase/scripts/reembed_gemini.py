@@ -1,4 +1,4 @@
-"""Run inside Memobase after disabling event embeddings and switching to Fal.
+"""Run inside Memobase after disabling event embeddings and switching to Google.
 
 Preserves records/timestamps and backs up the original tables in the same database.
 After re-enabling embeddings, run with --only-missing to catch arrivals during rollout.
@@ -16,11 +16,11 @@ from memobase_server.env import CONFIG
 from memobase_server.models.response import EventData
 from memobase_server.utils import event_embedding_str
 
-MODEL = "qwen/qwen3-embedding-8b"
+MODEL = "gemini-embedding-2"
 
 
 async def main():
-    assert CONFIG.llm_base_url == "https://fal.run/openrouter/router/openai/v1/"
+    assert CONFIG.llm_base_url == "https://generativelanguage.googleapis.com/v1beta/openai/"
     assert CONFIG.embedding_model == MODEL
     only_missing = "--only-missing" in sys.argv
     assert only_missing or not CONFIG.enable_event_embedding
@@ -34,7 +34,7 @@ async def main():
             connection.execute(text("LOCK TABLE user_events, user_event_gists IN SHARE ROW EXCLUSIVE MODE"))
             for table, field in (("user_events", "event_data"), ("user_event_gists", "gist_data")):
                 if not only_missing:
-                    connection.execute(text(f"CREATE TABLE IF NOT EXISTS {table}_before_fal_20260909 AS TABLE {table}"))
+                    connection.execute(text(f"CREATE TABLE IF NOT EXISTS {table}_before_gemini_20260910 AS TABLE {table}"))
                 condition = " WHERE embedding IS NULL" if only_missing else ""
                 rows = connection.execute(text(f"SELECT id, project_id, {field} FROM {table}" + condition)).all()
                 for start in range(0, len(rows), 16):

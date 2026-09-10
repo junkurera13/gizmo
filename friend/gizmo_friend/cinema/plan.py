@@ -13,7 +13,7 @@ from typing import Literal
 import fal_client
 from pydantic import BaseModel, Field
 
-from gizmo_friend.brain.fal_text import TEXT_MODEL, FalTextClient
+from gizmo_friend.brain.gemini_text import TEXT_MODEL, GeminiTextClient
 from gizmo_friend.brain.narration import narration_provider_from_env
 from gizmo_friend.prompt import FROZEN_PROMPT
 
@@ -104,8 +104,8 @@ class PreparedFilm:
 
 class FilmMaker:
     def __init__(self):
-        self.text = FalTextClient(
-            os.environ["FAL_KEY"], model=os.environ.get("GIZMO_FILM_MODEL", TEXT_MODEL)
+        self.text = GeminiTextClient(
+            os.environ["GEMINI_API_KEY"], model=os.environ.get("GIZMO_FILM_MODEL", TEXT_MODEL)
         )
         self.voice = narration_provider_from_env(
             voice=os.environ.get("GIZMO_FILM_VOICE", "Charon"),

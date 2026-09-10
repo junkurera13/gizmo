@@ -4,7 +4,7 @@ import os
 from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
 
-from gizmo_friend.brain.fal_text import FalTextClient
+from gizmo_friend.brain.gemini_text import GeminiTextClient
 
 
 class ReasoningProvider(ABC):
@@ -23,12 +23,12 @@ class NullReasoningProvider(ReasoningProvider):
 
 
 @dataclass
-class FalReasoningProvider(ReasoningProvider):
+class GeminiReasoningProvider(ReasoningProvider):
     api_key: str = field(repr=False)
-    model: str = "anthropic/claude-sonnet-4.6"
+    model: str = "gemini-3.7-flash"
 
     def __post_init__(self) -> None:
-        self._client = FalTextClient(self.api_key, model=self.model)
+        self._client = GeminiTextClient(self.api_key, model=self.model)
 
     async def reason(self, question: str, memory_context: str = "") -> str | None:
         prompt = question.strip()
@@ -48,10 +48,10 @@ class FalReasoningProvider(ReasoningProvider):
 
 
 def reasoning_provider_from_env(api_key: str | None = None) -> ReasoningProvider:
-    key = (api_key or os.environ.get("FAL_KEY") or "").strip()
+    key = (api_key or os.environ.get("GEMINI_API_KEY") or "").strip()
     if not key:
         return NullReasoningProvider()
-    return FalReasoningProvider(
+    return GeminiReasoningProvider(
         api_key=key,
-        model=os.environ.get("GIZMO_REASONING_MODEL", "anthropic/claude-sonnet-4.6"),
+        model=os.environ.get("GIZMO_REASONING_MODEL", "gemini-3.7-flash"),
     )

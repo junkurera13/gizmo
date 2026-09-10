@@ -24,7 +24,7 @@ from gizmo_friend.brain.clips import ClipProvider, ConjuredClip
 from gizmo_friend.brain.images import ConjuredStill, ImageProvider
 from gizmo_friend.brain.memory import NullMemoryProvider
 from gizmo_friend.brain.reasoning import NullReasoningProvider
-from gizmo_friend.brain.visual_director import FalVisualDirector
+from gizmo_friend.brain.visual_director import GeminiVisualDirector
 from gizmo_friend.session import GizmoSession
 from gizmo_friend.states import State
 
@@ -72,7 +72,7 @@ class ReplayClips(ClipProvider):
         )
 
 
-class RecordingDirector(FalVisualDirector):
+class RecordingDirector(GeminiVisualDirector):
     def __init__(self, api_key):
         super().__init__(api_key)
         self.calls = []

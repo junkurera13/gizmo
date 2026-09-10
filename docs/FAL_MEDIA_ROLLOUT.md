@@ -11,12 +11,12 @@ Production `memobase` deployment: `5a297980-c18b-43db-aaff-fcebac563617`.
 | Oddity speech/transcription | Google, unchanged |
 | Images and story reference edits | Fal `fal-ai/flux-2/klein/9b` and `/edit` |
 | Motion | Fal `minimax/h3-max/image-to-video` |
-| Visual/experience director | Fal `anthropic/claude-haiku-4.5` |
-| Deep reasoning | Fal `anthropic/claude-sonnet-4.6` |
-| Memory extraction | Fal `anthropic/claude-haiku-4.5` |
-| Memory embeddings | Fal `qwen/qwen3-embedding-8b`, 1536 dimensions |
+| Visual/experience director | Gemini `gemini-3.1-flash-lite` (returned to Google 2026-09-10) |
+| Deep reasoning | Gemini `gemini-3.7-flash` (returned to Google 2026-09-10) |
+| Memory extraction | Gemini `gemini-3.1-flash-lite` (returned to Google 2026-09-10) |
+| Memory embeddings | Google `gemini-embedding-2`, 1536 dimensions (returned to Google 2026-09-10) |
 
-There is no Google still-generation fallback. `FAL_KEY` is required for generated visuals and separate planning/reasoning. Google remains the conversational voice agent, including its native grounding and interpretation of staged visuals.
+There is no Google still-generation fallback. `FAL_KEY` is required for generated visuals only; planning and reasoning were returned to Gemini on 2026-09-10 to consolidate billing and keep Fal media-only. Google is the conversational voice agent and all text inference, including native grounding and interpretation of staged visuals.
 
 Klein was selected for interactive scenes and character reference editing. Direct Fal samples:
 
