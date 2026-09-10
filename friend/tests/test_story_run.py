@@ -3,20 +3,16 @@
 from __future__ import annotations
 
 import asyncio
-import hashlib
 import io
-import subprocess
 import tempfile
 import unittest
 from pathlib import Path
 
-import imageio_ffmpeg
 from PIL import Image
 
-from gizmo_friend.brain.clips import ClipProvider, ConjuredClip, NullClipProvider
 from gizmo_friend.brain.images import ConjuredStill, ImageProvider
 from gizmo_friend.brain.narration import Narration, NarrationProvider
-from gizmo_friend.brain.show_budget import MotionBudget, ShowBudget
+from gizmo_friend.brain.show_budget import ShowBudget
 from gizmo_friend.brain.shows import ShowStore
 from gizmo_friend.brain.story import Beat, StoryContext, StoryIntent, StoryPlanner, Storyboard
 from gizmo_friend.story_run import StoryRun
@@ -28,10 +24,10 @@ def still_bytes() -> bytes:
     return encoded.getvalue()
 
 
-def board(*beats: str, finished: bool = False, character: str = "") -> Storyboard:
+def board(*beats: str, finished: bool = False, character: str = "", motion: str = "") -> Storyboard:
     return Storyboard(
         title="t", setting="s", character=character,
-        beats=tuple(Beat(narration=text, scene=f"scene of {text}", motion="drift") for text in beats),
+        beats=tuple(Beat(narration=text, scene=f"scene of {text}", motion=motion) for text in beats),
         remaining="" if finished else "more", finished=finished,
     )
 
@@ -101,11 +97,11 @@ class RecordingStage:
         self.spoken = asyncio.Event()
         self.rested = asyncio.Event()
 
+    async def play_film(self, utterance):
+        self.log.append(("play_film", utterance))
+
     async def cue_still(self, stored, subject, cue):
         self.log.append(("cue_still", cue, subject))
-
-    async def cue_motion(self, stored, cue, *, hold):
-        self.log.append(("cue_motion", cue, hold))
 
     async def wait_ready(self, cue, kind, timeout):
         self.log.append(("wait_ready", cue, kind))
@@ -140,8 +136,8 @@ class StoryRunFixture(unittest.IsolatedAsyncioTestCase):
     def run_for(self, planner, images, stage, **overrides) -> StoryRun:
         options = dict(
             stage=stage, planner=planner, narration=InstantNarration(), images=images,
-            clips=NullClipProvider(), shows=ShowStore(self.root / "devices" / "d1", device_id="d1"),
-            show_budget=ShowBudget(self.root), motion_budget=MotionBudget(self.root),
+            shows=ShowStore(self.root / "devices" / "d1", device_id="d1"),
+            show_budget=ShowBudget(self.root),
             user_id="d1", session_id="s1", premise="pompeii", ready_timeout=0.2, still_wait=0.5,
             narration_wait=0.5, silent_beat=0.01,
         )
@@ -249,90 +245,36 @@ class ChapterTests(StoryRunFixture):
         self.assertIn(("go", 2, False), stage.log)
 
 
-class ControlledClips(ClipProvider):
-    def __init__(self, mp4: bytes):
-        self.mp4 = mp4
-        self.calls: list[tuple[bytes, str, asyncio.Future]] = []
-
-    async def animate(self, still, motion):
-        future = asyncio.get_running_loop().create_future()
-        self.calls.append((still, motion, future))
-        return await future
-
-    async def wait_for_calls(self, count):
-        async with asyncio.timeout(2):
-            while len(self.calls) < count:
-                await asyncio.sleep(0.001)
-
-    def finish(self, index):
-        still, motion, future = self.calls[index]
-        if not future.done():
-            future.set_result(ConjuredClip(
-                motion=motion, mp4=self.mp4, prompt="p", model="m", request_id=f"r{index}",
-                source_image_sha256=hashlib.sha256(still).hexdigest(), latency_seconds=0,
-                expanded_prompt=None, timings={},
-            ))
-
-
 class MotionTests(StoryRunFixture):
-    @classmethod
-    def setUpClass(cls):
-        fixture = tempfile.TemporaryDirectory()
-        cls.addClassCleanup(fixture.cleanup)
-        source = Path(fixture.name) / "still.jpg"
-        target = source.with_suffix(".mp4")
-        source.write_bytes(still_bytes())
-        subprocess.run([
-            imageio_ffmpeg.get_ffmpeg_exe(), "-nostdin", "-v", "error", "-y",
-            "-loop", "1", "-i", str(source), "-t", "0.25", "-r", "24",
-            "-c:v", "libx264", "-threads", "1", "-pix_fmt", "yuv420p", str(target),
-        ], check=True, capture_output=True, timeout=20)
-        cls.mp4 = target.read_bytes()
-
-    async def test_clip_ready_in_time_opens_the_beat_moving(self):
-        stage = RecordingStage(speak_seconds=0.05)
-        clips = ControlledClips(self.mp4)
-        run = self.run_for(ScriptedPlanner(board("one", finished=True)), ControlledImages(auto=True), stage,
-                           clips=clips, motion_grace=1.0)
-        begin = asyncio.create_task(run.begin(""))
-        await clips.wait_for_calls(1)
-        clips.finish(0)
-        await begin
+    async def test_moving_chapter_plays_cinema(self):
+        stage = RecordingStage()
+        images = ControlledImages(auto=True)
+        run = self.run_for(
+            ScriptedPlanner(board("one", "two", finished=True, motion="clouds drift")),
+            images, stage,
+        )
+        await run.begin("Right.")
         await stage.rested.wait()
         await run.close()
-        self.assertEqual(stage.log[:5], [
-            ("cue_still", 1, "scene of one"), ("cue_motion", 1, True), ("wait_ready", 1, "motion"),
-            ("go", 1, True), ("speak", "one"),
+        self.assertEqual(stage.log, [
+            ("speak", "Right."),
+            ("play_film", "one two"),
+            ("remember", "one two"),
+            ("rest",),
         ])
+        self.assertEqual(images.calls, [])
 
-    async def test_late_clip_attaches_under_the_words_without_holding_them(self):
-        stage = RecordingStage(speak_seconds=0.3)
-        clips = ControlledClips(self.mp4)
-        run = self.run_for(ScriptedPlanner(board("one", finished=True)), ControlledImages(auto=True), stage,
-                           clips=clips, motion_grace=0.02)
+    async def test_still_chapter_does_not_play_film(self):
+        stage = RecordingStage()
+        run = self.run_for(
+            ScriptedPlanner(board("one", finished=True)),
+            ControlledImages(auto=True), stage,
+        )
         await run.begin("")
-        await self.wait_until(lambda: ("speak", "one") in stage.log)
-        self.assertEqual(stage.kinds(), ["cue_still", "wait_ready", "go", "speak"])
-        clips.finish(0)
-        await self.wait_until(lambda: ("cue_motion", 1, False) in stage.log)
         await stage.rested.wait()
         await run.close()
-
-    async def test_prefetched_clip_for_the_next_beat_is_held(self):
-        stage = RecordingStage(speak_seconds=0.3)
-        clips = ControlledClips(self.mp4)
-        run = self.run_for(ScriptedPlanner(board("one", "two", finished=True)), ControlledImages(auto=True), stage,
-                           clips=clips, motion_grace=0.02)
-        await run.begin("")
-        await self.wait_until(lambda: ("speak", "one") in stage.log)
-        await clips.wait_for_calls(2)
-        clips.finish(1)
-        await self.wait_until(lambda: ("cue_motion", 2, True) in stage.log)
-        await stage.rested.wait()
-        await run.close()
-        rest = stage.log[stage.log.index(("cue_motion", 2, True)):]
-        self.assertIn(("go", 2, True), rest)
-        self.assertEqual(sum(1 for entry in stage.log if entry[0] == "cue_motion" and entry[1] == 2), 1)
+        self.assertNotIn("play_film", stage.kinds())
+        self.assertIn(("speak", "one"), stage.log)
 
 
 class InterruptionTests(StoryRunFixture):

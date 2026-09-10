@@ -67,9 +67,9 @@ class Pcm16Resampler:
 def live_config(instructions: str, resume_handle: str = "") -> types.LiveConnectConfig:
     assert_allowlist(TOOL_SCHEMAS)
     # Visual routing belongs to the separate structured director. Live stays
-    # the voice and cannot make a second, competing show/animate choice.
+    # the voice and cannot make a second, competing show choice.
     live_schemas = [
-        schema for schema in TOOL_SCHEMAS if schema["name"] not in {"show", "animate"}
+        schema for schema in TOOL_SCHEMAS if schema["name"] != "show"
     ]
     declarations = [
         types.FunctionDeclaration(

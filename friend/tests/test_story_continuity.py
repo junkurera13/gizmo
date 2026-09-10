@@ -187,13 +187,15 @@ class StoryContinuityTests(ShowSessionFixture):
         self.assertEqual(list(self.friend._visual_history), [])
         self.assertFalse(self.friend._visual_turn_open)
 
-    async def test_bare_animate_remains_immediate_without_a_voice_completion(self):
+    async def test_make_it_move_does_not_start_a_film_or_clip(self):
+        await self.ask_show("jellyfish")
+        await self.finish_show()
+        still = self.friend.current_show
         await self.friend.handle(TextLine(text="Make it move."))
-        await self.friend._director_task
-        self.assertEqual(len(self.director.calls), 1)
-        self.assertEqual(self.director.contexts[0], ("", ()))
-        await self.friend._on_transport(TransportEvent(kind="done"))
-        self.assertEqual(len(self.director.calls), 1)
+        await self.finish_narration("The jellyfish is already there.")
+        self.assertIs(self.friend.current_show, still)
+        self.assertNotIn("clip", self.friend.show_event() or {})
+        self.assertFalse(self.friend.film_active())
 
 
 class DirectorContextTests(unittest.IsolatedAsyncioTestCase):
@@ -207,12 +209,12 @@ class DirectorContextTests(unittest.IsolatedAsyncioTestCase):
     def test_same_setting_overrules_a_redundant_model_redraw(self):
         payload = {"route": "motion", "subject": "castle courtyard", "motion": "clouds drift", "story_setting": "castle"}
         self.assertEqual(decision_from_payload(payload, has_visual=True, current_story_setting="castle").route, "words")
-        self.assertEqual(decision_from_payload(payload, has_visual=False, current_story_setting="castle").route, "motion")
+        self.assertEqual(decision_from_payload(payload, has_visual=False, current_story_setting="castle").route, "film")
         payload["redraw_requested"] = True
-        self.assertEqual(decision_from_payload(payload, has_visual=True, current_story_setting="castle").route, "motion")
+        self.assertEqual(decision_from_payload(payload, has_visual=True, current_story_setting="castle").route, "film")
         payload["redraw_requested"] = False
         payload["story_setting"] = "ocean floor"
-        self.assertEqual(decision_from_payload(payload, has_visual=True, current_story_setting="castle").route, "motion")
+        self.assertEqual(decision_from_payload(payload, has_visual=True, current_story_setting="castle").route, "film")
 
     def test_sentence_boundary_waits_for_more_than_a_short_acknowledgement(self):
         self.assertEqual(opening_narration("Right. Copper went"), "")

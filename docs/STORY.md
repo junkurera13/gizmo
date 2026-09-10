@@ -40,15 +40,17 @@ dialogue turns. It does not independently invent the next chapter. Completed
 narrations enter session-local context; cold boot clears that context.
 
 One meaningful complete opening sentence starts direction while speech continues;
-short replies fall back to completion. Bare "make it move" keeps its immediate
-silent path. At most one visual is applied per ask. A words-only story opening can request one follow-up at chapter completion, with a 35-second wait bound. That follow-up uses the full narration to catch a later move and cannot request a third call. New asks cancel pending directions
+short replies fall back to completion. “Make it move” stays words and keeps
+the current still. At most one visual is applied per ask. A words-only story opening can request one follow-up at chapter completion, with a 35-second wait bound. That follow-up uses the full narration to catch a later move and cannot request a third call. New asks cancel pending directions
 and unfinished stills. Existing displayed media remains available for follow-ups.
 
-An installed story picture carries a broad setting key. Matching that key suppresses redundant still/motion requests in the controller unless the user requested a redraw or a new story. The key changes only when its replacement picture arrives, and clears on dismissal.
+An installed story picture carries a broad setting key. Matching that key suppresses redundant still/film requests in the controller unless the user requested a redraw or a new story. The key changes only when its replacement picture arrives, and clears on dismissal.
 
 Stories keep one main setting per chapter. Changes in action, mood, cast position,
-or nearby parts of the same location do not require a new picture. Story pictures
-are unlabeled scenes of a lived-in place. Labels belong only on diagrams and maps.
+or nearby parts of the same location do not require a new picture. A story opening
+or an actual move to a new setting plays Cinema (H3 Max Director), not a Fal
+still→clip. Story pictures are unlabeled scenes of a lived-in place. Labels belong
+only on diagrams and maps.
 
 ## Run
 

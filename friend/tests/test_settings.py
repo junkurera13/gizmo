@@ -7,7 +7,6 @@ from types import SimpleNamespace
 from unittest.mock import AsyncMock
 
 from gizmo_friend.body_protocol import Navigate, Power, Select
-from gizmo_friend.brain.clips import NullClipProvider
 from gizmo_friend.brain.images import NullImageProvider
 from gizmo_friend.brain.memory import NullMemoryProvider
 from gizmo_friend.brain.reasoning import NullReasoningProvider
@@ -74,7 +73,6 @@ class SettingsSessionTests(unittest.IsolatedAsyncioTestCase):
             reasoning_provider=NullReasoningProvider(),
             image_provider=NullImageProvider(),
             show_budget=ShowBudget(self.root),
-            clip_provider=NullClipProvider(),
             transport_factory=lambda handle: transport,
             idle_sleep_s=0,
         )

@@ -21,6 +21,7 @@ The current desktop run uses the same app through a local Uvicorn launcher under
 - `cinema/stream.py`: the brain owns Director's authenticated WebRTC peer and heartbeat. It relays both media tracks to the browser. Signaling follows the official WMA client contract; no provider credential enters browser code. Loopback viewing avoids unnecessary TURN discovery for the local relay; remote viewing keeps ICE/TURN.
 - `cinema/runtime.py`: owns preparation, playback generation numbers, cancellation, context, the last-frame continuation anchor, and a bounded session lease. Provider completion is not treated as something the listener heard. Only the viewer's media-clock completion or the device's completed PCM delivery marks narration complete.
 - `cinema/routes.py`: private session cookies, same-origin requests, one active browser per identity, bounded concurrent sessions and daily film reservations. Local preview sessions can run without an access code; cloud provisioning requires explicit enablement and a code.
+- `cinema/capability.py`: Friend starts and stops that same CinemaSession on the existing body `/ws` glass/audio/held-cue contract. Browser `/cinema` is not this path.
 - `static/cinema.*`: the film is the primary surface. A typed question or hold-to-talk interrupts without camera access. Stale requests/results cannot reopen an interrupted film. Browser media time determines progress and the end, rather than a generation-finished notification.
 
 An interruption currently closes the generating peer. The next turn opens a new one with the last frame and conversation context. This deliberately avoids old buffered narration leaking through a changed direction, but adds reconnection latency and incurs the provider's per-session minimum. In-place replanning with a proven audio/video cut boundary is a future improvement, not something this implementation claims to do.
@@ -32,13 +33,17 @@ Browser provisioning off loopback requires:
 - `GIZMO_DIRECTOR_ENABLED=1`
 - `GIZMO_DIRECTOR_TOKEN` (or the existing `ODDITY_LAB_TOKEN`)
 
-Cloud WebRTC/TURN reachability and throughput have **not** been verified on Railway. The main Friend route remains unchanged unless the separate device selector is set.
+Cloud WebRTC/TURN reachability and throughput have **not** been verified on Railway.
 
-For a controlled physical test, `GIZMO_DIRECTOR_DEVICE=<exact-device-id>` routes that authenticated device's existing `/ws` connection into the film bridge. It requires the held-cue firmware advertising `X-Gizmo-Glass-Cues: 1`; older firmware is rejected. Leave this unset for regular Friend conversation. This opt-in mode directs spoken requests into films, so it is not a replacement for the complete conversational Friend experience.
+Friend owns the `/ws` session. Cinema is one capability that session can start and stop. The silent visual director chooses `film` by **difficulty and usefulness**, not vocabulary: super easy questions stay talk (a still only if a picture truly helps); somewhat-to-very-difficult asks where a moving illustration would make understanding better play Cinema; greetings, feelings, jokes, and simple facts never film. The kid does not need to say film, movie, or cinema, and those words are not a gate. Story openings and actual setting changes also use Cinema. Friend then reuses `cinema/runtime.py` (H3 Max Director) plus `DeviceFilmPlayer` to play 320×240 held-cue MJPEG and the original PCM on the body. PTT, Select, settings, stills, memory, and ordinary talk stay on `GizmoSession`. After the film ends or is interrupted, conversation returns to Friend. The old `GIZMO_DIRECTOR_DEVICE` whole-session swap is gone.
 
-`cinema/device.py` buffers five seconds of incoming video, preserves the frame's aspect ratio at 320×240, produces ESP-compatible 12 fps MJPEG through the existing Show store, and pairs each segment with the corresponding original 24 kHz PCM. The next segment downloads while the current segment plays. Motion acknowledgement is required before `go`; failures stop the speech instead of letting it drift. Select dismisses, PTT stops output and records audio only, and brightness/volume retain their existing controls.
+The old Fal `minimax/h3-max/image-to-video` still→short-clip path is **not** used on Friend. Moving explanations are Cinema only. A bare “make it move” on a still already on the glass stays words and keeps the still: not a 60-second film, and not a Fal clip. Oddity lab still uses `ClipProvider` for its own shots.
 
-The bridge is software-tested, not accepted on a physical XIAO. The earlier microphone queue overflow and idle speaker-static reports remain separate unresolved issues. The body still needs tests for actual speaker start delay, JPEG decode, PSRAM use, network throughput, missed frames, interruption, settings, and reconnect. A downloaded/ready acknowledgement is not a presentation timestamp.
+For a desk test that should prefer a film for every ask on one body, set `GIZMO_DIRECTOR_DEVICE=<exact-device-id>`. That is now a Friend routing hint, not a replacement brain. Leave it unset for normal conversation. Held-cue firmware (`X-Gizmo-Glass-Cues: 1`) is still required for on-device playback; without it the film cannot preload.
+
+`cinema/device.py` buffers five seconds of incoming video, preserves the frame's aspect ratio at 320×240, produces ESP-compatible 12 fps MJPEG through the existing Show store, and pairs each segment with the corresponding original 24 kHz PCM. The next segment downloads while the current segment plays. Motion acknowledgement is required before `go`; failures stop the speech instead of letting it drift. Select dismisses, PTT stops the film and returns to Friend listening, and brightness/volume retain their existing Friend controls.
+
+The bridge is software-tested, not accepted on a physical XIAO. Friend-owned start/stop of the same player is also software-tested. Full A/V sync on the XIAO still needs desk acceptance. The earlier microphone queue overflow and idle speaker-static reports remain separate unresolved issues. The body still needs tests for actual speaker start delay, JPEG decode, PSRAM use, network throughput, missed frames, interruption, settings, and reconnect. A downloaded/ready acknowledgement is not a presentation timestamp.
 
 ## Evidence from September 10
 
@@ -62,14 +67,22 @@ Generated evidence is under the ignored `data/director-spike/`, including `live-
 
 ## Verification
 
+Browser `/cinema` is unchanged: same HTML/JS, session cookie, `/cinema/ws`, `/cinema/offer`, plan/Director stream, interrupt, and follow-ups. Re-check it locally before treating a Friend change as done:
+
+```sh
+uv run gizmo --host 127.0.0.1 --port 8768 --data-dir data/director-local
+```
+
+Open http://127.0.0.1:8768/cinema. Type a question or hold the pink microphone button. Pause must freeze and silence immediately. A follow-up should carry the previous explanation and last picture forward.
+
 ```sh
 uv run python -m pytest friend/tests -q
-uvx ruff check friend/gizmo_friend/cinema friend/tests/test_cinema.py
+uvx ruff check friend/gizmo_friend/cinema friend/gizmo_friend/session.py friend/tests/test_cinema.py
 node --check friend/gizmo_friend/static/cinema.js
 uv lock --check
 ```
 
-Regression coverage includes cloud gating and origin checks, waiting for an attached viewer before generation, cancellation, stale completion, heard-versus-interrupted context, concurrent narration with exact PCM timing, and the existing device JPEG sampling contract.
+Regression coverage includes cloud gating and origin checks, waiting for an attached viewer before generation, cancellation, stale completion, heard-versus-interrupted context, concurrent narration with exact PCM timing, the existing device JPEG sampling contract, Friend `/ws` remaining a GizmoSession even when `GIZMO_DIRECTOR_DEVICE` is set, and Friend start/stop of the film capability.
 
 ## Remaining experience work
 

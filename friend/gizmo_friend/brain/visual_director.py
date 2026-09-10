@@ -29,7 +29,7 @@ NO_MOTION_SENTINELS = {
     "still",
 }
 
-DIRECTOR_INSTRUCTIONS = """You are Gizmo's silent visual director. You do not answer the kid. You only choose whether this one utterance should stay words, show a still illustration, show a moving illustration, or animate the illustration already on the glass.
+DIRECTOR_INSTRUCTIONS = """You are Gizmo's silent visual director. You do not answer the kid. You only choose whether this one utterance should stay words, show a still illustration, or play a narrated film.
 
 Return exactly one structured decision.
 
@@ -85,28 +85,31 @@ STORY CONTINUITY (takes precedence over the generic STILL and MOTION rules)
 
 WORDS
 - Most utterances stay words.
-- Always words for feelings, emotional support, small talk, jokes, personal advice, people, and ordinary facts where seeing adds no understanding.
-- Simple classifications, definitions, dates, causes, and factual status questions stay words even when their subject could be illustrated.
-- A follow-up about the subject already on the glass stays words unless the kid explicitly asks to move it.
+- Always words for feelings, emotional support, small talk, greetings, jokes, personal advice, people, and ordinary facts where seeing adds no understanding.
+- Simple classifications, definitions, dates, counts, names, and math stay words even when their subject could be illustrated.
+- A follow-up about the subject already on the glass stays words unless the kid explicitly asks to move it or asks how that thing works as a process.
 
 STILL
 - Use a still when spatial understanding is the point: what something looks like, where it is, how parts fit, anatomy, a cross-section, a map, or a place.
 - Historical or geographic questions about where routes, regions, or places sit relative to one another get a still map.
-- An explicit request to draw, show, or make a picture gets a still unless meaningful change over time is the point.
+- Super easy asks stay words unless a picture truly helps; then still, never film.
+- An explicit request to draw, show, or make a picture gets a still unless the ask is a somewhat-to-hard process that needs motion (that is FILM).
+
+FILM
+- Gate on difficulty and usefulness, not vocabulary. The kid will not say "film", "movie", or "cinema", and those words are not a reason to film.
+- Super easy questions stay WORDS. Greetings, feelings, jokes, simple facts, names, dates, counts, spelling, and small talk are never film.
+- Somewhat difficult to very difficult asks where a moving illustration would make understanding better are FILM: a process, mechanism, or physical cause-and-effect. Examples: how a rocket lifts, what happens when ice melts, why the Moon orbits, how a heart pumps, why the sky is blue. The film is the answer; it has its own voice over continuous generated pictures.
+- Use film for a story's opening or an actual move to a new setting. That moving scene is the same Cinema path, not a short silent clip. A continuation in the same setting stays WORDS and keeps the current picture.
+- Do not film a thing merely existing (a jellyfish pulsing, a rocket sitting there). A still is enough if seeing helps.
+- Never film for "make it move" of an existing picture. Keep the still; do not play a short clip.
+- Never film for appearance, maps, anatomy diagrams, or a short Fal clip. Moving explanations are Cinema only.
 
 MOTION
-- An explicit request for a video, animation, or moving picture gets MOTION
-  for a new subject, or ANIMATE when it refers to the existing illustration.
-  Do not downgrade an explicit video request to a still merely because the
-  subject could also be explained with a still.
-- Use motion only when seeing meaningful change over time explains the answer: a rocket lifting, a wave breaking, a heart beating, a volcano erupting, or the Moon orbiting Earth.
-- Never add motion merely because a subject is alive or capable of moving. Appearance, maps, anatomy, objects, and places remain still.
-- A story's opening or an actual move to a new setting gets one moving scene.
-  This includes a setting change introduced by the narration after "Then what?".
+- Do not use MOTION. If a hard explanation or a new story setting should move, choose FILM.
+- A story's opening or an actual move to a new setting is FILM, including a setting change after "Then what?".
   A continuation, emotional twist, or changed motive in the same setting stays
-  words: keep the current scene. A request to redraw or a major visible physical
-  change can get a new scene. If no picture is on the glass, a story continuation
-  can establish its current setting. Depict the place and atmosphere, never a child.
+  words: keep the current scene. If no picture is on the glass, a story continuation
+  can establish its current setting as FILM. Depict the place and atmosphere, never a child.
 - For a new story scene, describe the location actually established in the
   narration, carrying forward established visible details. Do not depict both the
   old and new locations, a montage, dialogue, a summary of the plot, or labeled parts.
@@ -121,15 +124,14 @@ You craft the picture. kind is how it is made:
 - If story_setting is set, kind MUST be scene.
 
 ANIMATE
-- Use animate only when an illustration is currently on the glass and the kid directly asks to make it move or animate it.
-- Never redraw the subject for animate.
+- Do not use ANIMATE. There is no short clip. "Make it move" on a still already on the glass stays WORDS.
 
-For still or motion, subject is a short concrete noun phrase with the one important detail and no style instructions. For motion or animate, motion is one short phrase describing only quiet subject motion: no camera movement, cuts, new objects, or cinematic language. For words, leave subject and motion empty. Never output the literal word "none" as motion."""
+For still or film, subject is a short concrete noun phrase with the one important detail and no style instructions. For words, leave subject and motion empty. Never output the literal word "none" as motion."""
 
 DIRECTOR_SCHEMA = {
     "type": "object",
     "properties": {
-        "route": {"type": "string", "enum": ["words", "still", "motion", "animate"]},
+        "route": {"type": "string", "enum": ["words", "still", "motion", "film"]},
         "subject": {"type": "string"},
         "motion": {"type": "string"},
         "story_setting": {"type": "string"},
@@ -212,6 +214,97 @@ def is_explicit_visual_request(utterance: str) -> bool:
     ))
 
 
+def is_moving_explanation_ask(utterance: str) -> bool:
+    """Somewhat-to-hard asks where a moving illustration would help.
+
+    Difficulty and usefulness, not the words film/movie/how. Easy talk,
+    simple facts, appearance, and a clip of a thing existing stay out.
+    This never chooses the subject.
+    """
+    cleaned = " ".join(utterance.casefold().split())
+    if not cleaned or is_bare_animate_request(utterance):
+        return False
+    if re.search(r"\b(story|chapter|tale|continue)\b", cleaned):
+        return False
+    if re.search(
+        r"\b(hi|hello|hey|how are you|how's it going|whats up|what's up|"
+        r"i'm bored|im bored|tell me a joke|knock knock|"
+        r"feel|feeling|sad|happy|mad|angry|scared|lonely|love you|miss you|sorry)\b",
+        cleaned,
+    ):
+        return False
+    if re.search(
+        r"\bhow (?:old|many|much|far|big|tall|long|heavy|wide|often)\b|"
+        r"\bhow (?:do you|do i) (?:spell|say|write|pronounce|know)\b|"
+        r"\b(homework|this problem|this sum|plus|minus|times|divide|equals|prime)\b",
+        cleaned,
+    ):
+        return False
+    if re.search(
+        r"\bwhat does .{0,40}\blook like\b|\bwhere (?:is|was|are)\b|"
+        r"\bwhat color\b|\bwho (?:is|was|are)\b|\bwhen (?:is|was|did)\b",
+        cleaned,
+    ):
+        return False
+    if re.search(
+        r"\b(?:make|generate|create)\b.{0,40}\b(?:video|animation|clip)\b",
+        cleaned,
+    ) and not re.search(r"\b(how|why|what happens|explain)\b", cleaned):
+        return False
+    if re.search(r"\bwhat happens\b|\bwhat would happen\b|\bwhat will happen\b", cleaned):
+        return True
+    if re.search(
+        r"\bexplain how\b|\bshow me how\b|\bwalk me through\b|\bhow (?:do|does) that work\b",
+        cleaned,
+    ):
+        return True
+    if re.search(r"\bhow (?:do|does|did|can|could|would|is|are)\b", cleaned):
+        if re.search(r"\bhow (?:do|does|did|is|are) (?:you|i|we)\b", cleaned):
+            return False
+        return True
+    if re.search(r"\bwhy (?:do|does|did|can|would|is|are)\b", cleaned):
+        return not re.search(
+            r"\b(you sad|you mad|you scared|my friend|my mom|my dad|my teacher|"
+            r"my name|called)\b",
+            cleaned,
+        )
+    return False
+
+
+def prefer_film_route(decision: VisualDecision, utterance: str) -> VisualDecision:
+    """Cinema only when motion would help a hard ask or a moving story scene.
+
+    Easy talk, a thing merely existing, and "make it move" never become film
+    or a short clip.
+    """
+    if decision.route == "animate":
+        return VisualDecision()
+    film_fields = dict(
+        subject=decision.subject,
+        story_setting=decision.story_setting,
+        kind=decision.kind,
+        story_character=decision.story_character,
+        new_story=decision.new_story,
+    )
+    if decision.story_setting:
+        if decision.route in {"film", "motion"}:
+            return VisualDecision(route="film", **film_fields)
+        return decision
+    if is_moving_explanation_ask(utterance):
+        return VisualDecision(route="film", **film_fields)
+    if decision.route in {"film", "motion"}:
+        if decision.subject:
+            return VisualDecision(
+                route="still",
+                subject=decision.subject,
+                kind=decision.kind,
+                story_character=decision.story_character,
+                new_story=decision.new_story,
+            )
+        return VisualDecision()
+    return decision
+
+
 def decision_from_payload(
     payload: object, *, has_visual: bool, current_story_setting: str = "",
     narration_complete: bool = True,
@@ -229,17 +322,25 @@ def decision_from_payload(
     # Scene identity, not the prose description of a shot, owns reuse. A model
     # can ask for a different pose in the same castle; that must not spend again.
     if (has_visual and setting and setting == current_setting
-            and route in {"still", "motion"}
+            and route in {"still", "motion", "film"}
             and payload.get("redraw_requested") is not True
             and not identity["new_story"]):
         route = "words"
     if motion.casefold().rstrip(".") in NO_MOTION_SENTINELS:
         motion = ""
     if route == "animate":
-        return VisualDecision(route="animate", motion=motion, story_setting=setting) if has_visual and motion else VisualDecision()
+        return VisualDecision()
+    if route == "film":
+        return VisualDecision(
+            route="film", subject=subject, story_setting=setting, kind=kind, **identity,
+        ) if subject else VisualDecision()
     if route == "motion":
+        # A moving scene is Cinema, not a Fal still→clip.
         if subject and motion:
-            return VisualDecision(route="motion", subject=subject, motion=motion, story_setting=setting, kind=kind, **identity)
+            return VisualDecision(
+                route="film", subject=subject, motion=motion, story_setting=setting,
+                kind=kind, **identity,
+            )
         if subject:
             return VisualDecision(route="still", subject=subject, story_setting=setting, kind=kind, **identity)
         return VisualDecision()

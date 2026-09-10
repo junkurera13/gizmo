@@ -31,7 +31,7 @@ from gizmo_friend.body_protocol import (
 )
 from gizmo_friend.brain.shows import MAX_IMAGE_DIMENSION, ShowStore, valid_device_id
 from gizmo_friend.brain.show_media import MAX_FRAME_DIMENSION, MAX_FRAME_FPS, MediaError
-from gizmo_friend.brain.show_budget import MotionBudget, ShowBudget
+from gizmo_friend.brain.show_budget import ShowBudget
 from gizmo_friend.session import GizmoSession
 
 STATIC = Path(__file__).parent / "static"
@@ -88,17 +88,15 @@ def app_factory(data_dir: Path) -> FastAPI:
     # devices never share a mind. Sessions outlive their sockets: a reconnect
     # picks up the same Gizmo mid-thought.
     sessions: dict[str, GizmoSession] = {}
-    director_devices: set[str] = set()
     default_device = _device_id(os.environ.get("GIZMO_USER_ID", ""), "gizmo-local-user")
     show_budget = ShowBudget(data_dir)
-    motion_budget = MotionBudget(data_dir)
 
     def session_for(device_id: str) -> GizmoSession:
         friend = sessions.get(device_id)
         if friend is None:
             friend = GizmoSession(
                 data_dir / "devices" / device_id, user_id=device_id,
-                show_budget=show_budget, motion_budget=motion_budget,
+                show_budget=show_budget,
             )
             sessions[device_id] = friend
         return friend
@@ -258,20 +256,9 @@ def app_factory(data_dir: Path) -> FastAPI:
             await socket.close(code=1002, reason="unsupported body protocol")
             return
         device_id = _device_id(socket.headers.get("x-gizmo-device", ""), default_device)
-        if os.environ.get("GIZMO_DIRECTOR_DEVICE", "") == device_id:
-            if socket.headers.get("x-gizmo-glass-cues") != "1":
-                await socket.close(code=1008, reason="Director needs held-cue firmware")
-                return
-            if device_id in director_devices or not os.environ.get("FAL_KEY") or not os.environ.get("GEMINI_API_KEY"):
-                await socket.close(code=1013, reason="Director device is busy or unavailable")
-                return
-            from gizmo_friend.cinema.device import DeviceFilm
-            director_devices.add(device_id)
-            try:
-                await DeviceFilm(socket, data_dir, device_id).run()
-            finally:
-                director_devices.discard(device_id)
-            return
+        # Cinema is a Friend capability on this same session. The old
+        # GIZMO_DIRECTOR_DEVICE whole-session swap is gone; that env var now
+        # only tells Friend to prefer film for this device's asks.
         friend = session_for(device_id)
         await socket.accept()
         queue = friend.subscribe(glass_cues=socket.headers.get("x-gizmo-glass-cues") == "1")

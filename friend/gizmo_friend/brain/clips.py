@@ -1,4 +1,4 @@
-"""Standalone image-to-video provider for Show; no session or storage dependencies."""
+"""Fal image-to-video clips for Oddity lab. Friend does not grow short clips."""
 
 from __future__ import annotations
 

@@ -1,7 +1,8 @@
-"""Opt-in live story check with two fresh scenes. Spends image and clip credits.
+"""Opt-in live story check with two fresh scenes. Spends image credits.
 
 Run from the repository: .venv/bin/python friend/checkpoints/story_scenes.py
-Generated stills, clips, speech, and transcripts are saved in data/show-checkpoints/.
+Generated stills, speech, and transcripts are saved in data/show-checkpoints/.
+Friend does not grow short clips; moving chapters play Cinema.
 """
 from __future__ import annotations
 
@@ -12,10 +13,10 @@ from pathlib import Path
 import sys
 import tempfile
 from datetime import UTC, datetime
+from types import SimpleNamespace
 
 from dotenv import load_dotenv
 
-from gizmo_friend.brain.clips import ClipProvider, clip_provider_from_env
 from gizmo_friend.brain.images import ImageProvider, image_provider_from_env
 from gizmo_friend.brain.memory import NullMemoryProvider
 from gizmo_friend.brain.reasoning import NullReasoningProvider
@@ -61,31 +62,6 @@ class RecordingImages(ImageProvider):
         await self.inner.close()
 
 
-class RecordingClips(ClipProvider):
-    def __init__(self, inner, output: Path):
-        self.inner = inner
-        self.output = output
-        self.calls = []
-
-    async def animate(self, still, motion):
-        clip = await self.inner.animate(still, motion)
-        record = {"motion": motion, "ok": clip is not None}
-        if clip is not None:
-            path = self.output / f"clip-{len(self.calls) + 1}.mp4"
-            path.write_bytes(clip.mp4)
-            record.update(
-                path=str(path),
-                latency_seconds=round(clip.latency_seconds, 3),
-                model=clip.model,
-                request_id=clip.request_id,
-            )
-        self.calls.append(record)
-        return clip
-
-    async def close(self):
-        await self.inner.close()
-
-
 def _glass_timing(events):
     still_at = next((event["seconds"] for event in events if event.get("type") == "glass" and event.get("still") and not event.get("clip")), None)
     clip_at = next((event["seconds"] for event in events if event.get("type") == "glass" and event.get("clip")), None)
@@ -104,10 +80,10 @@ async def main():
     output = ROOT / "data/show-checkpoints" / datetime.now(UTC).strftime("%Y-%m-%d-kid-story-%H%M%S")
     output.mkdir(parents=True)
     images = RecordingImages(image_provider_from_env(), output)
-    clips = RecordingClips(clip_provider_from_env(), output)
+    clips = SimpleNamespace(calls=[])
     director = RecordingDirector(os.environ["FAL_KEY"])
     result = {
-        "media": "fresh Gemini stills and fal clips; inspect files before claiming character consistency",
+        "media": "fresh Gemini stills; moving chapters play Cinema, not Fal clips",
         "turns": [],
     }
     with tempfile.TemporaryDirectory() as temporary:
@@ -115,7 +91,7 @@ async def main():
             Path(temporary), user_id="story-scenes-checkpoint",
             gemini_key=os.environ["GEMINI_API_KEY"],
             memory_provider=NullMemoryProvider(), reasoning_provider=NullReasoningProvider(),
-            image_provider=images, clip_provider=clips, visual_director=director,
+            image_provider=images, visual_director=director,
             idle_sleep_s=0, show_idle_s=0,
         )
         friend.machine.state = State.LISTENING

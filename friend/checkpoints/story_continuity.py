@@ -132,12 +132,9 @@ async def run_turn(friend, queue, director, images, clips, prompt, output, numbe
             await speech_done.wait()
             if friend._director_task:
                 await friend._director_task
-            tasks = tuple(friend._show_tasks | friend._clip_tasks)
+            tasks = tuple(friend._show_tasks)
             if tasks:
                 await asyncio.gather(*tasks)
-            # Still completion can start a clip task after the first snapshot.
-            if friend._clip_tasks:
-                await asyncio.gather(*tuple(friend._clip_tasks))
             await asyncio.sleep(0)  # Let the collector consume final emissions.
     finally:
         collector.cancel()
@@ -175,7 +172,7 @@ async def main():
         friend = GizmoSession(
             Path(temporary), user_id="story-checkpoint", gemini_key=os.environ["GEMINI_API_KEY"],
             memory_provider=NullMemoryProvider(), reasoning_provider=NullReasoningProvider(),
-            image_provider=images, clip_provider=clips, visual_director=director,
+            image_provider=images, visual_director=director,
             idle_sleep_s=0, show_idle_s=0,
         )
         friend.machine.state = State.LISTENING

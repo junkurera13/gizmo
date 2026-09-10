@@ -93,7 +93,7 @@ Set `GEMINI_API_KEY`, `FAL_KEY`, and a randomly generated `GIZMO_DEVICE_TOKEN` o
 
 ## Tools and Show
 
-Gemini Live can call only `deep_think(question)` and the placeholder `set_expression()` bus (not the character). Google Search is Gemini's native grounding tool, not a custom search function. A separate structured visual director reads the same final user utterance and silently executes `show` or `animate`; stills use FLUX.2 Klein 9B on Fal, and motion uses H3 Max on Fal. Explicit standalone visual requests start directing before narration completes. Google has no image-generation fallback.
+Gemini Live can call only `deep_think(question)` and the placeholder `set_expression()` bus (not the character). Google Search is Gemini's native grounding tool, not a custom search function. A separate structured visual director reads the same final user utterance and silently chooses words, a still, or a Cinema film (H3 Max Director). Stills use FLUX.2 Klein 9B on Fal. Moving explanations and moving story scenes use Cinema, not Fal image-to-video. Friend does not grow a short clip; “make it move” keeps the still. Explicit standalone visual requests start directing before narration completes. Google has no image-generation fallback.
 
 ## Who owns what
 

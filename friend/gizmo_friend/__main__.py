@@ -9,7 +9,7 @@ from pathlib import Path
 
 from gizmo_friend import default_data_dir
 from gizmo_friend.body_protocol import Frame, Navigate, Power, Select, TextLine
-from gizmo_friend.brain.show_budget import MotionBudget, ShowBudget
+from gizmo_friend.brain.show_budget import ShowBudget
 from gizmo_friend.server import _device_id
 from gizmo_friend.session import GizmoSession
 
@@ -47,7 +47,7 @@ async def _cli(data_dir: Path) -> None:
     device_id = _device_id(os.environ.get("GIZMO_USER_ID", ""), "gizmo-local-user")
     friend = GizmoSession(
         data_dir / "devices" / device_id, user_id=device_id,
-        show_budget=ShowBudget(data_dir), motion_budget=MotionBudget(data_dir),
+        show_budget=ShowBudget(data_dir),
     )
     queue = friend.subscribe()
 
