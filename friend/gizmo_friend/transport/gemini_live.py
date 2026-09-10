@@ -68,8 +68,10 @@ def live_config(instructions: str, resume_handle: str = "") -> types.LiveConnect
     assert_allowlist(TOOL_SCHEMAS)
     # Visual routing belongs to the separate structured director. Live stays
     # the voice and cannot make a second, competing show choice.
+    # set_expression stays a schema-only placeholder until the face is designed;
+    # declaring it to Live invites calls the prompt must then forbid.
     live_schemas = [
-        schema for schema in TOOL_SCHEMAS if schema["name"] != "show"
+        schema for schema in TOOL_SCHEMAS if schema["name"] not in ("show", "set_expression")
     ]
     declarations = [
         types.FunctionDeclaration(

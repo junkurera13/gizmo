@@ -369,7 +369,8 @@ class OddityCinemaTests(unittest.IsolatedAsyncioTestCase):
         )
         maker = AsyncMock()
         maker.plan.return_value = plan
-        maker.prepare.return_value = PreparedFilm(plan, "https://audio.fal.media/test.wav", 10, b"fake")
+        maker.synthesize.return_value = PreparedFilm(plan, "https://audio.fal.media/test.wav", 10, b"fake")
+        maker.upload_audio.return_value = "https://audio.fal.media/test.wav"
         cinema = OddityCinema(
             directory=Path(root.name) / "oddity" / ("a" * 32),
             fal_key="test",
