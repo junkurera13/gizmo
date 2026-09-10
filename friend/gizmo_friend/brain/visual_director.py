@@ -92,16 +92,17 @@ WORDS
 STILL
 - Use a still when spatial understanding is the point: what something looks like, where it is, how parts fit, anatomy, a cross-section, a map, or a place.
 - Historical or geographic questions about where routes, regions, or places sit relative to one another get a still map.
-- An explicit request to draw, show, or make a picture gets a still unless the ask is a process unfolding over time (that is FILM).
+- Super easy asks stay words unless a picture truly helps; then still, never film.
+- An explicit request to draw, show, or make a picture gets a still unless the ask is a somewhat-to-hard process that needs motion (that is FILM).
 
 FILM
-- The kid will not say "film", "movie", or "cinema". Choose FILM whenever the glass should move.
-- Use film for a moving explanation: how a rocket lifts, what happens when ice melts, why the Moon orbits, how a heart pumps, why the sky is blue. The film is the answer; it has its own voice over continuous generated pictures.
+- Gate on difficulty and usefulness, not vocabulary. The kid will not say "film", "movie", or "cinema", and those words are not a reason to film.
+- Super easy questions stay WORDS. Greetings, feelings, jokes, simple facts, names, dates, counts, spelling, and small talk are never film.
+- Somewhat difficult to very difficult asks where a moving illustration would make understanding better are FILM: a process, mechanism, or physical cause-and-effect. Examples: how a rocket lifts, what happens when ice melts, why the Moon orbits, how a heart pumps, why the sky is blue. The film is the answer; it has its own voice over continuous generated pictures.
 - Use film for a story's opening or an actual move to a new setting. That moving scene is the same Cinema path, not a short silent clip. A continuation in the same setting stays WORDS and keeps the current picture.
-- How X works, what happens when, and a story scene that should move are FILM, not a still and not a short Fal clip.
-- Never film for greetings, jokes, feelings, people, homework steps, math, or "what does it look like".
+- Do not film a thing merely existing (a jellyfish pulsing, a rocket sitting there). A still is enough if seeing helps.
 - Never film for "make it move" of an existing picture (leftover ANIMATE).
-- Never film for appearance, maps, or anatomy diagrams.
+- Never film for appearance, maps, anatomy diagrams, or a short Fal clip. Moving explanations are Cinema only.
 
 MOTION
 - Do not use MOTION. If the glass should move, choose FILM. MOTION is a leftover alias and is treated as FILM.
@@ -215,11 +216,11 @@ def is_explicit_visual_request(utterance: str) -> bool:
 
 
 def is_moving_explanation_ask(utterance: str) -> bool:
-    """A process or how-it-works ask. The kid does not need to say film.
+    """Somewhat-to-hard asks where a moving illustration would help.
 
-    Greetings, jokes, feelings, stories, appearance, and short clips of a
-    thing existing stay out. This never chooses the subject; it only marks
-    that a narrated moving explanation is the right grain.
+    Difficulty and usefulness, not the words film/movie/how. Easy talk,
+    simple facts, appearance, and a clip of a thing existing stay out.
+    This never chooses the subject.
     """
     cleaned = " ".join(utterance.casefold().split())
     if not cleaned or is_bare_animate_request(utterance):
@@ -227,53 +228,81 @@ def is_moving_explanation_ask(utterance: str) -> bool:
     if re.search(r"\b(story|chapter|tale|continue)\b", cleaned):
         return False
     if re.search(
-        r"\b(how are you|how's it going|whats up|what's up|i'm bored|im bored|"
+        r"\b(hi|hello|hey|how are you|how's it going|whats up|what's up|"
+        r"i'm bored|im bored|tell me a joke|knock knock|"
         r"feel|feeling|sad|happy|mad|angry|scared|lonely|love you|miss you|sorry)\b",
         cleaned,
     ):
         return False
     if re.search(
         r"\bhow (?:old|many|much|far|big|tall|long|heavy|wide|often)\b|"
+        r"\bhow (?:do you|do i) (?:spell|say|write|pronounce|know)\b|"
         r"\b(homework|this problem|this sum|plus|minus|times|divide|equals|prime)\b",
         cleaned,
     ):
         return False
-    if re.search(r"\bwhat does .{0,40}\blook like\b|\bwhere (?:is|was|are)\b", cleaned):
+    if re.search(
+        r"\bwhat does .{0,40}\blook like\b|\bwhere (?:is|was|are)\b|"
+        r"\bwhat color\b|\bwho (?:is|was|are)\b|\bwhen (?:is|was|did)\b",
+        cleaned,
+    ):
         return False
-    if re.search(r"\b(film|movie|cinema|cinematic)\b", cleaned):
-        return True
+    if re.search(
+        r"\b(?:make|generate|create)\b.{0,40}\b(?:video|animation|clip)\b",
+        cleaned,
+    ) and not re.search(r"\b(how|why|what happens|explain)\b", cleaned):
+        return False
     if re.search(r"\bwhat happens\b|\bwhat would happen\b|\bwhat will happen\b", cleaned):
         return True
-    if re.search(r"\bexplain how\b|\bshow me how\b|\bwalk me through\b|\bhow (?:do|does) that work\b", cleaned):
+    if re.search(
+        r"\bexplain how\b|\bshow me how\b|\bwalk me through\b|\bhow (?:do|does) that work\b",
+        cleaned,
+    ):
         return True
     if re.search(r"\bhow (?:do|does|did|can|could|would|is|are)\b", cleaned):
+        if re.search(r"\bhow (?:do|does|did|is|are) (?:you|i|we)\b", cleaned):
+            return False
         return True
     if re.search(r"\bwhy (?:do|does|did|can|would|is|are)\b", cleaned):
         return not re.search(
-            r"\b(you sad|you mad|you scared|my friend|my mom|my dad|my teacher)\b",
+            r"\b(you sad|you mad|you scared|my friend|my mom|my dad|my teacher|"
+            r"my name|called)\b",
             cleaned,
         )
     return False
 
 
 def prefer_film_route(decision: VisualDecision, utterance: str) -> VisualDecision:
-    """Moving glass is Cinema. Leftover animate clips are not upgraded."""
+    """Cinema only when motion would help a hard ask or a moving story scene.
+
+    Leftover animate clips stay leftover. Easy talk and a thing merely
+    existing never become film, even if the model said motion or film.
+    """
     if decision.route == "animate":
         return decision
-    if decision.route == "motion":
-        return VisualDecision(
-            route="film",
-            subject=decision.subject,
-            story_setting=decision.story_setting,
-            kind=decision.kind,
-            story_character=decision.story_character,
-            new_story=decision.new_story,
-        )
-    if decision.route in {"still", "words"}:
-        if decision.story_setting:
-            return decision
-        if is_moving_explanation_ask(utterance):
-            return VisualDecision(route="film", subject=decision.subject)
+    film_fields = dict(
+        subject=decision.subject,
+        story_setting=decision.story_setting,
+        kind=decision.kind,
+        story_character=decision.story_character,
+        new_story=decision.new_story,
+    )
+    if decision.story_setting:
+        if decision.route in {"film", "motion"}:
+            return VisualDecision(route="film", **film_fields)
+        return decision
+    if is_moving_explanation_ask(utterance):
+        return VisualDecision(route="film", **film_fields)
+    if decision.route in {"film", "motion"}:
+        if decision.subject:
+            return VisualDecision(
+                route="still",
+                subject=decision.subject,
+                kind=decision.kind,
+                story_character=decision.story_character,
+                new_story=decision.new_story,
+            )
+        return VisualDecision()
     return decision
 
 
