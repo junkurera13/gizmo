@@ -18,6 +18,8 @@ import httpx
 
 from PIL import Image, ImageOps
 
+from gizmo_friend.prompt import ART_STYLE
+
 logger = logging.getLogger(__name__)
 
 IMAGE_MODEL = "fal-ai/flux-2/klein/9b"
@@ -27,16 +29,14 @@ MAX_RESPONSE_BYTES = 12 * 1024 * 1024
 STILL_SIZE = (512, 384)
 IMAGE_TIMEOUT_SECONDS = 12.0
 
-# A single product-owned look. The director chooses scene vs diagram; this
-# prefix never invents that choice. Keep the assembled prompt with each result.
+# A single product-owned look, shared with film. The director chooses scene vs
+# diagram; this prefix never invents that choice. Keep the assembled prompt with
+# each result.
 STYLE_PREFIX = (
-    "Make one flat-color print illustration, like a risograph or screenprint. "
-    "Use exactly two spot inks: rich violet-purple and warm pink, on a near-black "
-    "paper ground. Use these same inks for every subject; no other colors. "
-    "Bold simple shapes, visible fine paper grain, flat ink coverage, no gradients, "
-    "no photoreal rendering, no 3D shading. One subject or one coherent scene, "
+    f"Make one finished still image. {ART_STYLE} "
+    "One subject or one coherent scene, "
     "centered and filling the landscape frame, with no border. "
-    "No logos, signatures, human faces, people, or children. "
+    "No signatures, human faces, people, or children. "
     "No anthropomorphic faces on objects. "
     "Suitable for children aged 9 to 14: no sexual content, gore, hateful imagery, "
     "or depictions encouraging dangerous behavior. "
@@ -59,7 +59,7 @@ PICTURE_KINDS = {"scene", "diagram"}
 
 
 def still_instruction(kind: str = "scene") -> str:
-    """Gizmo's print look plus the director's scene-or-diagram choice."""
+    """Gizmo's shared art style plus the director's scene-or-diagram choice."""
     extra = DIAGRAM_ADDENDUM if kind == "diagram" else SCENE_ADDENDUM
     return f"{STYLE_PREFIX} {extra}"
 
@@ -163,7 +163,7 @@ class FalImageProvider(ImageProvider):
                 "proportions, face, markings, and accessories across locations. "
                 "The established identity overrides conflicting appearance in the subject. "
                 "The reference image, if present, supplies ONLY character identity and "
-                "print style: replace its setting and pose to match the new subject. "
+                "style: replace its setting and pose to match the new subject. "
                 "No duplicate characters or reference-sheet layout."
             )
             content += f"\nEstablished character identity: {character[:600]}"

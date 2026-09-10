@@ -15,7 +15,7 @@ from pydantic import BaseModel, Field
 
 from gizmo_friend.brain.gemini_text import TEXT_MODEL, GeminiTextClient
 from gizmo_friend.brain.narration import narration_provider_from_env
-from gizmo_friend.prompt import FROZEN_PROMPT
+from gizmo_friend.prompt import ART_STYLE, FROZEN_PROMPT
 
 FILM_NARRATION_STYLE = (
     "Read the following verbatim as a clear, curious science explainer speaking "
@@ -29,10 +29,9 @@ FILM_NARRATION_STYLE = (
     "finish cleanly. Do not add words."
 )
 
-STYLE = """Original educational motion design, beautifully composed flat vector illustration,
-ink-navy backgrounds, warm ivory, coral, teal and golden yellow. Strong silhouettes,
-clear scale, purposeful movement, smooth revealing transitions and close-up cutaways.
-No logos, no imitation of an existing channel, no photorealism. Show cause and effect,
+STYLE = f"""Original educational motion design. {ART_STYLE}
+Purposeful movement, smooth revealing transitions and close-up cutaways.
+Show cause and effect,
 not a static illustration with ambient particles. The central requested object stays
 visible. Leave typography and labels out of the generated picture."""
 

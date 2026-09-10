@@ -180,19 +180,18 @@ fallback when fal is slow.
 
 ### The look
 
-A fixed prefix the model never sees or changes, applied to every subject. Proposal:
+A fixed prefix the model never sees or changes, applied to every subject — decided
+2026-09-10: stills share Cinema's look (`gizmo_friend.prompt.ART_STYLE`).
 
-> Flat-color print illustration, like a risograph or screenprint: two or three spot inks
-> on a dark ground, bold simple shapes, visible paper grain, no gradients, no photoreal
-> rendering, no logos, no human faces, no children. Labels only on diagrams and maps;
-> story scenes have no text. No decorative writing, titles, or captions. One subject,
-> centered, filling the frame. Landscape.
+> Flat vector illustration on an ink-navy ground, in warm ivory, coral, teal and
+> golden yellow. Strong silhouettes, clear scale. No logos, no photorealism, no
+> human faces, no children. Labels only on diagrams and maps; story scenes have no
+> text. No decorative writing, titles, or captions. One subject, centered, filling
+> the frame. Landscape.
 
-Dark ground on purpose: the glass is black and sits in a bezel. A white paper still
-flashes; a dark one feels like the glass itself changed. Whether the inks are his coat
-(purple, pink) or a fixed print palette (ochre, moss, ink) is Jun's call — see questions.
-Whichever it is, it is *one* palette for every still, forever, so his pictures are
-recognizably his.
+Dark ground on purpose: the glass is black and sits in a bezel, so a dark picture
+feels like the glass itself changed. One palette for every still, forever, and now
+the same one as the films, so everything he shows is recognizably his.
 
 Always the same ratio and same size. If the model returns something else, we crop, not
 letterbox.
@@ -537,11 +536,9 @@ a second style.
 
 ## Open questions for Jun
 
-1. **Palette.** His coat (purple/pink inks on black) or a print palette (ochre/moss/ink on
-   dark paper)? One choice, then it never changes. Whatever it is, the clip inherits it
-   from the still, so this is decided once. *Default if unanswered before step 1: his
-   coat — it ties every picture to him and to the yellow body with the pink button.*
-   Step 1's ten test stills will show whether it holds; switch there or never.
+1. **Palette.** Decided 2026-09-10: stills use Cinema's flat vector look
+   (ink-navy ground; ivory, coral, teal, gold) via `ART_STYLE` in
+   `gizmo_friend/prompt.py` — one palette across stills and films.
 2. **Stories.** One show per chapter as a new place opens — yes? $0.07–0.32 a chapter at
    list depending on whether the place moves. The best demo beat we have.
 3. **Select dismisses.** Comfortable with Select meaning "put your face back" while a

@@ -124,7 +124,7 @@ THE CHAPTER
 - remaining: one line saying what the next chapter covers, or empty when finished.
 
 THE PICTURES
-Each beat's scene is the one picture under its narration, drawn in a fixed two-ink print style you do not control.
+Each beat's scene is the one picture under its narration, drawn in a fixed flat vector style you do not control.
 - Keep the central subject and action in view. A rocket launch must show the rocket, not just mist on an empty launchpad; a swimming whale must show the whale, not just ripples.
 - scene: a concrete noun phrase, at most twenty-five words, of a lived-in place, object, animal, or force with weather, light, and atmosphere. It must show the beat's idea without people: no people, no human faces, no children, no crowds, no hands. Tell of people through their world: an empty street, bread left in an oven, a dog's paw print in ash, a ship at the dock. No text, letters, numbers, labels, arrows, maps, or diagrams.
 - motion: empty unless this chapter should actually move — a launch, a voyage, a storm, or an opening in a new place. Quiet talking beats stay still. If any beat has motion, the chapter plays as one narrated Cinema film, not a silent clip. No cuts, no people, no unrelated objects.

@@ -38,7 +38,7 @@ The initial implementation plans one short sequence per user turn. It does not a
 | Experience direction | `gemini-3.1-flash-lite`; `ODDITY_DIRECTOR_MODEL` override |
 | Narration | `gemini-2.5-flash-preview-tts`; `ODDITY_TTS_MODEL` override; `GIZMO_VOICE` or Umbriel |
 | Recorded speech transcription | `gemini-3.1-flash-lite`; `ODDITY_TRANSCRIBE_MODEL` override |
-| Drawings / stills | Fal FLUX.2 Klein 9B with reference editing and Gizmo's violet/pink print style |
+| Drawings / stills | Fal FLUX.2 Klein 9B with reference editing and Gizmo's flat vector style (shared with Cinema) |
 | Moving explanations | The same Cinema runtime as Friend and `/cinema`: H3 Max Director via `cinema/runtime.py`. Gated by the same difficulty/usefulness heuristic (`is_moving_explanation_ask`); at most one film per turn. Not Fal still→H3 Max image-to-video clips. |
 | Conversation continuity | Local server session history; existing Memobase adapter when both Memobase settings are configured |
 
