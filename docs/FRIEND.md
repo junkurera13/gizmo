@@ -15,8 +15,9 @@ ESP32-S3 (local OS today) or native emulator (protocol body)
             │    ├─ native Google Search grounding
             │    └─ deep_think / set_expression function calls
             ├─ VisualDirector → Gemini 3.1 Flash-Lite
-            │    ├─ words / still / motion / animate decision
-            │    └─ ImageProvider / ClipProvider → glass
+            │    ├─ words / still / motion / animate / film decision
+            │    ├─ ImageProvider / ClipProvider → glass
+            │    └─ FriendCinema → H3 Max Director (same runtime as `/cinema`)
             ├─ MemoryProvider → self-hosted Memobase
             ├─ ReasoningProvider → Gemini 3.7 Flash
             └─ final transcript JSONL
@@ -67,6 +68,8 @@ The server keeps one `GizmoSession` per device. A body identifies itself with th
   recent dialogue, with stale decisions cancelled when a newer ask arrives
 - Show still/clip generation, persistent budgets, dismissal, and staging the
   displayed still back into Live for visual follow-ups
+- Cinema as a start/stop capability: H3 Max Director film on the same `/ws`
+  glass/audio/held-cue contract, then back to conversation
 - tool validation and execution
 - startup memory context and background memory ingestion
 - device state transitions and idle sleep

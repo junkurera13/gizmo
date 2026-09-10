@@ -424,3 +424,90 @@ class MotionSessionTests(ShowSessionFixture):
         self.assertEqual((await self.ask_animate())["status"], "moving")
         self.assertEqual(len(self.clips.calls), 1)
         self.assertEqual(self.motion_count(), 1)
+
+
+class StubCinema:
+    def __init__(self):
+        self.started = []
+        self.stopped = 0
+        self.active = False
+        self.session = None
+
+    def available(self):
+        return True
+
+    async def start(self, text):
+        self.started.append(text)
+        self.active = True
+        return {"ok": True, "status": "preparing"}
+
+    async def stop(self):
+        self.stopped += 1
+        self.active = False
+
+    def on_glass_ready(self, cue, kind, ok):
+        del cue, kind, ok
+
+    async def close(self):
+        self.active = False
+
+
+class FilmCapabilityTests(ShowSessionFixture):
+    async def test_director_film_starts_cinema_without_a_still(self):
+        cinema = StubCinema()
+        self.friend._cinema = cinema
+        self.friend.visual_director = FixedDirector(
+            VisualDecision(route="film", subject="rocket exhaust")
+        )
+        await self.friend.handle(TextLine(text="Show me a film about how rockets work."))
+        await asyncio.wait_for(asyncio.shield(self.friend._director_task), 1)
+        self.assertEqual(
+            cinema.started, ["Show me a film about how rockets work."]
+        )
+        self.assertEqual(self.images.calls, [])
+        self.assertTrue(self.friend._suppress_live_output)
+
+    async def test_explicit_film_overrides_a_still_decision(self):
+        cinema = StubCinema()
+        self.friend._cinema = cinema
+        self.friend.visual_director = FixedDirector(
+            VisualDecision(route="still", subject="rocket")
+        )
+        await self.friend.handle(TextLine(text="Show me a film about how rockets work."))
+        await asyncio.wait_for(asyncio.shield(self.friend._director_task), 1)
+        self.assertEqual(
+            cinema.started, ["Show me a film about how rockets work."]
+        )
+        self.assertEqual(self.images.calls, [])
+
+    async def test_ptt_stops_an_active_film(self):
+        cinema = StubCinema()
+        self.friend._cinema = cinema
+        await self.friend._start_film("Why do rockets fly?")
+        self.assertTrue(self.friend.film_active())
+        await self.friend.handle(PushToTalk(active=True))
+        if self.friend._ptt_open_task:
+            await self.friend._ptt_open_task
+        await self.friend.handle(PushToTalk(active=False))
+        self.assertEqual(cinema.stopped, 1)
+        self.assertFalse(self.friend.film_active())
+
+    async def test_select_stops_film(self):
+        cinema = StubCinema()
+        self.friend._cinema = cinema
+        await self.friend._start_film("Why do rockets fly?")
+        await self.friend.handle(Select())
+        self.assertEqual(cinema.stopped, 1)
+        self.assertFalse(self.friend.film_active())
+
+    async def test_desk_prefer_film_skips_the_still_director(self):
+        cinema = StubCinema()
+        self.friend._cinema = cinema
+        self.friend._prefers_device_film = True
+        director = FixedDirector(VisualDecision(route="still", subject="map"))
+        self.friend.visual_director = director
+        await self.friend.handle(TextLine(text="Why is the sky blue?"))
+        await asyncio.wait_for(asyncio.shield(self.friend._director_task), 1)
+        self.assertEqual(cinema.started, ["Why is the sky blue?"])
+        self.assertEqual(director.calls, [])
+        self.assertEqual(self.images.calls, [])

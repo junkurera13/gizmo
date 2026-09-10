@@ -1,8 +1,12 @@
-"""Opt-in XIAO bridge: buffer five seconds of Director, preload, then play PCM.
+"""XIAO film playback: buffer five seconds of Director, preload, then play PCM.
 
 Uses the existing authenticated Show routes and held-cue firmware contract.
 The browser stays the full-resolution reference. Physical synchronization and
 PSRAM/audio concurrency must still be accepted on a flashed board.
+
+`DeviceFilmPlayer` is the reusable glass/PCM engine. Friend owns conversation and
+invokes it as a capability. `DeviceFilm` remains a standalone socket loop for
+desk experiments; `/ws` no longer swaps the whole session into it.
 """
 
 from __future__ import annotations
@@ -87,56 +91,42 @@ def encode_segment(
     return DeviceSegment(saved, pcm, frames.frame_count)
 
 
-class DeviceFilm:
-    def __init__(self, socket, root, device):
-        self.socket = socket
-        self.root = root
-        self.device = device
-        self.settings = DeviceSettings(root / "devices" / device / "settings.json")
-        self.store = ShowStore(root / "devices" / device, device_id=device)
-        self.cinema = CinemaSession(
-            root / "cinema" / device, os.environ["FAL_KEY"], self.event
-        )
-        self.budget = FilmBudget(root)
-        self.lock = asyncio.Lock()
+class DeviceFilmPlayer:
+    """Held-cue MJPEG + original PCM playback for an active CinemaSession."""
+
+    def __init__(
+        self,
+        cinema,
+        store,
+        send,
+        acks,
+        *,
+        next_cue=None,
+        on_segment=None,
+        on_talking=None,
+        on_failed=None,
+    ):
+        self.cinema = cinema
+        self.store = store
+        self.send = send
+        self.acks = acks
+        self.next_cue = next_cue
+        self.on_segment = on_segment
+        self.on_talking = on_talking
+        self.on_failed = on_failed
         self.playback = None
-        self.input_task = None
-        self.acks = {}
-        self.mic = bytearray()
-        self.recording = False
-        self.powered = True
-        self.state = "listening"
 
-    async def send(self, event):
-        async with self.lock:
-            await self.socket.send_json(
-                {
-                    "state": self.state,
-                    "power": self.powered,
-                    "screen": self.powered,
-                    "transport": "director",
-                    **event,
-                }
-            )
+    def cue_for(self, revision, index):
+        if self.next_cue is not None:
+            return self.next_cue()
+        return revision * 100 + index + 1
 
-    async def event(self, event):
-        if event["type"] == "ready":
-            self.playback = asyncio.create_task(self.play(event["revision"]))
-            self.cinema.viewer.set()
-        elif event["type"] in {"error", "buffering"}:
-            # Don't let a provider stall advance the independent device PCM clock.
-            await self.stop()
-            await self.send(
-                {
-                    "type": "error",
-                    "message": event.get(
-                        "message", "Film paused while its pictures catch up."
-                    ),
-                }
-            )
-        elif event["type"] == "ended":
-            self.state = "listening"
-            await self.send({"type": "state"})
+    async def cancel_playback(self):
+        playback, self.playback = self.playback, None
+        if playback and playback is not asyncio.current_task():
+            playback.cancel()
+            await asyncio.gather(playback, return_exceptions=True)
+        self.acks.clear()
 
     async def capture(self, track, queue, prepared, revision):
         images = []
@@ -200,7 +190,7 @@ class DeviceFilm:
             segment = await asyncio.wait_for(queue.get(), 40 if index == 0 else 15)
             if segment is None:
                 return None
-            cue = revision * 100 + index + 1
+            cue = self.cue_for(revision, index)
             ready = asyncio.get_running_loop().create_future()
             self.acks[(cue, "motion")] = ready
             event = {
@@ -212,6 +202,8 @@ class DeviceFilm:
                 "subject": prepared.plan.title,
             }
             await self.send({**event, "hold": True})
+            if self.on_segment:
+                await self.on_segment(segment)
             return segment, event, ready
 
         pending = None
@@ -226,8 +218,8 @@ class DeviceFilm:
                 await self.send({**event, "go": True})
                 # The next held cue downloads during this segment's narration.
                 pending = asyncio.create_task(preload(index + 1))
-                self.state = "talking"
-                await self.send({"type": "state"})
+                if self.on_talking:
+                    await self.on_talking()
                 started = asyncio.get_running_loop().time()
                 for offset in range(0, len(segment.pcm), 11520):
                     wait = (
@@ -261,14 +253,16 @@ class DeviceFilm:
             raise
         except Exception:  # noqa: BLE001 - isolate device/provider failures
             await self.cinema.interrupt()
-            self.state = "listening"
-            await self.send({"type": "interrupted"})
-            await self.send(
-                {
-                    "type": "error",
-                    "message": "Film playback stopped; the last picture is retained.",
-                }
-            )
+            if self.on_failed:
+                await self.on_failed()
+            else:
+                await self.send({"type": "interrupted"})
+                await self.send(
+                    {
+                        "type": "error",
+                        "message": "Film playback stopped; the last picture is retained.",
+                    }
+                )
         finally:
             if pending:
                 pending.cancel()
@@ -277,11 +271,78 @@ class DeviceFilm:
             await asyncio.gather(capture, return_exceptions=True)
             self.acks.clear()
 
+
+class DeviceFilm:
+    def __init__(self, socket, root, device):
+        self.socket = socket
+        self.root = root
+        self.device = device
+        self.settings = DeviceSettings(root / "devices" / device / "settings.json")
+        self.store = ShowStore(root / "devices" / device, device_id=device)
+        self.cinema = CinemaSession(
+            root / "cinema" / device, os.environ["FAL_KEY"], self.event
+        )
+        self.budget = FilmBudget(root)
+        self.lock = asyncio.Lock()
+        self.input_task = None
+        self.acks = {}
+        self.mic = bytearray()
+        self.recording = False
+        self.powered = True
+        self.state = "listening"
+        self.player = DeviceFilmPlayer(
+            self.cinema,
+            self.store,
+            self.send,
+            self.acks,
+            on_talking=self._mark_talking,
+        )
+
+    @property
+    def playback(self):
+        return self.player.playback
+
+    @playback.setter
+    def playback(self, value):
+        self.player.playback = value
+
+    async def send(self, event):
+        async with self.lock:
+            await self.socket.send_json(
+                {
+                    "state": self.state,
+                    "power": self.powered,
+                    "screen": self.powered,
+                    "transport": "director",
+                    **event,
+                }
+            )
+
+    async def _mark_talking(self):
+        self.state = "talking"
+        await self.send({"type": "state"})
+
+    async def event(self, event):
+        if event["type"] == "ready":
+            self.playback = asyncio.create_task(self.player.play(event["revision"]))
+            self.cinema.viewer.set()
+        elif event["type"] in {"error", "buffering"}:
+            # Don't let a provider stall advance the independent device PCM clock.
+            await self.stop()
+            await self.send(
+                {
+                    "type": "error",
+                    "message": event.get(
+                        "message", "Film paused while its pictures catch up."
+                    ),
+                }
+            )
+        elif event["type"] == "ended":
+            self.state = "listening"
+            await self.send({"type": "state"})
+
     async def stop(self):
-        playback, self.playback = self.playback, None
-        if playback and playback is not asyncio.current_task():
-            playback.cancel()
-            await asyncio.gather(playback, return_exceptions=True)
+        await self.player.cancel_playback()
         await self.cinema.interrupt()
         self.state = "listening"
         await self.send({"type": "interrupted"})

@@ -29,7 +29,7 @@ NO_MOTION_SENTINELS = {
     "still",
 }
 
-DIRECTOR_INSTRUCTIONS = """You are Gizmo's silent visual director. You do not answer the kid. You only choose whether this one utterance should stay words, show a still illustration, show a moving illustration, or animate the illustration already on the glass.
+DIRECTOR_INSTRUCTIONS = """You are Gizmo's silent visual director. You do not answer the kid. You only choose whether this one utterance should stay words, show a still illustration, show a short moving illustration, play a narrated film, or animate the illustration already on the glass.
 
 Return exactly one structured decision.
 
@@ -94,12 +94,19 @@ STILL
 - Historical or geographic questions about where routes, regions, or places sit relative to one another get a still map.
 - An explicit request to draw, show, or make a picture gets a still unless meaningful change over time is the point.
 
+FILM
+- Use film for a moving narrated explanation of a process or mechanism: how a rocket lifts, why the Moon orbits, how a heart pumps. The film is the answer; it has its own voice over continuous generated pictures.
+- An explicit request for a film, movie, or cinematic explanation gets FILM.
+- Never film for stories. Never film for "make it move". Never film for appearance, maps, anatomy, or a short clip of a thing merely existing.
+- Prefer FILM over MOTION for science how/why explanations. MOTION is not the cinematic film.
+
 MOTION
 - An explicit request for a video, animation, or moving picture gets MOTION
-  for a new subject, or ANIMATE when it refers to the existing illustration.
+  for a new subject, or ANIMATE when it refers to the existing illustration,
+  unless the kid asked for a film/movie/cinematic explanation (that is FILM).
   Do not downgrade an explicit video request to a still merely because the
   subject could also be explained with a still.
-- Use motion only when seeing meaningful change over time explains the answer: a rocket lifting, a wave breaking, a heart beating, a volcano erupting, or the Moon orbiting Earth.
+- Use motion only when a short silent clip of change over time is enough and a narrated film is not: a jellyfish pulsing, clouds drifting over a story castle.
 - Never add motion merely because a subject is alive or capable of moving. Appearance, maps, anatomy, objects, and places remain still.
 - A story's opening or an actual move to a new setting gets one moving scene.
   This includes a setting change introduced by the narration after "Then what?".
@@ -129,7 +136,7 @@ For still or motion, subject is a short concrete noun phrase with the one import
 DIRECTOR_SCHEMA = {
     "type": "object",
     "properties": {
-        "route": {"type": "string", "enum": ["words", "still", "motion", "animate"]},
+        "route": {"type": "string", "enum": ["words", "still", "motion", "animate", "film"]},
         "subject": {"type": "string"},
         "motion": {"type": "string"},
         "story_setting": {"type": "string"},
@@ -195,6 +202,19 @@ def is_bare_animate_request(utterance: str) -> bool:
     return cleaned in {"animate it", "make it move", "make that move", "make this move", "move it"}
 
 
+def is_explicit_film_request(utterance: str) -> bool:
+    """A standalone ask for the narrated Cinema film, not a short clip."""
+    cleaned = " ".join(utterance.casefold().split())
+    if re.search(r"\b(story|chapter|tale|continue)\b", cleaned):
+        return False
+    return bool(re.search(
+        r"\b(film|movie|cinema|cinematic)\b|"
+        r"\b(explain|explanation)\b.{0,80}\b(video|film|movie|animation)\b|"
+        r"\b(video|film|movie)\b.{0,40}\b(explain|explanation)\b",
+        cleaned,
+    ))
+
+
 def is_explicit_visual_request(utterance: str) -> bool:
     """An explicit standalone visual can be directed before voice narration.
 
@@ -229,7 +249,7 @@ def decision_from_payload(
     # Scene identity, not the prose description of a shot, owns reuse. A model
     # can ask for a different pose in the same castle; that must not spend again.
     if (has_visual and setting and setting == current_setting
-            and route in {"still", "motion"}
+            and route in {"still", "motion", "film"}
             and payload.get("redraw_requested") is not True
             and not identity["new_story"]):
         route = "words"
@@ -237,6 +257,12 @@ def decision_from_payload(
         motion = ""
     if route == "animate":
         return VisualDecision(route="animate", motion=motion, story_setting=setting) if has_visual and motion else VisualDecision()
+    if route == "film":
+        if setting:
+            if subject:
+                return VisualDecision(route="still", subject=subject, story_setting=setting, kind=kind, **identity)
+            return VisualDecision()
+        return VisualDecision(route="film", subject=subject)
     if route == "motion":
         if subject and motion:
             return VisualDecision(route="motion", subject=subject, motion=motion, story_setting=setting, kind=kind, **identity)

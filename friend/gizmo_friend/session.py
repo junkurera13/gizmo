@@ -32,6 +32,7 @@ from gizmo_friend.brain.visual_director import (
     NO_MOTION_SENTINELS,
     VisualDirector,
     is_bare_animate_request,
+    is_explicit_film_request,
     is_explicit_visual_request,
     opening_narration,
     visual_director_from_env,
@@ -222,6 +223,8 @@ class GizmoSession:
         self._last_story_cue = 0
         self._glass_ready_timeout = 6.0
         self._story_audio_lead = STORY_AUDIO_LEAD_SECONDS
+        self._cinema = None
+        self._prefers_device_film = os.environ.get("GIZMO_DIRECTOR_DEVICE", "") == self.user_id
 
     @property
     def state(self) -> State:
@@ -346,6 +349,10 @@ class GizmoSession:
         if self.settings.select():
             await self.emit(self.settings.snapshot())
             return
+        if self.film_active():
+            await self._stop_film(reason="select")
+            await self._dismiss_show(reason="select", cancel_pending=False)
+            return
         if self.story is not None:
             # Select keeps its existing physical contract: dismiss the Show.
             # PTT pauses a story; spoken requests resume or steer it.
@@ -447,6 +454,8 @@ class GizmoSession:
             return
         result = self.settings.navigate(cleaned)
         if result != "ignored":
+            if self.settings.open:
+                await self._stop_film(reason="settings", announce=False)
             await self.emit(self.settings.snapshot())
             return
         await self.emit({"type": "navigate", "direction": cleaned})
@@ -468,6 +477,7 @@ class GizmoSession:
                 return
             self._cancel_visual_direction()
             self._cancel_pending_show()
+            await self._stop_film(reason="ptt", announce=False)
             await self._drop_hold(interrupt=False)
             if self.story is not None:
                 await self._pause_story(reason="ptt")
@@ -545,6 +555,7 @@ class GizmoSession:
         if not self._ready_for_input():
             return
         self._cancel_pending_show()
+        await self._stop_film(reason="text", announce=False)
         await self._drop_hold(interrupt=False)
         if self.story is not None:
             await self._pause_story(reason="text")
@@ -617,6 +628,9 @@ class GizmoSession:
         await self.visual_director.close()
         await self.story_planner.close()
         await self.narration.close()
+        if self._cinema is not None:
+            await self._cinema.close()
+            self._cinema = None
 
     def _ready_for_input(self) -> bool:
         return self.machine.state not in {State.POWERED_OFF, State.ASLEEP, State.BOOTING}
@@ -644,6 +658,9 @@ class GizmoSession:
                     await asyncio.sleep(min(remaining, 1.0))
                     continue
                 if self.machine.state is State.LISTENING and not self._ptt_pressed:
+                    if self.film_active():
+                        await asyncio.sleep(1.0)
+                        continue
                     await self._sleep(reason="idle")
                     return
                 await asyncio.sleep(1.0)
@@ -1019,10 +1036,16 @@ class GizmoSession:
                 self._cancel_pending_show()
             if kind == "done" and event.text:
                 await self.emit({"type": "transcript", "role": "gizmo", "text": event.text})
-            if self.machine.state is State.TALKING and self.machine.can("done") and not self._story_speaking():
+            if (
+                self.machine.state is State.TALKING
+                and self.machine.can("done")
+                and not self._story_speaking()
+                and not self.film_active()
+            ):
                 self.machine.apply("done")
             await self.emit({"type": "state"})
-            self._suppress_live_output = False
+            if not self.film_active():
+                self._suppress_live_output = False
             if kind == "done" and self._story_resume_after_done and self.story is not None:
                 # He answered the side question; the story picks up where it stopped.
                 self._story_resume_after_done = False
@@ -1057,9 +1080,14 @@ class GizmoSession:
             self._schedule_visual_direction(utterance, self._ask_revision)
 
     def _can_direct_before_voice(self, utterance: str) -> bool:
-        return is_bare_animate_request(utterance) or (
+        cleaned = utterance.strip()
+        if not cleaned:
+            return False
+        if self._prefers_device_film:
+            return True
+        return is_bare_animate_request(cleaned) or (
             not self.story_character and not self.current_story_setting
-            and is_explicit_visual_request(utterance)
+            and (is_explicit_visual_request(cleaned) or is_explicit_film_request(cleaned))
         )
 
     def _visual_elapsed(self) -> float:
@@ -1130,6 +1158,9 @@ class GizmoSession:
 
         async def direct() -> None:
             try:
+                if self._prefers_device_film:
+                    await self._start_film(cleaned)
+                    return
                 started = asyncio.get_running_loop().time()
                 decision = await self.visual_director.decide(
                     cleaned,
@@ -1174,7 +1205,15 @@ class GizmoSession:
                         self._character_reference = None
                     if not self.story_character:
                         self.story_character = decision.story_character
-                if decision.route == "animate":
+                if (
+                    decision.route != "film"
+                    and is_explicit_film_request(cleaned)
+                    and not decision.story_setting
+                ):
+                    decision = type(decision)(route="film", subject=decision.subject)
+                if decision.route == "film":
+                    await self._start_film(cleaned)
+                elif decision.route == "animate":
                     await self._animate({"motion": decision.motion})
                 elif decision.route in {"still", "motion"}:
                     arguments: dict[str, Any] = {"subject": decision.subject}
@@ -1201,9 +1240,83 @@ class GizmoSession:
             if announce:
                 await self.emit({"type": "state"})
 
+    def film_active(self) -> bool:
+        return bool(self._cinema and self._cinema.active)
+
+    def _cinema_capability(self):
+        if self._cinema is None:
+            from gizmo_friend.cinema.capability import FriendCinema
+            from gizmo_friend.cinema.routes import FilmBudget
+
+            self._cinema = FriendCinema(
+                directory=self.show_budget.root / "cinema" / self.user_id,
+                device_id=self.user_id,
+                store=self.shows,
+                emit=self.emit,
+                budget=FilmBudget(self.show_budget.root),
+                next_cue=self._issue_story_cue,
+                on_segment=self._on_film_segment,
+                on_talking=self._start_talking,
+                on_idle=self._on_film_idle,
+                on_failed=self._on_film_failed,
+            )
+        return self._cinema
+
+    async def _start_film(self, text: str) -> dict[str, Any]:
+        if self._cinema is None and not self._cue_listeners:
+            logger.info("Friend cinema skipped: no held-cue body")
+            return {"ok": False, "reason": "no glass cues"}
+        cinema = self._cinema_capability()
+        result = await cinema.start(text)
+        if not result.get("ok"):
+            logger.info("Friend cinema skipped: %s", result.get("reason"))
+            return result
+        self._suppress_live_output = True
+        await self._interrupt()
+        logger.info("Friend cinema started device=%s", self.user_id)
+        return result
+
+    async def _stop_film(self, *, reason: str = "interrupt", announce: bool = True) -> bool:
+        cinema = self._cinema
+        if cinema is None or not cinema.active:
+            return False
+        await cinema.stop()
+        if announce and self.machine.powered():
+            if self.machine.state is State.TALKING and self.machine.can("select"):
+                self.machine.apply("select")
+            await self.emit({"type": "interrupted", "reason": reason})
+        return True
+
+    async def _on_film_segment(self, segment) -> None:
+        self.current_show = segment.show
+        title = ""
+        if self._cinema and self._cinema.session and self._cinema.session.prepared:
+            title = self._cinema.session.prepared.plan.title
+        self.current_show_subject = title
+        self._show_visible_at = asyncio.get_running_loop().time()
+
+    async def _on_film_failed(self) -> None:
+        if self.machine.state is State.TALKING and self.machine.can("select"):
+            self.machine.apply("select")
+        await self.emit({"type": "interrupted"})
+        await self.emit(
+            {
+                "type": "error",
+                "message": "Film playback stopped; the last picture is retained.",
+            }
+        )
+
+    async def _on_film_idle(self) -> None:
+        if self.machine.state is State.TALKING and self.machine.can("done"):
+            self.machine.apply("done")
+        if not self.film_active():
+            self._suppress_live_output = False
+        await self.emit({"type": "state", "reason": "film"})
+
     async def _dismiss_show(self, reason: str, *, cancel_pending: bool = True) -> None:
         # Invalidate before any await: a late image cannot overtake a local
         # dismissal, sleep, power-off, or subsequent show.
+        await self._stop_film(reason=reason, announce=False)
         if cancel_pending:
             self._show_revision += 1
             if self._show_task and not self._show_task.done():
@@ -1740,9 +1853,13 @@ class GizmoSession:
         key = (event.cue, event.kind)
         future = self._glass_ready.get(key)
         if future is None:
+            if self._cinema is not None:
+                self._cinema.on_glass_ready(event.cue, event.kind, event.ok)
             return  # Only acknowledge cues actually offered by this session.
         if not future.done():
             future.set_result(event.ok)
+        if self._cinema is not None:
+            self._cinema.on_glass_ready(event.cue, event.kind, event.ok)
         # Keep only acks near the present; a body may report cues nobody waits for.
         for stale in [k for k in self._glass_ready if k[0] < event.cue - 4]:
             self._glass_ready.pop(stale, None)

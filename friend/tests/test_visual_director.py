@@ -7,6 +7,7 @@ from gizmo_friend.brain.visual_director import (
     VisualDecision,
     decision_from_payload,
     is_bare_animate_request,
+    is_explicit_film_request,
     is_explicit_visual_request,
 )
 from gizmo_friend.transport.gemini_live import live_config
@@ -50,6 +51,42 @@ class VisualDecisionTests(unittest.TestCase):
         for utterance in ("Tell me a story about a fox.", "Show me the next story chapter.", "Then what?", "Why is the sky blue?"):
             self.assertFalse(is_explicit_visual_request(utterance))
 
+    def test_film_requests_are_not_generic_short_videos(self):
+        for utterance in (
+            "Show me a film about how rockets work.",
+            "Make a movie explaining orbit.",
+            "A cinematic explanation of the heart.",
+            "Explain this with a video.",
+        ):
+            self.assertTrue(is_explicit_film_request(utterance))
+        for utterance in (
+            "Make a short video of a jellyfish.",
+            "Animate it.",
+            "Show me a volcano.",
+            "Tell me a story about a fox.",
+        ):
+            self.assertFalse(is_explicit_film_request(utterance))
+
+    def test_film_route_is_accepted_and_never_used_for_stories(self):
+        self.assertEqual(
+            decision_from_payload(
+                {"route": "film", "subject": "rocket exhaust", "motion": ""},
+                has_visual=False,
+            ),
+            VisualDecision(route="film", subject="rocket exhaust"),
+        )
+        self.assertEqual(
+            decision_from_payload(
+                {
+                    "route": "film",
+                    "subject": "castle at dusk",
+                    "motion": "clouds drift",
+                    "story_setting": "castle",
+                },
+                has_visual=False,
+            ).route,
+            "still",
+        )
     def test_stories_are_scenes_even_if_the_model_asks_for_a_diagram(self):
         payload = {
             "route": "motion", "subject": "submarine on the ocean floor",

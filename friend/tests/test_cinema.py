@@ -228,3 +228,90 @@ class AudioTimelineTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual([row["start"] for row in prepared.timings], [0, 0.1, 0.2])
         with wave.open(io.BytesIO(prepared.wav), "rb") as audio:
             self.assertEqual(audio.readframes(audio.getnframes()), b"\x01\x00" * 7200)
+
+
+class FakeFilmSession:
+    def __init__(self):
+        self.asked = []
+        self.interrupted = 0
+        self.closed = False
+        self.viewer = asyncio.Event()
+        self.revision = 1
+        self.prepared = None
+        self.stream = None
+
+    async def ask(self, text, **kwargs):
+        self.asked.append(text)
+
+    async def interrupt(self):
+        self.interrupted += 1
+
+    async def close(self):
+        self.closed = True
+
+
+class FriendCinemaTests(unittest.IsolatedAsyncioTestCase):
+    async def test_start_asks_the_existing_runtime_and_stop_interrupts(self):
+        from gizmo_friend.brain.shows import ShowStore
+        from gizmo_friend.cinema.capability import FriendCinema
+        from gizmo_friend.cinema.routes import FilmBudget
+
+        root = tempfile.TemporaryDirectory()
+        self.addCleanup(root.cleanup)
+        path = Path(root.name)
+        session = FakeFilmSession()
+        events = []
+        cinema = FriendCinema(
+            directory=path / "cinema" / "desk",
+            device_id="desk",
+            store=ShowStore(path / "devices" / "desk", device_id="desk"),
+            emit=events.append,
+            budget=FilmBudget(path),
+            session=session,
+        )
+        result = await cinema.start("Why do rockets fly?")
+        self.assertEqual(result, {"ok": True, "status": "preparing"})
+        self.assertEqual(session.asked, ["Why do rockets fly?"])
+        self.assertTrue(cinema.active)
+        await cinema.stop()
+        self.assertFalse(cinema.active)
+        self.assertEqual(session.interrupted, 1)
+        await cinema.close()
+        self.assertTrue(session.closed)
+
+
+class FriendSocketTests(unittest.TestCase):
+    def test_director_device_env_does_not_hijack_ws(self):
+        with (
+            tempfile.TemporaryDirectory() as root,
+            patch.dict(
+                "os.environ",
+                {
+                    "GEMINI_API_KEY": "test",
+                    "FAL_KEY": "test",
+                    "GIZMO_DIRECTOR_DEVICE": "desk-1",
+                    "GIZMO_DEVICE_TOKEN": "",
+                },
+                clear=False,
+            ),
+            TestClient(app_factory(Path(root))) as client,
+            client.websocket_connect(
+                "/ws",
+                headers={"x-gizmo-device": "desk-1", "x-gizmo-glass-cues": "1"},
+            ) as socket,
+        ):
+            hello = socket.receive_json()
+            self.assertEqual(hello["type"], "hello")
+            self.assertNotEqual(hello.get("transport"), "director")
+            glass = socket.receive_json()
+            self.assertEqual(glass["type"], "glass")
+            self.assertFalse(glass.get("viewing"))
+
+    def test_cinema_page_and_static_still_load(self):
+        with (
+            tempfile.TemporaryDirectory() as root,
+            TestClient(app_factory(Path(root))) as client,
+        ):
+            self.assertEqual(client.get("/cinema").status_code, 200)
+            self.assertEqual(client.get("/static/cinema.js").status_code, 200)
+            self.assertEqual(client.get("/static/cinema.css").status_code, 200)
