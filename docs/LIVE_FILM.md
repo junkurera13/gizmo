@@ -35,7 +35,7 @@ Browser provisioning off loopback requires:
 
 Cloud WebRTC/TURN reachability and throughput have **not** been verified on Railway.
 
-Friend owns the `/ws` session. Cinema is one capability that session can start and stop: the silent visual director may choose `film` for a moving narrated explanation, and Friend then reuses `cinema/runtime.py` (H3 Max Director) plus `DeviceFilmPlayer` to play 320×240 held-cue MJPEG and the original PCM on the body. PTT, Select, settings, stills, memory, and ordinary talk stay on `GizmoSession`. After the film ends or is interrupted, conversation returns to Friend. The old `GIZMO_DIRECTOR_DEVICE` whole-session swap is gone.
+Friend owns the `/ws` session. Cinema is one capability that session can start and stop: the silent visual director chooses `film` when a **moving explanation** is the right answer (how something works, what happens when, a process, cause-and-effect that benefits from motion). The kid does not need to say film, movie, or cinema. Friend then reuses `cinema/runtime.py` (H3 Max Director) plus `DeviceFilmPlayer` to play 320×240 held-cue MJPEG and the original PCM on the body. PTT, Select, settings, stills, memory, and ordinary talk stay on `GizmoSession`. After the film ends or is interrupted, conversation returns to Friend. The old `GIZMO_DIRECTOR_DEVICE` whole-session swap is gone.
 
 For a desk test that should prefer a film for every ask on one body, set `GIZMO_DIRECTOR_DEVICE=<exact-device-id>`. That is now a Friend routing hint, not a replacement brain. Leave it unset for normal conversation. Held-cue firmware (`X-Gizmo-Glass-Cues: 1`) is still required for on-device playback; without it the film cannot preload.
 

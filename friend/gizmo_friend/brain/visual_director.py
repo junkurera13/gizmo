@@ -85,28 +85,27 @@ STORY CONTINUITY (takes precedence over the generic STILL and MOTION rules)
 
 WORDS
 - Most utterances stay words.
-- Always words for feelings, emotional support, small talk, jokes, personal advice, people, and ordinary facts where seeing adds no understanding.
-- Simple classifications, definitions, dates, causes, and factual status questions stay words even when their subject could be illustrated.
-- A follow-up about the subject already on the glass stays words unless the kid explicitly asks to move it.
+- Always words for feelings, emotional support, small talk, greetings, jokes, personal advice, people, and ordinary facts where seeing adds no understanding.
+- Simple classifications, definitions, dates, counts, names, and math stay words even when their subject could be illustrated.
+- A follow-up about the subject already on the glass stays words unless the kid explicitly asks to move it or asks how that thing works as a process.
 
 STILL
 - Use a still when spatial understanding is the point: what something looks like, where it is, how parts fit, anatomy, a cross-section, a map, or a place.
 - Historical or geographic questions about where routes, regions, or places sit relative to one another get a still map.
-- An explicit request to draw, show, or make a picture gets a still unless meaningful change over time is the point.
+- An explicit request to draw, show, or make a picture gets a still unless the ask is a process unfolding over time (that is FILM).
 
 FILM
-- Use film for a moving narrated explanation of a process or mechanism: how a rocket lifts, why the Moon orbits, how a heart pumps. The film is the answer; it has its own voice over continuous generated pictures.
-- An explicit request for a film, movie, or cinematic explanation gets FILM.
-- Never film for stories. Never film for "make it move". Never film for appearance, maps, anatomy, or a short clip of a thing merely existing.
-- Prefer FILM over MOTION for science how/why explanations. MOTION is not the cinematic film.
+- The kid will not say "film", "movie", or "cinema". You still choose FILM when a moving explanation is the right answer.
+- Use film when the answer is a process, mechanism, or cause-and-effect that benefits from seeing change over time: how a rocket lifts, what happens when ice melts, why the Moon orbits, how a heart pumps, why the sky is blue, how rain forms. The film is the answer; it has its own voice over continuous generated pictures.
+- How X works, what happens when, how something is made, and why a physical thing behaves that way are FILM, not words, not a still, and not a short silent clip.
+- Never film for greetings, jokes, feelings, people, stories, homework steps, math, or "what does it look like".
+- Never film for "make it move" of an existing picture (that is ANIMATE).
+- Never film for appearance, maps, anatomy diagrams, or a short clip of a thing merely existing.
 
 MOTION
-- An explicit request for a video, animation, or moving picture gets MOTION
-  for a new subject, or ANIMATE when it refers to the existing illustration,
-  unless the kid asked for a film/movie/cinematic explanation (that is FILM).
-  Do not downgrade an explicit video request to a still merely because the
-  subject could also be explained with a still.
-- Use motion only when a short silent clip of change over time is enough and a narrated film is not: a jellyfish pulsing, clouds drifting over a story castle.
+- An explicit request for a short video or animation of a thing existing (a jellyfish pulsing, a rocket sitting there) gets MOTION for a new subject, or ANIMATE when it refers to the existing illustration. Do not downgrade that to a still.
+- A how/why/what-happens process is FILM, not MOTION, even if the kid never said film.
+- Use motion only when a short silent clip is enough and a narrated explanation is not: a jellyfish pulsing, clouds drifting over a story castle.
 - Never add motion merely because a subject is alive or capable of moving. Appearance, maps, anatomy, objects, and places remain still.
 - A story's opening or an actual move to a new setting gets one moving scene.
   This includes a setting change introduced by the narration after "Then what?".
@@ -202,19 +201,6 @@ def is_bare_animate_request(utterance: str) -> bool:
     return cleaned in {"animate it", "make it move", "make that move", "make this move", "move it"}
 
 
-def is_explicit_film_request(utterance: str) -> bool:
-    """A standalone ask for the narrated Cinema film, not a short clip."""
-    cleaned = " ".join(utterance.casefold().split())
-    if re.search(r"\b(story|chapter|tale|continue)\b", cleaned):
-        return False
-    return bool(re.search(
-        r"\b(film|movie|cinema|cinematic)\b|"
-        r"\b(explain|explanation)\b.{0,80}\b(video|film|movie|animation)\b|"
-        r"\b(video|film|movie)\b.{0,40}\b(explain|explanation)\b",
-        cleaned,
-    ))
-
-
 def is_explicit_visual_request(utterance: str) -> bool:
     """An explicit standalone visual can be directed before voice narration.
 
@@ -230,6 +216,57 @@ def is_explicit_visual_request(utterance: str) -> bool:
         r"(?:make|generate|create)\b.{0,40}\b(?:picture|image|video|animation|diagram|map)\b)",
         cleaned,
     ))
+
+
+def is_moving_explanation_ask(utterance: str) -> bool:
+    """A process or how-it-works ask. The kid does not need to say film.
+
+    Greetings, jokes, feelings, stories, appearance, and short clips of a
+    thing existing stay out. This never chooses the subject; it only marks
+    that a narrated moving explanation is the right grain.
+    """
+    cleaned = " ".join(utterance.casefold().split())
+    if not cleaned or is_bare_animate_request(utterance):
+        return False
+    if re.search(r"\b(story|chapter|tale|continue)\b", cleaned):
+        return False
+    if re.search(
+        r"\b(how are you|how's it going|whats up|what's up|i'm bored|im bored|"
+        r"feel|feeling|sad|happy|mad|angry|scared|lonely|love you|miss you|sorry)\b",
+        cleaned,
+    ):
+        return False
+    if re.search(
+        r"\bhow (?:old|many|much|far|big|tall|long|heavy|wide|often)\b|"
+        r"\b(homework|this problem|this sum|plus|minus|times|divide|equals|prime)\b",
+        cleaned,
+    ):
+        return False
+    if re.search(r"\bwhat does .{0,40}\blook like\b|\bwhere (?:is|was|are)\b", cleaned):
+        return False
+    if re.search(r"\b(film|movie|cinema|cinematic)\b", cleaned):
+        return True
+    if re.search(r"\bwhat happens\b|\bwhat would happen\b|\bwhat will happen\b", cleaned):
+        return True
+    if re.search(r"\bexplain how\b|\bshow me how\b|\bwalk me through\b|\bhow (?:do|does) that work\b", cleaned):
+        return True
+    if re.search(r"\bhow (?:do|does|did|can|could|would|is|are)\b", cleaned):
+        return True
+    if re.search(r"\bwhy (?:do|does|did|can|would|is|are)\b", cleaned):
+        return not re.search(
+            r"\b(you sad|you mad|you scared|my friend|my mom|my dad|my teacher)\b",
+            cleaned,
+        )
+    return False
+
+
+def prefer_film_route(decision: VisualDecision, utterance: str) -> VisualDecision:
+    """Process asks become film even if the model said still, motion, or words."""
+    if decision.story_setting or decision.route in {"animate", "film"}:
+        return decision
+    if is_moving_explanation_ask(utterance):
+        return VisualDecision(route="film", subject=decision.subject)
+    return decision
 
 
 def decision_from_payload(

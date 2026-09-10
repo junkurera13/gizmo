@@ -459,25 +459,33 @@ class FilmCapabilityTests(ShowSessionFixture):
         self.friend.visual_director = FixedDirector(
             VisualDecision(route="film", subject="rocket exhaust")
         )
-        await self.friend.handle(TextLine(text="Show me a film about how rockets work."))
+        await self.friend.handle(TextLine(text="How does a rocket actually take off?"))
         await asyncio.wait_for(asyncio.shield(self.friend._director_task), 1)
-        self.assertEqual(
-            cinema.started, ["Show me a film about how rockets work."]
-        )
+        self.assertEqual(cinema.started, ["How does a rocket actually take off?"])
         self.assertEqual(self.images.calls, [])
         self.assertTrue(self.friend._suppress_live_output)
 
-    async def test_explicit_film_overrides_a_still_decision(self):
+    async def test_how_it_works_becomes_film_without_saying_film(self):
+        cinema = StubCinema()
+        self.friend._cinema = cinema
+        self.friend.visual_director = FixedDirector(
+            VisualDecision(route="motion", subject="rocket", motion="it lifts")
+        )
+        await self.friend.handle(TextLine(text="How does a rocket actually take off?"))
+        await asyncio.wait_for(asyncio.shield(self.friend._director_task), 1)
+        self.assertEqual(cinema.started, ["How does a rocket actually take off?"])
+        self.assertEqual(self.images.calls, [])
+        self.assertTrue(self.friend._suppress_live_output)
+
+    async def test_process_ask_upgrades_a_still_decision_to_film(self):
         cinema = StubCinema()
         self.friend._cinema = cinema
         self.friend.visual_director = FixedDirector(
             VisualDecision(route="still", subject="rocket")
         )
-        await self.friend.handle(TextLine(text="Show me a film about how rockets work."))
+        await self.friend.handle(TextLine(text="Why do rockets fly?"))
         await asyncio.wait_for(asyncio.shield(self.friend._director_task), 1)
-        self.assertEqual(
-            cinema.started, ["Show me a film about how rockets work."]
-        )
+        self.assertEqual(cinema.started, ["Why do rockets fly?"])
         self.assertEqual(self.images.calls, [])
 
     async def test_ptt_stops_an_active_film(self):

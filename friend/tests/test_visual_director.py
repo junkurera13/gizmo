@@ -7,8 +7,9 @@ from gizmo_friend.brain.visual_director import (
     VisualDecision,
     decision_from_payload,
     is_bare_animate_request,
-    is_explicit_film_request,
     is_explicit_visual_request,
+    is_moving_explanation_ask,
+    prefer_film_route,
 )
 from gizmo_friend.transport.gemini_live import live_config
 
@@ -51,21 +52,64 @@ class VisualDecisionTests(unittest.TestCase):
         for utterance in ("Tell me a story about a fox.", "Show me the next story chapter.", "Then what?", "Why is the sky blue?"):
             self.assertFalse(is_explicit_visual_request(utterance))
 
-    def test_film_requests_are_not_generic_short_videos(self):
+    def test_moving_explanations_do_not_need_the_word_film(self):
         for utterance in (
-            "Show me a film about how rockets work.",
-            "Make a movie explaining orbit.",
-            "A cinematic explanation of the heart.",
-            "Explain this with a video.",
+            "How does a rocket actually take off?",
+            "What happens when ice melts?",
+            "Why is the sky blue?",
+            "Why do rockets fly?",
+            "How does a heart pump blood?",
+            "Explain how rain forms.",
+            "Show me how the Moon orbits.",
         ):
-            self.assertTrue(is_explicit_film_request(utterance))
+            self.assertTrue(is_moving_explanation_ask(utterance), utterance)
         for utterance in (
-            "Make a short video of a jellyfish.",
-            "Animate it.",
+            "Hi.",
+            "Tell me a joke.",
+            "How are you?",
+            "I'm sad.",
+            "Make it move.",
             "Show me a volcano.",
+            "Make a short video of a jellyfish.",
+            "Where was the Silk Road?",
+            "What does a trilobite look like?",
             "Tell me a story about a fox.",
+            "How old is the Moon?",
+            "How many hearts does an octopus have?",
         ):
-            self.assertFalse(is_explicit_film_request(utterance))
+            self.assertFalse(is_moving_explanation_ask(utterance), utterance)
+
+    def test_process_asks_upgrade_to_film_and_stories_do_not(self):
+        motion = VisualDecision(route="motion", subject="rocket", motion="it lifts")
+        self.assertEqual(
+            prefer_film_route(motion, "How does a rocket actually take off?").route,
+            "film",
+        )
+        self.assertEqual(
+            prefer_film_route(
+                VisualDecision(route="still", subject="rocket"),
+                "Why do rockets fly?",
+            ).route,
+            "film",
+        )
+        self.assertEqual(
+            prefer_film_route(motion, "Make a short video of a jellyfish.").route,
+            "motion",
+        )
+        self.assertEqual(
+            prefer_film_route(
+                VisualDecision(route="still", subject="Silk Road map"),
+                "Where was the Silk Road?",
+            ).route,
+            "still",
+        )
+        self.assertEqual(
+            prefer_film_route(
+                VisualDecision(route="motion", subject="castle", motion="clouds drift", story_setting="castle"),
+                "How does a rocket work?",
+            ).route,
+            "motion",
+        )
 
     def test_film_route_is_accepted_and_never_used_for_stories(self):
         self.assertEqual(

@@ -32,9 +32,10 @@ from gizmo_friend.brain.visual_director import (
     NO_MOTION_SENTINELS,
     VisualDirector,
     is_bare_animate_request,
-    is_explicit_film_request,
     is_explicit_visual_request,
+    is_moving_explanation_ask,
     opening_narration,
+    prefer_film_route,
     visual_director_from_env,
 )
 from gizmo_friend.body_protocol import (
@@ -1087,7 +1088,7 @@ class GizmoSession:
             return True
         return is_bare_animate_request(cleaned) or (
             not self.story_character and not self.current_story_setting
-            and (is_explicit_visual_request(cleaned) or is_explicit_film_request(cleaned))
+            and (is_explicit_visual_request(cleaned) or is_moving_explanation_ask(cleaned))
         )
 
     def _visual_elapsed(self) -> float:
@@ -1205,12 +1206,7 @@ class GizmoSession:
                         self._character_reference = None
                     if not self.story_character:
                         self.story_character = decision.story_character
-                if (
-                    decision.route != "film"
-                    and is_explicit_film_request(cleaned)
-                    and not decision.story_setting
-                ):
-                    decision = type(decision)(route="film", subject=decision.subject)
+                decision = prefer_film_route(decision, cleaned)
                 if decision.route == "film":
                     await self._start_film(cleaned)
                 elif decision.route == "animate":
