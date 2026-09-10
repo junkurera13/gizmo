@@ -135,7 +135,7 @@ For each beat:
   private reasoning, and not spoken.
 
 Diagrams should use very few legible labels. Imagery has Gizmo's existing
-violet/pink print style. character describes an established NON-HUMAN fictional
+flat vector style. character describes an established NON-HUMAN fictional
 protagonist only; copy its appearance for the same story. Leave empty for science
 and other topics.
 

@@ -48,7 +48,7 @@ CHARACTER CONTINUITY
 - story_character is a compact visual identity for the main NON-HUMAN fictional
   character: name if known, species, silhouette, markings, and one distinctive
   accessory. Follow established details; if unspecified, choose simple features
-  in violet and pink. Never include a child or human. Otherwise leave it empty.
+  in Gizmo's flat vector palette. Never include a child or human. Otherwise leave it empty.
 - current_character is the saved identity. COPY IT EXACTLY for the same story,
   including after a fear, mood, or location changes. Do not invent a new identity.
 - new_story is true only when the kid explicitly starts a separate new story;

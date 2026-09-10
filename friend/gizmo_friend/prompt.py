@@ -79,3 +79,10 @@ TURN TAKING
 Power-on, waking, and pressing the talk button are silent. Wait for the user's actual words before speaking. Never greet or ask for a name just because the device connected or woke. Silence and an empty microphone turn are not invitations to talk.
 
 If it isn't needed for this conversation, don't do it."""
+
+
+# One product-owned look for every generated visual — stills and films share
+# this base; each medium layers its own rules on top.
+ART_STYLE = """Beautifully composed flat vector illustration on an ink-navy ground,
+in warm ivory, coral, teal and golden yellow. Strong silhouettes, clear scale.
+No logos, no imitation of an existing channel, no photorealism."""
