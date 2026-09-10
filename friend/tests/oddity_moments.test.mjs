@@ -38,7 +38,7 @@ async function app() {
           session: 'a'.repeat(32), mode: 'moment',
           moment: options.headers?.['X-Oddity-Moment'] || 'birthday',
           moments: [
-            {id:'birthday', line:'How many more sleeps until my birthday?', demo:{prompt:'Gizmo, how many more sleeps until my birthday?', reply:'Eleven more sleeps.', sleeps:11}},
+            {id:'birthday', line:'How many more sleeps until my birthday?', demo:{prompt:'Gizmo, how many more sleeps until my birthday?', prompt_audio:'/static/demo-birthday-kid.mp3', reply:'Eleven more sleeps.', sleeps:11}},
             {id:'draw', line:'What should I draw?'},
           ],
         }),

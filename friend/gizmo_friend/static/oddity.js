@@ -4,7 +4,7 @@ import {createOrbit} from './oddity-orbit.mjs';
 import {createInteraction} from './oddity-interaction.mjs';
 import {createGlass} from './oddity-glass.mjs?v=gate30';
 const $ = (id) => document.getElementById(id);
-const stage = $('stage'), voice = $('voice'), film = $('film');
+const stage = $('stage'), voice = $('voice'), film = $('film'), demoAudio = $('demo-audio');
 let socket, awake = false, turn = '', queue = [], ready = false, playing = false;
 let controller, currentBeat, paused = false, muted = false, archive = [];
 let history = [], plan = [], recorder, stream, held = false, talkHeld = false, recordingTimer, progressTimer;
@@ -205,6 +205,12 @@ function demoSpeech(text, {child = false, signal} = {}) {
     synth.speak(utterance);
   });
 }
+async function playDemoRecording(src, signal) {
+  demoAudio.src = src; demoAudio.muted = muted; demoAudio.load();
+  const ended = mediaEnded(demoAudio, signal); ended.catch(() => {});
+  await startMedia(demoAudio, signal);
+  await ended;
+}
 function waitForAwake(signal) {
   return new Promise((resolve, reject) => {
     const started = Date.now();
@@ -239,6 +245,7 @@ function clearDemoVisual() {
 function stopDemo(clearVisual = true) {
   demoController?.abort(); demoController = null;
   globalThis.speechSynthesis?.cancel?.();
+  demoAudio.pause(); demoAudio.removeAttribute('src'); demoAudio.load();
   demoRunning = false; setTalkPressed(false);
   if (clearVisual) { clearDemoVisual(); setCaption(); }
   renderRail();
@@ -257,7 +264,8 @@ async function sayMoment() {
     setTalkPressed(true); $('talk').classList.add('recording');
     setCaption(item.demo.prompt);
     await delay(260, signal);
-    await demoSpeech(item.demo.prompt, {child:true, signal});
+    if (item.demo.prompt_audio) await playDemoRecording(item.demo.prompt_audio, signal);
+    else await demoSpeech(item.demo.prompt, {child:true, signal});
     setTalkPressed(false); $('talk').classList.remove('recording');
     setCaption(); status('Gizmo is thinking…', 'thinking');
     await delay(900, signal);
@@ -266,7 +274,8 @@ async function sayMoment() {
     history.push({role:'user', text:item.demo.prompt}, {role:'gizmo', text:item.demo.reply});
     renderNotes();
     status('Gizmo is answering…', 'playing');
-    await demoSpeech(item.demo.reply, {signal});
+    if (item.demo.reply_audio) await playDemoRecording(item.demo.reply_audio, signal);
+    else await demoSpeech(item.demo.reply, {signal});
     await delay(450, signal);
     status('Demo finished. Press replay to watch it again.', 'idle');
     demoPlayedMoment = item.id;
@@ -550,7 +559,7 @@ async function startMedia(media, signal) {
     if (signal.aborted) throw new DOMException('Stopped', 'AbortError');
     if (error.name !== 'NotAllowedError') throw error;
     $('play-blocked').hidden = false;
-    $('play-blocked').textContent = media === voice ? 'Tap to play narration' : 'Tap to play the scene';
+    $('play-blocked').textContent = media === film ? 'Tap to play the scene' : 'Tap to play narration';
     await new Promise((resolve) => {
       mediaWaitResolve = resolve;
       $('play-blocked').onclick = async () => {
@@ -770,7 +779,7 @@ $('select').onclick = onSelect;
 $('previous').onclick = () => glass.navigate('up');
 $('next').onclick = () => glass.navigate('down');
 $('home').onclick = goHome;
-$('sound').onclick = () => { muted = !muted; voice.muted = muted; film.muted = muted; $('sound').textContent = muted ? 'Sound off' : 'Sound on'; $('sound').setAttribute('aria-pressed', String(muted)); $('sound').setAttribute('aria-label', muted ? 'Unmute narration' : 'Mute narration'); };
+$('sound').onclick = () => { muted = !muted; voice.muted = muted; film.muted = muted; demoAudio.muted = muted; $('sound').textContent = muted ? 'Sound off' : 'Sound on'; $('sound').setAttribute('aria-pressed', String(muted)); $('sound').setAttribute('aria-label', muted ? 'Unmute narration' : 'Mute narration'); };
 $('expand').onclick = async () => { try { if (document.fullscreenElement) await document.exitFullscreen(); else await document.documentElement.requestFullscreen(); } catch { notice('Fullscreen is unavailable in this browser.'); } };
 document.addEventListener('fullscreenchange', () => $('expand').setAttribute('aria-label', document.fullscreenElement ? 'Exit fullscreen' : 'Enter fullscreen'));
 $('help').onclick = () => $('help-dialog').showModal(); $('open-notes').onclick = () => $('notes-dialog').showModal();

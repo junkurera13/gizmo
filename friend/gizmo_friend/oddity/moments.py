@@ -73,6 +73,7 @@ _register(
         ),
         demo={
             "prompt": "Gizmo, how many more sleeps until my birthday?",
+            "prompt_audio": "/static/demo-birthday-kid.mp3",
             "reply": "Eleven more sleeps. I checked. Your birthday is getting properly close.",
             "sleeps": 11,
         },
