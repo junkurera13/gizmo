@@ -14,12 +14,16 @@ class Moment:
     line: str
     seed: str | Callable[[], str]
     contract: str
+    demo: dict[str, object] | None = None
 
     def seed_text(self) -> str:
         return self.seed() if callable(self.seed) else self.seed
 
-    def public(self) -> dict[str, str]:
-        return {"id": self.id, "line": self.line}
+    def public(self) -> dict[str, object]:
+        payload: dict[str, object] = {"id": self.id, "line": self.line}
+        if self.demo:
+            payload["demo"] = self.demo
+        return payload
 
 
 def _today():
@@ -67,6 +71,11 @@ _register(
             "from memory. Answer with the number of sleeps, warmly and briefly. A small "
             "generated visual of the wait is welcome; do not ask them to restate the date."
         ),
+        demo={
+            "prompt": "Gizmo, how many more sleeps until my birthday?",
+            "reply": "Eleven more sleeps. I checked. Your birthday is getting properly close.",
+            "sleeps": 11,
+        },
     ),
     Moment(
         id="draw",
@@ -130,7 +139,7 @@ _register(
 )
 
 
-def catalog() -> list[dict[str, str]]:
+def catalog() -> list[dict[str, object]]:
     return [MOMENTS[key].public() for key in ORDER if key in MOMENTS]
 
 

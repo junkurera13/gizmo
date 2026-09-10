@@ -38,7 +38,7 @@ async function app() {
           session: 'a'.repeat(32), mode: 'moment',
           moment: options.headers?.['X-Oddity-Moment'] || 'birthday',
           moments: [
-            {id:'birthday', line:'How many more sleeps until my birthday?'},
+            {id:'birthday', line:'How many more sleeps until my birthday?', demo:{prompt:'Gizmo, how many more sleeps until my birthday?', reply:'Eleven more sleeps.', sleeps:11}},
             {id:'draw', line:'What should I draw?'},
           ],
         }),
@@ -50,7 +50,7 @@ async function app() {
   });
   context.globalThis = context;
   let source = await fs.readFile(new URL('../gizmo_friend/static/oddity.js', import.meta.url), 'utf8');
-  source = source.replace(/^import .*;\n/gm, '').replace(/\nsyncPower\(\);[\s\S]*$/, '');
+  source = source.replace(/^import .*;\r?\n/gm, '').replace(/\r?\nsyncPower\(\);[\s\S]*$/, '');
   vm.runInContext(source, context);
   vm.runInContext('mountDevice = async () => {}; deviceReady = true; awake = true; socket = {readyState:1, send(){}};', context);
   return {element, context, fetches, run: code => vm.runInContext(code, context)};
@@ -63,6 +63,17 @@ test('embedded player shows the current kid line on the rail', async () => {
   ui.run('syncMoment("draw")');
   assert.equal(ui.element('moments').hidden, false);
   assert.equal(ui.element('moment-line').textContent, 'What should I draw?');
+});
+
+test('only completed moments expose a playable demo', async () => {
+  const ui = await app();
+  ui.run('moments = [{id:"birthday", line:"How many more sleeps until my birthday?", demo:{prompt:"Gizmo, how many more sleeps until my birthday?", reply:"Eleven more sleeps.", sleeps:11}}, {id:"draw", line:"What should I draw?"}]');
+  ui.run('syncMoment("birthday")');
+  assert.equal(ui.element('moment-say').disabled, false);
+  assert.equal(ui.element('moment-say').textContent, 'Play demo');
+  ui.run('syncMoment("draw")');
+  assert.equal(ui.element('moment-say').disabled, true);
+  assert.equal(ui.element('moment-say').textContent, 'Coming soon');
 });
 
 test('lab mode keeps the rail hidden', async () => {

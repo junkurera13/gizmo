@@ -27,7 +27,7 @@ async function controller(getUserMedia) {
     WebSocket:{OPEN:1}, MediaRecorder:class {}, Image:class {}, captionChunks:()=>[],captionAt:()=>'',console});
   window.MediaRecorder = context.MediaRecorder;
   let source = await fs.readFile(new URL('../gizmo_friend/static/oddity.js',import.meta.url),'utf8');
-  source = source.replace(/^import .*;\n/gm, '').replace(/\nsyncPower\(\);[\s\S]*$/, '');
+  source = source.replace(/^import .*;\r?\n/gm, '').replace(/\r?\nsyncPower\(\);[\s\S]*$/, '');
   vm.runInContext(source,context);
   vm.runInContext('awake = true; socket = {readyState:1, send(){}};',context);
   return {element,context,windowEvents,run:code=>vm.runInContext(code,context)};

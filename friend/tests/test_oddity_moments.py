@@ -21,6 +21,8 @@ class MomentCatalogTests(unittest.TestCase):
         self.assertEqual(len(public), 6)
         self.assertNotIn("seed", public[0])
         self.assertNotIn("contract", public[0])
+        self.assertEqual(public[0]["demo"]["sleeps"], 11)
+        self.assertNotIn("demo", public[1])
         self.assertTrue(lookup("trex").contract)
         self.assertIsNone(lookup("missing"))
 

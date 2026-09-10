@@ -55,6 +55,7 @@ let moments = [];
 let momentIndex = 0;
 let momentId = stored(MOMENT_KEY);
 let pendingSay = '';
+let demoController, demoRunning = false, demoPlayedMoment = '', demoVisualVisible = false;
 voice.addEventListener('timeupdate', () => {
   if (playing && currentBeat?.audio && !voice.paused) setCaption(captionAt(captions, voice.currentTime, voice.duration));
 });
@@ -124,6 +125,12 @@ function renderRail() {
   }
   rail.hidden = false;
   $('moment-line').textContent = item.line;
+  const button = $('moment-say');
+  const playable = Boolean(item.demo);
+  button.disabled = demoRunning || !playable;
+  button.textContent = demoRunning ? 'Playing…' : playable ? (demoPlayedMoment === item.id ? 'Replay demo' : 'Play demo') : 'Coming soon';
+  button.classList.toggle('is-playing', demoRunning);
+  rail.classList.toggle('is-playing', demoRunning);
 }
 function syncMoment(id) {
   if (id) momentId = id;
@@ -154,6 +161,7 @@ function resetConversation() {
 }
 async function selectMoment(index) {
   if (!playMoments || !moments.length) return;
+  stopDemo();
   const next = (index + moments.length) % moments.length;
   const nextId = moments[next].id;
   if (nextId === momentId && socket && socket.readyState === WebSocket.OPEN) {
@@ -169,15 +177,103 @@ async function selectMoment(index) {
   resetConversation();
   await connect(undefined, {fresh: true});
 }
-function sayMoment() {
+function demoSpeech(text, {child = false, signal} = {}) {
+  const synth = globalThis.speechSynthesis;
+  const Voice = globalThis.SpeechSynthesisUtterance;
+  if (muted || !synth || !Voice) return delay(Math.max(1200, text.length * 42), signal);
+  return new Promise((resolve, reject) => {
+    const utterance = new Voice(text);
+    const voices = synth.getVoices?.() || [];
+    const english = voices.filter(voice => /^en(?:-|_)/i.test(voice.lang || ''));
+    const preferred = child
+      ? /samantha|zira|aria|jenny|ava|sonia/i
+      : /daniel|guy|ryan|davis|george/i;
+    utterance.voice = english.find(voice => preferred.test(voice.name)) || english[child ? 0 : Math.min(1, english.length - 1)] || null;
+    utterance.rate = child ? 1.03 : 0.9;
+    utterance.pitch = child ? 1.3 : 0.78;
+    utterance.volume = 1;
+    const clean = () => signal?.removeEventListener('abort', abort);
+    const done = () => { clean(); resolve(); };
+    const abort = () => { synth.cancel(); clean(); reject(new DOMException('Stopped', 'AbortError')); };
+    utterance.onend = done;
+    utterance.onerror = done;
+    signal?.addEventListener('abort', abort, {once:true});
+    if (signal?.aborted) return abort();
+    synth.cancel();
+    synth.speak(utterance);
+  });
+}
+function waitForAwake(signal) {
+  return new Promise((resolve, reject) => {
+    const started = Date.now();
+    function check() {
+      if (signal.aborted) return reject(new DOMException('Stopped', 'AbortError'));
+      if (awake) return resolve();
+      if (Date.now() - started > 8000) return reject(new Error('Gizmo took too long to wake up. Try again.'));
+      setTimeout(check, 50);
+    }
+    check();
+  });
+}
+function showBirthdayVisual(sleeps) {
+  const visual = $('birthday-demo');
+  $('birthday-count').textContent = String(sleeps);
+  $('birthday-moons').replaceChildren(...Array.from({length:sleeps}, (_, index) => {
+    const moon = document.createElement('i');
+    moon.style.setProperty('--moon', index);
+    return moon;
+  }));
+  $('still').hidden = true; film.hidden = true; film.removeAttribute('src'); film.load();
+  orbitView?.hide(); screenOrbit = false;
+  visual.hidden = false; visual.setAttribute('aria-hidden', 'false');
+  stage.classList.add('has-scene'); demoVisualVisible = true;
+}
+function clearDemoVisual() {
+  if (!demoVisualVisible) return;
+  const visual = $('birthday-demo');
+  visual.hidden = true; visual.setAttribute('aria-hidden', 'true');
+  stage.classList.remove('has-scene'); demoVisualVisible = false;
+}
+function stopDemo(clearVisual = true) {
+  demoController?.abort(); demoController = null;
+  globalThis.speechSynthesis?.cancel?.();
+  demoRunning = false; setTalkPressed(false);
+  if (clearVisual) { clearDemoVisual(); setCaption(); }
+  renderRail();
+}
+async function sayMoment() {
   const item = currentMoment();
-  if (!item) return;
-  if (!awake) {
-    pendingSay = item.line;
-    wake();
-    return;
+  if (!item?.demo || demoRunning) return;
+  await unlockAudio();
+  interrupt(); clearDemoVisual();
+  const ownController = new AbortController();
+  demoController = ownController; demoRunning = true; renderRail();
+  const signal = ownController.signal;
+  try {
+    if (!awake) { wake(); await waitForAwake(signal); }
+    status('Listen to the question…', 'listening');
+    setTalkPressed(true); $('talk').classList.add('recording');
+    setCaption(item.demo.prompt);
+    await delay(260, signal);
+    await demoSpeech(item.demo.prompt, {child:true, signal});
+    setTalkPressed(false); $('talk').classList.remove('recording');
+    setCaption(); status('Gizmo is thinking…', 'thinking');
+    await delay(900, signal);
+    showBirthdayVisual(Number(item.demo.sleeps) || 11);
+    setCaption(item.demo.reply);
+    history.push({role:'user', text:item.demo.prompt}, {role:'gizmo', text:item.demo.reply});
+    renderNotes();
+    status('Gizmo is answering…', 'playing');
+    await demoSpeech(item.demo.reply, {signal});
+    await delay(450, signal);
+    status('Demo finished. Press replay to watch it again.', 'idle');
+    demoPlayedMoment = item.id;
+  } catch (error) {
+    if (error.name !== 'AbortError') { notice(error.message || 'The demo could not be played. Try again.'); clearDemoVisual(); }
+  } finally {
+    if (demoController === ownController) demoController = null;
+    demoRunning = false; setTalkPressed(false); $('talk').classList.remove('recording'); renderRail();
   }
-  submitThought(item.line);
 }
 async function connect(previewCode, options = {}) {
   if (socket && socket.readyState < WebSocket.CLOSING) return;
@@ -285,6 +381,7 @@ function syncPower() {
   $('power-state').textContent = on ? 'On' : 'Off';
 }
 function sleep() {
+  stopDemo();
   glass.powerOff();
 }
 function onGlassOff() {
@@ -651,7 +748,7 @@ $('preview-form').onsubmit = (event) => {
   remember(CODE_KEY, code); $('preview-error').textContent = ''; connect(code);
 };
 $('composer').onsubmit = (event) => { event.preventDefault(); submitThought($('thought').value); };
-$('talk').onpointerdown = pressTalk;
+$('talk').onpointerdown = (event) => { if (demoRunning) stopDemo(); pressTalk(event); };
 $('talk').onpointerup = releaseTalk;
 $('talk').onpointercancel = () => { setTalkPressed(false); cancelRecording(); };
 $('talk').onlostpointercapture = () => { if (held) releaseTalk(); };
@@ -679,7 +776,7 @@ document.querySelectorAll('[data-close]').forEach(button => button.onclick = () 
 document.querySelectorAll('.starters button').forEach(button => button.onclick = () => submitThought(button.textContent));
 $('moment-prev').onclick = () => selectMoment(momentIndex - 1);
 $('moment-next').onclick = () => selectMoment(momentIndex + 1);
-$('moment-say').onclick = sayMoment;
+$('moment-say').onclick = () => sayMoment();
 const typing = () => (document.activeElement?.id !== 'talk' && ['INPUT','TEXTAREA','BUTTON','SUMMARY'].includes(document.activeElement?.tagName)) || document.querySelector('dialog[open]');
 window.addEventListener('keydown', (event) => {
   if (!$('preview-gate').hidden) return;
@@ -693,7 +790,7 @@ window.addEventListener('keydown', (event) => {
 window.addEventListener('keyup', (event) => { if (event.code === 'Space') { event.preventDefault(); releaseTalk(); } });
 window.addEventListener('blur', () => { setTalkPressed(false); if (held) cancelRecording(); });
 document.addEventListener('visibilitychange', () => { if (document.hidden) { setTalkPressed(false); cancelRecording(); if (playing && !paused) togglePause(); } });
-window.addEventListener('pagehide', () => { expectedClose = true; setTalkPressed(false); cancelRecording(); stopPlayer(); socket?.close(); });
+window.addEventListener('pagehide', () => { expectedClose = true; stopDemo(); setTalkPressed(false); cancelRecording(); stopPlayer(); socket?.close(); });
 syncPower();
 glass = createGlass(stage, {
   ready: onGlassReady,
