@@ -84,6 +84,24 @@ f
   HTTPS URL above afterward.
 - TLS errors must fail closed; do not disable certificate verification.
 
+## 5. Settings brightness and volume
+
+LED is tied to 3V3, so there is no backlight PWM. Firmware dims the pixels.
+
+- From home send `u` (or press Up). Expected: `state IDLE -> SETTINGS`.
+- Brightness is the first row. Send `e` to adjust, then `u` / `d` several steps.
+  Expected: the panel visibly brightens and darkens; serial `settings: brightness=… (pixel gain)`.
+  `?` reports `backlight=tied_3v3` and `pixel_gain` moving with the step (46 at 0, 255 at 10).
+  Step 0 must stay readable.
+- Send `e` to leave adjust, `d` to Volume, `e` to adjust. Each `u` / `d` should play a
+  short local tick (not Friend speech). Louder toward 10, silent at 0. Serial
+  `settings: volume=…`.
+- Leave Settings (`e` then `d` past Volume, or `h`). Play the local memo (Select
+  while Friend is offline) or a Friend reply: loudness must follow the Volume
+  step. Boot chime on the next reset should too. Brightness must still apply on
+  home, Camera, and Show frames.
+- Values persist across reset (`settings: brightness=… volume=… (nvs)` in the boot log).
+
 For a failure, send the commit (`git rev-parse --short HEAD`), boot log, `?`, `f`,
 `i`, the failing action, and whether it fails consistently. Omit the `K…` line,
 Wi-Fi passwords, and other secrets. A short camera/speaker video is useful.

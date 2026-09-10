@@ -1,5 +1,6 @@
 #include "gizmo/display.h"
 #include "gizmo/board.h"
+#include "gizmo/settings.h"
 #include <Arduino.h>
 #include <SPI.h>
 
@@ -147,13 +148,18 @@ esp_err_t Display::begin() {
   return ESP_OK;
 }
 
+void Display::set_pixel_gain(uint8_t duty) {
+  pixel_gain_ = duty;
+}
+
 void Display::fill(uint16_t color) {
   if (!ready_) return;
   uint16_t line[320];
   const int rows = height_;
   const int cols = width_;
   if (cols <= 0 || rows <= 0 || cols > 320) return;
-  for (int i = 0; i < cols; ++i) line[i] = color;
+  const uint16_t scaled = dim_rgb565(color, pixel_gain_);
+  for (int i = 0; i < cols; ++i) line[i] = scaled;
   SPI.beginTransaction(SPISettings(kSpiHz, MSBFIRST, SPI_MODE0));
   window(0, 0, cols - 1, rows - 1);
   digitalWrite(board::display_dc, HIGH);
@@ -174,12 +180,18 @@ void Display::blit_rgb565(const uint16_t* pixels, int width, int height) {
   window(0, 0, cols - 1, rows - 1);
   digitalWrite(board::display_dc, HIGH);
   digitalWrite(board::display_cs, LOW);
-  if (width == cols) {
+  const uint32_t row_bytes = static_cast<uint32_t>(cols) * 2;
+  if (pixel_gain_ >= 255 && width == cols) {
     SPI.writePixels(pixels, static_cast<uint32_t>(cols) * rows * 2);
-  } else {
-    const uint32_t row_bytes = static_cast<uint32_t>(cols) * 2;
+  } else if (pixel_gain_ >= 255) {
     for (int y = 0; y < rows; ++y) {
       SPI.writePixels(pixels + y * width, row_bytes);
+    }
+  } else {
+    uint16_t line[320];
+    for (int y = 0; y < rows; ++y) {
+      apply_pixel_gain(line, pixels + y * width, static_cast<size_t>(cols), pixel_gain_);
+      SPI.writePixels(line, row_bytes);
     }
   }
   digitalWrite(board::display_cs, HIGH);

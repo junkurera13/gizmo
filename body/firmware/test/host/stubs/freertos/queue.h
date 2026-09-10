@@ -1,5 +1,6 @@
 #pragma once
 #include <freertos/FreeRTOS.h>
+#include <cstdlib>
 #include <mutex>
 #include <deque>
 #include <vector>

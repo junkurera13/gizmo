@@ -45,6 +45,8 @@ constexpr uint32_t kLiveRedrawMs = 80;    // VU / progress refresh cadence
 constexpr uint32_t kIdleRedrawMs = 1000;  // HUD change check
 constexpr uint32_t kDoubleSelectMs = 320;  // matches the Mac simulator
 constexpr time_t kEpochKnown = 1600000000;  // clock is hidden below this
+static_assert(gizmo::kVolumeTickRate == gizmo::Audio::kSampleRate,
+              "volume tick must match the device speaker rate");
 
 gizmo::Camera camera;
 gizmo::Display display;
@@ -176,14 +178,24 @@ void set_clock(int hour, int minute) {
 }
 
 void apply_brightness() {
-  // LED is tied to 3V3 on the current build, so there is no duty to drive.
+  const uint8_t duty = gizmo::backlight_duty(settings.brightness, settings.steps);
+  display.set_pixel_gain(duty);
   if (gizmo::board::display_bl >= 0) {
-    ledcWrite(1, gizmo::backlight_duty(settings.brightness, settings.steps));
+    ledcWrite(1, duty);
   }
 }
 
 void apply_volume() {
   audio.set_volume(settings.volume, settings.steps);
+}
+
+void play_volume_tick() {
+  if (!audio_ok || audio.recording() || settings.volume == 0) return;
+  // Hear the new step on an idle speaker. Do not cut Friend speech or a memo.
+  if (audio.live_playing() || audio.playing_memo()) return;
+  if (!audio.start_clip(gizmo::volume_tick(), gizmo::kVolumeTickSamples)) {
+    Serial.println("settings: volume tick start failed");
+  }
 }
 
 void save_settings() {
@@ -377,14 +389,21 @@ void settings_button(gizmo::Button button) {
   using gizmo::Button;
   uint8_t& value = settings.focus == 0 ? settings.brightness : settings.volume;
   if (settings.adjusting) {
+    const uint8_t before = value;
     if (button == Button::kUp && value < settings.steps) ++value;
     if (button == Button::kDown && value > 0) --value;
     if (button == Button::kSelect) {
       settings.adjusting = false;
       save_settings();
     }
-    if (settings.focus == 0) apply_brightness(); else apply_volume();
-    Serial.printf("settings: %s=%u\n", settings.focus == 0 ? "brightness" : "volume", value);
+    if (settings.focus == 0) {
+      apply_brightness();
+    } else {
+      apply_volume();
+      if (value != before) play_volume_tick();
+    }
+    Serial.printf("settings: %s=%u%s\n", settings.focus == 0 ? "brightness" : "volume", value,
+                  settings.focus == 0 ? " (pixel gain)" : "");
   } else {
     if (button == Button::kUp && settings.focus > 0) --settings.focus;
     if (button == Button::kDown) {
@@ -641,12 +660,12 @@ void command(char value) {
     case '?':
       show_player.diagnose();
       Serial.printf("state=%s camera=%s audio=%s memo=%ums wifi=%s friend=%s display=%s rotation=%u heap=%u "
-                    "psram_free=%u backlight=%s brightness=%u volume=%u clock_wght=%d\n",
+                    "psram_free=%u backlight=%s pixel_gain=%u brightness=%u volume=%u clock_wght=%d\n",
                     state_name(state), camera.running() ? "running" : "off",
                     audio_ok ? "ready" : "failed", audio.memo_ms(), gizmo::wifi_phase_name(wifi.phase()),
                     gizmo::friend_phase_name(friend_link.phase()),
                     display.ready() ? "commands_sent" : "off", display.rotation(),
-                    ESP.getFreeHeap(), ESP.getFreePsram(), backlight_wiring(),
+                    ESP.getFreeHeap(), ESP.getFreePsram(), backlight_wiring(), display.pixel_gain(),
                     settings.brightness, settings.volume, gizmo::assets::kClockWeight);
       break;
     default:
@@ -710,6 +729,12 @@ void setup() {
   haptic.begin();
 
   const auto panel = display.begin();
+  load_settings();
+  if (gizmo::board::display_bl >= 0) {
+    ledcSetup(1, 5000, 8);
+    ledcAttachPin(gizmo::board::display_bl, 1);
+  }
+  apply_brightness();
   state_since = millis();
   render();
 
@@ -720,10 +745,11 @@ void setup() {
   }
   Serial.println("Gizmo / XIAO ESP32S3 Sense / terminal OS");
   Serial.printf("flash=%u psram=%u\n", ESP.getFlashChipSize(), ESP.getPsramSize());
-  Serial.printf("display begin: %s ILI9341 %dx%d sck=%d mosi=%d cs=%d dc=%d rst=tied_3v3 bl=%s\n",
+  Serial.printf("display begin: %s ILI9341 %dx%d sck=%d mosi=%d cs=%d dc=%d rst=tied_3v3 bl=%s pixel_gain=%u\n",
                 esp_err_to_name(panel), display.width(), display.height(),
                 gizmo::board::display_sck, gizmo::board::display_mosi,
-                gizmo::board::display_cs, gizmo::board::display_dc, backlight_wiring());
+                gizmo::board::display_cs, gizmo::board::display_dc, backlight_wiring(),
+                display.pixel_gain());
   Serial.printf("assets: boot %d slots/%d frames @%ums, chime at %ums (%u samples @%uHz), splash %ums, hearts %dpx, "
                 "clock atlas %dx%d wght=%d\n",
                 gizmo::assets::kBootSlots, gizmo::assets::kBootUniqueFrames, gizmo::assets::kBootFramePeriodMs,
@@ -731,17 +757,11 @@ void setup() {
                 gizmo::assets::kChimeSampleRate, gizmo::assets::kBootMinimumMs, gizmo::assets::kHeartAssetSide,
                 gizmo::assets::kClockAtlasWidth, gizmo::assets::kClockAtlasHeight, gizmo::assets::kClockWeight);
 
-  load_settings();
-  if (gizmo::board::display_bl >= 0) {
-    ledcSetup(1, 5000, 8);
-    ledcAttachPin(gizmo::board::display_bl, 1);
-  }
   input.begin();
   battery.begin();
   const auto sound = audio.begin();
   audio_ok = sound == ESP_OK;
   apply_volume();
-  apply_brightness();
   Serial.printf("audio begin: %s mic=I2S0 PDM clk=%d data=%d speaker=D9/GPIO%d LEDC-PWM 9bit/62.5kHz device=%uHz memo=%us wire=%uHz\n",
                 esp_err_to_name(sound), gizmo::board::microphone_clock, gizmo::board::microphone_data,
                 gizmo::board::amp_out,

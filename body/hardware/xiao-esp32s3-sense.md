@@ -114,7 +114,7 @@ shows `NO BAT`.
 | Select, Up, Down | Ladder above is designed, not yet soldered; confirm decoded mV with the `i` serial key |
 | Power and battery | Switch circuit, battery/charging arrangement; divider moves to D5 |
 | Storage | Sense microSD slot is reserved but unused; GPIO8 is the speaker PWM pin so the slot cannot be used with audio |
-| Backlight PWM | LED is currently tied to 3V3; a GPIO is required before `backlight_duty` can drive hardware |
+| Backlight PWM | LED is currently tied to 3V3; Settings brightness scales RGB565 on blit until a GPIO exists |
 
 Do not assign external pins from a generic ESP32 diagram. Check camera, PDM,
 microSD, flash/PSRAM, USB, and boot-strapping reservations before approving the

@@ -90,7 +90,7 @@ they show full, matching the simulator's default level.
 | `IDLE` | home: character, clock (when set), hearts | PTT down → `RECORDING` (and Friend `ptt` if `/ws` is up); UP → `SETTINGS`; Down or serial `d` → `CAMERA`; double-Select (≤320 ms) → `CAMERA`; single Select → local memo `PLAYBACK` if Friend is down, or Friend `select` if `/ws` is up |
 | `RECORDING` | PTT held; 16 kHz PDM mic → PSRAM memo (20 s cap) and, when Friend is online, resampled 24 kHz chunks on `/ws`; REC band with VU over the home character (skipped if PTT started from Camera) | PTT up or buffer full → `IDLE` (Camera stays Camera) |
 | `PLAYBACK` | memo → I2S_NUM_1 at 16 kHz and the Volume setting; PLAY band with progress over the character | end of memo or SELECT → `IDLE`; PTT → `RECORDING` |
-| `SETTINGS` | two rows, Brightness / Volume. Local menu; not yet the Friend `settings` overlay | UP/DOWN move rows, SELECT toggles adjust (UP/DOWN change the level, auto-repeat on hold), DOWN past Volume → `IDLE`. Values persist in NVS |
+| `SETTINGS` | two rows, Brightness / Volume. Local menu; not yet the Friend `settings` overlay. Brightness scales RGB565 on blit (LED is tied to 3V3). Volume scales PCM and plays a short local tick on each step | UP/DOWN move rows, SELECT toggles adjust (UP/DOWN change the level, auto-repeat on hold), DOWN past Volume → `IDLE`. Values persist in NVS |
 | `CAMERA` | Down / serial `d` / double-Select / serial `c`. 78% viewfinder + 22% character strip. Local preview only: no Friend `navigate` or `frame` | Up, single Select, double-Select, serial `x` / `h` → `IDLE` |
 
 All inputs are polled and debounced with `millis()`; audio DMA is pumped in
@@ -243,8 +243,9 @@ listening check of memo playback, boot chime, and Friend inbound PCM
 (`kMicGain` in `audio.cpp` is a fixed x4),
 Friend-owned Settings / `navigate` / Show-frame fetch / vision `frame`, and a
 wake-audio buffer across reconnect. Phone Wi-Fi setup is on-device; a later
-app can replace the captive portal. LED stays tied to 3V3 until a PWM pin is
-assigned; do not claim backlight PWM until then. Preserve audio-only PTT.
+app can replace the captive portal. LED stays tied to 3V3; Settings brightness
+scales the framebuffer on blit instead of PWM until a backlight GPIO exists.
+Preserve audio-only PTT.
 Camera world entry and the 78/22 layout are in this firmware; agent vision is
 not.
 
