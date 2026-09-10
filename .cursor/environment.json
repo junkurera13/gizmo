@@ -1,0 +1,15 @@
+{
+  "name": "Gizmo",
+  "install": "bash .cursor/install.sh",
+  "terminals": [
+    {
+      "name": "gizmo-brain",
+      "command": ". .venv/bin/activate && gizmo --host 127.0.0.1 --port 43147"
+    },
+    {
+      "name": "web",
+      "command": "cd web && npm run dev -- --port 3000"
+    }
+  ],
+  "ports": [43147, 3000]
+}
