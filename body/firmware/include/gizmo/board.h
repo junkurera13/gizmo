@@ -23,6 +23,7 @@ constexpr int microphone_clock = 42;
 // ILI9341 MSP2807 (Akizuki 116265). Builder pin table 2026-09-06.
 // XIAO D8=GPIO7 SCK, D10=GPIO9 MOSI, D7=GPIO44 CS, D6=GPIO43 DC.
 // RESET and LED are tied to 3V3; MISO and all T_ touch pins are disconnected.
+// Brightness therefore scales RGB565 at blit time until a backlight GPIO exists.
 constexpr int display_sck = 7;
 constexpr int display_mosi = 9;
 constexpr int display_cs = 44;
