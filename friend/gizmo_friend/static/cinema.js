@@ -3,6 +3,7 @@ const video = $('film'), freeze = $('freeze');
 let socket, peer, revision = 0, duration = 0, startTime = null, ending = false;
 let recorder, microphone, held = false, recordingTimer;
 let connectionPromise, muted = false, displayedTitle = '', nextTitle = '', recordingRevision = 0, requestId = 0;
+let warmPromise = null, warming = 0, warmed = 0, canPlay = false;
 const metrics = [];
 window.gizmoFilmMetrics = metrics; // Local acceptance evidence; no provider credentials.
 function phase(name, message) {
@@ -21,9 +22,9 @@ function freezeFilm() {
   video.pause(); video.muted = true;
   $('resume').hidden = true;
 }
-function detach() { peer?.close(); peer = null; video.srcObject = null; startTime = null; }
+function detach() { peer?.close(); peer = null; video.srcObject = null; startTime = null; warmed = 0; }
 function interrupt() {
-  ++requestId;freezeFilm(); send({type:'interrupt',request_id:requestId}); detach();
+  ++requestId;freezeFilm(); canPlay=false; warmPromise=null; send({type:'interrupt',request_id:requestId}); detach();
   ending = true; $('title').textContent = displayedTitle; phase('paused', 'I’m listening. Where should we go from here?');
   $('ask').placeholder = 'Ask a question, change direction, or say “go on”…';
 }
@@ -52,7 +53,7 @@ async function ensureConnection() {
 }
 async function ask(text) {
   text = text.trim(); if (!text) return;
-  const askId=++requestId;stopRecording();freezeFilm(); detach(); ending = true;
+  const askId=++requestId;stopRecording();freezeFilm(); canPlay=false; duration=0; warmPromise=null; detach(); ending = true;
   phase('thinking', 'Thinking it through…'); nextTitle='';
   $('progress').firstElementChild.style.width='0%';$('progress').setAttribute('aria-valuenow','0');
   try {
@@ -61,43 +62,58 @@ async function ask(text) {
     $('ask').placeholder = 'You can ask something while it plays…';
   } catch(error) {phase('error',error.message);}
 }
-async function attach(event) {
-  const generation = event.revision;
-  detach(); duration = event.duration; startTime = null; ending = false;
-  const pc = new RTCPeerConnection(); peer = pc;
-  pc.addTransceiver('video',{direction:'recvonly'});
-  pc.addTransceiver('audio',{direction:'recvonly'});
-  const media = new MediaStream();
-  pc.ontrack = e => {media.addTrack(e.track);video.srcObject=media;};
-  pc.onconnectionstatechange = () => {
-    if (peer === pc && pc.connectionState === 'failed') {
-      interrupt();phase('error','The picture connection dropped. Try again.');
+async function ensurePeer(generation) {
+  if (warmed === generation && peer) return;
+  if (warmPromise && warming === generation) return warmPromise;
+  const work = (async () => {
+    warming = generation;
+    detach();
+    startTime = null;
+    ending = false;
+    const pc = new RTCPeerConnection(); peer = pc;
+    try {
+      pc.addTransceiver('video',{direction:'recvonly'});
+      pc.addTransceiver('audio',{direction:'recvonly'});
+      const media = new MediaStream();
+      pc.ontrack = e => {media.addTrack(e.track);video.srcObject=media;};
+      pc.onconnectionstatechange = () => {
+        if (peer === pc && pc.connectionState === 'failed') {
+          interrupt();phase('error','The picture connection dropped. Try again.');
+        }
+      };
+      await pc.setLocalDescription(await pc.createOffer());
+      if (pc.iceGatheringState !== 'complete') await new Promise((resolve,reject) => {
+        const timer=setTimeout(()=>reject(new Error('Connection timed out.')),8000);
+        pc.addEventListener('icegatheringstatechange',()=>{if(pc.iceGatheringState==='complete'){clearTimeout(timer);resolve();}});
+      });
+      if (peer!==pc || revision!==generation) { pc.close(); return; }
+      const response=await fetch('/cinema/offer',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({revision:generation,sdp:pc.localDescription.sdp})});
+      if(!response.ok) throw new Error('Could not receive the film.');
+      const answer=await response.json();
+      if(peer!==pc || revision!==generation){pc.close();return;}
+      await pc.setRemoteDescription(answer);
+      warmed = generation;
+    } catch(error) {
+      if(peer===pc){interrupt();phase('error',error.message);}
+      pc.close();
     }
-  };
-  try {
-    await pc.setLocalDescription(await pc.createOffer());
-    if (pc.iceGatheringState !== 'complete') await new Promise((resolve,reject) => {
-      const timer=setTimeout(()=>reject(new Error('Connection timed out.')),8000);
-      pc.addEventListener('icegatheringstatechange',()=>{if(pc.iceGatheringState==='complete'){clearTimeout(timer);resolve();}});
-    });
-    const response=await fetch('/cinema/offer',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({revision:generation,sdp:pc.localDescription.sdp})});
-    if(!response.ok) throw new Error('Could not receive the film.');
-    const answer=await response.json();
-    if(peer!==pc || revision!==generation){pc.close();return;}
-    await pc.setRemoteDescription(answer);
-    video.muted=muted;
-    try{await video.play();}catch{$('resume').hidden=false;}
-  } catch(error) {
-    if(peer===pc){interrupt();phase('error',error.message);}
-    pc.close();
-  }
+  })();
+  warmPromise = work;
+  try { await work; }
+  finally { if (warmPromise === work) warmPromise = null; }
+}
+async function startPlayback() {
+  if (!canPlay || warmed !== revision || !duration || ending) return;
+  video.muted = muted;
+  ending = false;
+  try { await video.play(); } catch { $('resume').hidden = false; }
 }
 function handle(event) {
   if(event.request_id !== undefined && event.request_id !== null && event.request_id !== requestId)return;
   metrics.push({...event,at:performance.now()}); if(metrics.length>250)metrics.shift();
   if(event.type==='status'){revision=event.revision??revision;phase(event.phase,event.message);}
-  if(event.type==='plan' && event.revision===revision) nextTitle=event.title;
-  if(event.type==='ready' && event.revision===revision) {phase('preparing','Opening the scene…');attach(event);}
+  if(event.type==='plan' && event.revision===revision) {nextTitle=event.title;ensurePeer(event.revision);}
+  if(event.type==='ready' && event.revision===revision) {duration=event.duration;canPlay=true;phase('preparing','Opening the scene…');ensurePeer(event.revision).then(startPlayback);}
   if(event.type==='playing' && event.revision===revision) {phase('preparing','The first frame is arriving…');}
   if(event.type==='buffering' && event.revision===revision) phase('buffering','Holding that thought…');
   if(event.type==='heard') $('ask').value=event.text;
