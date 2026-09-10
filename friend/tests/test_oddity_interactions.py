@@ -9,7 +9,7 @@ from gizmo_friend.oddity.director import Beat, Experience, Interaction
 from gizmo_friend.oddity.interactions import orbit_result
 from gizmo_friend.oddity.runtime import ExperienceSession
 from gizmo_friend.brain.memory import NullMemoryProvider
-from test_oddity import FakeDirector, FakeImages, FakeClips
+from test_oddity import FakeDirector, FakeImages, FakeCinema
 
 class InteractionTests(unittest.IsolatedAsyncioTestCase):
     async def asyncSetUp(self):
@@ -19,7 +19,7 @@ class InteractionTests(unittest.IsolatedAsyncioTestCase):
         self.director = FakeDirector([Beat(narration='Try a different speed.', visual='orbit', purpose='Explore falling',
             interaction=Interaction(kind='orbit', prompt='What changes when you launch faster?'))])
         self.session = ExperienceSession(Path(self.temp.name), 'a'*32, send, director=self.director,
-            images=FakeImages(), clips=FakeClips(), memory=NullMemoryProvider())
+            images=FakeImages(), cinema=FakeCinema(), memory=NullMemoryProvider())
 
     async def asyncTearDown(self):
         await self.session.close(); self.temp.cleanup()
@@ -68,7 +68,7 @@ class InteractionTests(unittest.IsolatedAsyncioTestCase):
         await self.session.close()
         async def send(event): pass
         restored = ExperienceSession(Path(self.temp.name), 'a'*32, send, director=self.director,
-            images=FakeImages(), clips=FakeClips(), memory=NullMemoryProvider())
+            images=FakeImages(), cinema=FakeCinema(), memory=NullMemoryProvider())
         self.assertTrue(restored.current['awaiting'])
         self.assertEqual(restored.turn, ack['turn'])
         self.assertEqual(restored.journey['goal'], 'Understand orbit')

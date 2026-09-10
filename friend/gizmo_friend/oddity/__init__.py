@@ -1,1 +1,1 @@
-"""OddityOS browser preview: coordinated narration, imagery and video."""
+"""OddityOS browser preview: coordinated narration, imagery and Cinema film."""

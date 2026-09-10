@@ -251,7 +251,10 @@ def is_moving_explanation_ask(utterance: str) -> bool:
         cleaned,
     ) and not re.search(r"\b(how|why|what happens|explain)\b", cleaned):
         return False
-    if re.search(r"\bwhat happens\b|\bwhat would happen\b|\bwhat will happen\b", cleaned):
+    if re.search(
+        r"\bwhat happens\b|\bwhat would happen\b|\bwhat will happen\b|\bwhat if\b",
+        cleaned,
+    ):
         return True
     if re.search(
         r"\bexplain how\b|\bshow me how\b|\bwalk me through\b|\bhow (?:do|does) that work\b",

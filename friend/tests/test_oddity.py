@@ -10,16 +10,17 @@ from unittest.mock import patch
 from urllib.parse import urlsplit
 
 from fastapi.testclient import TestClient
-from pydantic import ValidationError
-
 from gizmo_friend.brain.memory import NullMemoryProvider
 from gizmo_friend.oddity.director import Beat, Experience
+from gizmo_friend.oddity.film import FilmReady, OddityCinema, route_moving_picture
 from gizmo_friend.oddity.runtime import ExperienceSession
 from gizmo_friend.server import app_factory
+from pydantic import ValidationError
 
 
 def beat(visual="face", narration="A useful opening."):
-    return Beat(narration=narration, visual=visual, subject="Jupiter's atmosphere" if visual in {"video", "image"} else "",
+    return Beat(narration=narration, visual=visual,
+                subject="Jupiter's atmosphere" if visual in {"video", "image", "film", "diagram"} else "",
                 motion="Cloud bands circle the planet" if visual == "video" else "", purpose="Explain the idea")
 
 
@@ -41,17 +42,47 @@ class FakeImages:
     async def close(self): pass
 
 
-class FakeClips:
-    def __init__(self): self.started = asyncio.Event(); self.cancelled = asyncio.Event(); self.block = False
-    async def animate(self, *args):
+class FakeCinema:
+    def __init__(self):
+        self.asked = []
+        self.started = asyncio.Event()
+        self.cancelled = asyncio.Event()
+        self.block = False
+        self.fail = False
+        self.available_flag = True
+        self.finished = []
+        self.closed = False
+        self.interrupted = 0
+
+    def available(self):
+        return self.available_flag
+
+    async def start(self, text):
+        self.asked.append(text)
         self.started.set()
         try:
-            if self.block: await asyncio.Event().wait()
-            return SimpleNamespace(mp4=b"test video")
+            if self.block:
+                await asyncio.Event().wait()
+            if self.fail:
+                return None
+            return FilmReady(revision=1, duration=8.0, title="Jupiter",
+                             narration="Clouds race around the giant.")
         except asyncio.CancelledError:
             self.cancelled.set()
             raise
-    async def close(self): pass
+
+    async def offer(self, sdp, revision, local=False):
+        return {"sdp": "answer", "type": "answer"}
+
+    async def finish(self, revision):
+        self.finished.append(revision)
+
+    async def interrupt(self):
+        self.interrupted += 1
+
+    async def close(self):
+        self.closed = True
+        await self.interrupt()
 
 
 class OddityTests(unittest.IsolatedAsyncioTestCase):
@@ -59,31 +90,37 @@ class OddityTests(unittest.IsolatedAsyncioTestCase):
         self.tmp = tempfile.TemporaryDirectory(); self.root = Path(self.tmp.name)
         self.events = []
         self.director = FakeDirector([beat(), beat("video")])
-        self.clips = FakeClips()
+        self.cinema = FakeCinema()
         async def send(event): self.events.append(event)
         self.session = ExperienceSession(self.root, "a" * 32, send, director=self.director,
-                                         images=FakeImages(), clips=self.clips, memory=NullMemoryProvider())
+                                         images=FakeImages(), cinema=self.cinema, memory=NullMemoryProvider())
 
     async def asyncTearDown(self):
         await self.session.close(); self.tmp.cleanup()
 
-    async def test_prepares_ordered_video_with_narration_and_private_media(self):
+    async def test_prepares_ordered_film_with_cinema_and_no_mp4(self):
         await self.session.begin("What if I fell into Jupiter?"); await self.session.task
         beats = [e["beat"] for e in self.events if e["type"] == "beat"]
         self.assertEqual([b["index"] for b in beats], [0, 1])
-        self.assertTrue(urlsplit(beats[1]["video"]).path.endswith(".mp4"))
-        self.assertTrue(urlsplit(beats[1]["audio"]).path.endswith(".wav"))
-        self.assertTrue((self.session.directory / Path(urlsplit(beats[1]["video"]).path).name).exists())
+        self.assertEqual(beats[1]["visual"], "film")
+        self.assertEqual(beats[1]["film"]["revision"], 1)
+        self.assertEqual(beats[1]["film"]["duration"], 8.0)
+        self.assertIsNone(beats[1]["video"])
+        self.assertIsNone(beats[1]["audio"])
+        self.assertTrue(urlsplit(beats[0]["audio"]).path.endswith(".wav"))
+        self.assertEqual(self.cinema.asked, ["What if I fell into Jupiter?"])
         self.assertEqual([m["role"] for m in self.session.history], ["user"])
+        self.assertFalse(any(path.suffix == ".mp4" for path in self.session.directory.glob("*")))
 
-    async def test_interrupt_cancels_video_and_never_records_unseen_script(self):
-        self.clips.block = True
-        await self.session.begin("Jupiter"); old_turn = self.session.turn
-        await asyncio.wait_for(self.clips.started.wait(), 2)
+    async def test_interrupt_cancels_cinema_and_never_records_unseen_script(self):
+        self.cinema.block = True
+        await self.session.begin("What if I fell into Jupiter?"); old_turn = self.session.turn
+        await asyncio.wait_for(self.cinema.started.wait(), 2)
         await self.session.stop()
-        self.assertTrue(self.clips.cancelled.is_set())
+        self.assertTrue(self.cinema.cancelled.is_set())
+        self.assertGreaterEqual(self.cinema.interrupted, 1)
         self.assertFalse(any(m["role"] == "assistant" for m in self.session.history))
-        self.assertFalse(any(e["type"] == "beat" and e["beat"]["visual"] == "video" for e in self.events))
+        self.assertFalse(any(e["type"] == "beat" and e["beat"]["visual"] == "film" for e in self.events))
         before = len(self.events)
         await self.session.event("beat", old_turn, beat={})
         self.assertEqual(before, len(self.events))
@@ -110,20 +147,44 @@ class OddityTests(unittest.IsolatedAsyncioTestCase):
         self.assertTrue(self.session.current["interrupted"])
         async def send(event): pass
         restored = ExperienceSession(self.root, "a"*32, send, director=FakeDirector([beat()]),
-                                     images=FakeImages(), clips=FakeClips(), memory=NullMemoryProvider())
+                                     images=FakeImages(), cinema=FakeCinema(), memory=NullMemoryProvider())
         self.assertEqual(restored.current["narration"], one["narration"])
         self.assertEqual(len(restored.history), 1)
         await restored.close()
 
-    async def test_image_failure_is_explicit_and_does_not_spend_on_video(self):
+    async def test_image_failure_is_explicit_and_does_not_start_cinema(self):
+        self.director.beats = [beat(), beat("image")]
         async def no_image(*args, **kwargs): return None
         self.session.images.conjure = no_image
-        await self.session.begin("Jupiter"); await self.session.task
+        await self.session.begin("Show me Jupiter."); await self.session.task
         two = [e["beat"] for e in self.events if e["type"] == "beat"][1]
         self.assertEqual(two["visual"], "keep")
         self.assertTrue(two["warnings"])
-        self.assertIsNone(two["video"])
-        self.assertFalse(self.clips.started.is_set())
+        self.assertIsNone(two["film"])
+        self.assertEqual(self.cinema.asked, [])
+
+    async def test_easy_ask_does_not_start_cinema(self):
+        await self.session.begin("Hi"); await self.session.task
+        beats = [e["beat"] for e in self.events if e["type"] == "beat"]
+        self.assertEqual(beats[1]["visual"], "image")
+        self.assertIsNone(beats[1]["film"])
+        self.assertTrue(beats[1]["image"])
+        self.assertEqual(self.cinema.asked, [])
+
+    async def test_only_one_film_per_turn(self):
+        self.director.beats = [beat("image"), beat("video")]
+        await self.session.begin("How does a rocket actually take off?"); await self.session.task
+        beats = [e["beat"] for e in self.events if e["type"] == "beat"]
+        self.assertEqual([b["visual"] for b in beats], ["film", "image"])
+        self.assertEqual(self.cinema.asked, ["How does a rocket actually take off?"])
+
+    async def test_film_finish_acks_cinema(self):
+        await self.session.begin("What if I fell into Jupiter?"); await self.session.task
+        film_beat = next(e["beat"] for e in self.events if e["type"] == "beat" and e["beat"]["visual"] == "film")
+        ack = {"turn": self.session.turn, "id": film_beat["id"]}
+        await self.session.playback({**ack, "phase": "started"})
+        await self.session.playback({**ack, "phase": "finished"})
+        self.assertEqual(self.cinema.finished, [1])
 
     async def test_kept_scene_is_revisitable_and_home_clears_director_context(self):
         self.director.beats = [beat("image"), beat("keep")]
@@ -140,7 +201,27 @@ class OddityTests(unittest.IsolatedAsyncioTestCase):
 
     def test_plan_rejects_incoherent_media(self):
         with self.assertRaises(ValidationError): Beat(narration="Hi", visual="video", purpose="Missing brief")
-        with self.assertRaises(ValidationError): Experience(title="Too many clips", beats=[beat("video")] * 3)
+        with self.assertRaises(ValidationError): Beat(narration="Hi", visual="film", purpose="Missing brief")
+        with self.assertRaises(ValidationError): Experience(title="Too many films", beats=[beat("video"), beat("film")])
+
+    def test_runtime_does_not_call_clip_provider(self):
+        import inspect
+
+        from gizmo_friend.oddity import runtime
+        source = inspect.getsource(runtime)
+        self.assertNotIn("ClipProvider", source)
+        self.assertNotIn("clips.animate", source)
+        self.assertNotIn("H3MaxClipProvider", source)
+
+    def test_moving_picture_gate_matches_friend(self):
+        filmed = route_moving_picture(Experience(title="Jupiter", beats=[beat(), beat("video")]),
+                                      "What if I fell into Jupiter?")
+        self.assertEqual([b.visual for b in filmed.beats], ["face", "film"])
+        stills = route_moving_picture(Experience(title="Hello", beats=[beat(), beat("video")]), "Hi")
+        self.assertEqual([b.visual for b in stills.beats], ["face", "image"])
+        diagram = route_moving_picture(Experience(title="Map", beats=[beat("diagram")]),
+                                       "How does a rocket actually take off?")
+        self.assertEqual(diagram.beats[0].visual, "diagram")
 
 
 class OddityRouteTests(unittest.TestCase):
@@ -253,6 +334,55 @@ class OddityRouteTests(unittest.TestCase):
                         "/oddity/ws?session=" + session,
                         headers={"origin":"https://unrelated.example"},
                     ): pass
+
+    def test_offer_requires_same_origin_live_session(self):
+        with (
+            tempfile.TemporaryDirectory() as directory,
+            patch.dict("os.environ", {"GIZMO_DEVICE_TOKEN": "", "RAILWAY_ENVIRONMENT_ID": ""}),
+            TestClient(app_factory(Path(directory))) as client,
+        ):
+            payload = {"sdp": "v=0", "revision": 1}
+            self.assertEqual(client.post("/oddity/offer", json=payload).status_code, 403)
+            session = client.post("/oddity/session").json()["session"]
+            missing = client.post(
+                "/oddity/offer", json=payload, params={"session": session},
+                headers={"origin": "http://testserver"},
+            )
+            self.assertEqual(missing.status_code, 404)
+            self.assertEqual(client.get("/cinema").status_code, 200)
+            self.assertEqual(client.get("/static/cinema.js").status_code, 200)
+
+
+class OddityCinemaTests(unittest.IsolatedAsyncioTestCase):
+    async def test_start_reuses_cinema_runtime_and_offer_attaches(self):
+        from unittest.mock import AsyncMock
+
+        from gizmo_friend.cinema.plan import FilmBeat, FilmPlan, PreparedFilm
+        from test_cinema import FakeStream
+
+        root = tempfile.TemporaryDirectory()
+        self.addCleanup(root.cleanup)
+        plan = FilmPlan(
+            title="Rocket",
+            beats=[FilmBeat(narration="Hot gas goes down.", action="Show exhaust moving down.")],
+            thread="propulsion",
+        )
+        maker = AsyncMock()
+        maker.plan.return_value = plan
+        maker.prepare.return_value = PreparedFilm(plan, "https://audio.fal.media/test.wav", 10, b"fake")
+        cinema = OddityCinema(
+            directory=Path(root.name) / "oddity" / ("a" * 32),
+            fal_key="test",
+            maker=maker,
+            stream_factory=FakeStream,
+        )
+        ready = await cinema.start("How does a rocket actually take off?")
+        self.assertEqual(ready.title, "Rocket")
+        self.assertEqual(ready.duration, 10)
+        self.assertGreaterEqual(ready.revision, 1)
+        answer = await cinema.offer("offer", ready.revision)
+        self.assertEqual(answer["sdp"], "answer")
+        await cinema.close()
 
 
 if __name__ == "__main__": unittest.main()

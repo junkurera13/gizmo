@@ -11,7 +11,7 @@ from zoneinfo import ZoneInfo
 from gizmo_friend.brain.memory import NullMemoryProvider
 from gizmo_friend.oddity.moments import ORDER, catalog, lookup
 from gizmo_friend.oddity.runtime import ExperienceSession
-from test_oddity import FakeClips, FakeDirector, FakeImages, beat
+from test_oddity import FakeCinema, FakeDirector, FakeImages, beat
 
 
 class MomentCatalogTests(unittest.TestCase):
@@ -49,7 +49,7 @@ class MomentRuntimeTests(unittest.IsolatedAsyncioTestCase):
         directory.joinpath("session.json").write_text(json.dumps(payload))
         async def send(event): pass
         friend = ExperienceSession(self.root, identity, send, director=self.director,
-                                   images=FakeImages(), clips=FakeClips(), memory=NullMemoryProvider())
+                                   images=FakeImages(), cinema=FakeCinema(), memory=NullMemoryProvider())
         return friend
 
     async def test_seed_memory_and_contract_are_injected(self):
@@ -82,4 +82,11 @@ class MomentRuntimeTests(unittest.IsolatedAsyncioTestCase):
         await friend.begin("What happened to Pompeii?")
         await friend.task
         self.assertTrue((self.root / "oddity-show-usage.json").exists())
+        await friend.close()
+
+    async def test_moment_process_ask_reserves_film(self):
+        friend = await self._session("e" * 32, {"mode": "moment", "moment": "pompeii"})
+        await friend.begin("What if I fell into Jupiter?")
+        await friend.task
+        self.assertTrue((self.root / "oddity-motion-usage.json").exists())
         await friend.close()

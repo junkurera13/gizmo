@@ -1,5 +1,6 @@
 """Gizmo's narrated, steerable film experience.
 
 Browser preview: `routes.py` (`/cinema`). Device playback: `device.py`.
-Friend invokes the same runtime as a capability via `capability.py`.
+Friend and Oddity invoke the same runtime as a capability (`capability.py`,
+`oddity/film.py`).
 """
