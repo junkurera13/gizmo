@@ -190,7 +190,7 @@ class VisualDecisionTests(unittest.TestCase):
             for tool in tools
             for declaration in tool.get("function_declarations", [])
         }
-        self.assertEqual(names, {"deep_think", "set_expression"})
+        self.assertEqual(names, {"deep_think"})
 
 
 if __name__ == "__main__":

@@ -60,7 +60,7 @@ main{padding:0 16px}.simulator{width:min(650px,100%,calc((100svh - 180px)*1145/1
 .stage[data-glass=off] .glass-home,.stage[data-glass=off] .caption,.stage[data-glass=off] .scene,.stage[data-glass=boot] .caption{opacity:0}
 .stage:not(.has-scene) .scene{opacity:0}
 .stage.has-scene .glass-home .friend,.stage.has-scene .glass-hud{opacity:0}
-.power-bar{display:flex;justify-content:center;margin:16px 0 8px}
+.power-bar{display:flex;justify-content:center;margin:16px 0 8px;position:relative;z-index:2}
 .power-toggle{display:inline-flex;align-items:center;gap:10px;margin:0;padding:0;border:0;background:transparent;color:#c8c8c8;font:inherit;font-size:11px;letter-spacing:.14em;text-transform:uppercase;cursor:pointer}
 .power-track{display:block;width:40px;height:22px;box-sizing:border-box;padding:2px;border:1px solid #fff;border-radius:999px}
 .power-knob{display:block;width:16px;height:16px;border-radius:50%;background:#fff;transition:transform .16s ease}
