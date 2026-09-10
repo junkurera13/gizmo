@@ -20,6 +20,7 @@
 #include "gizmo/settings.h"
 #include "gizmo/show.h"
 #include "gizmo/wifi.h"
+#include "gizmo/wall_time.h"
 
 // Operating loop for the handheld. One cooperative loop() owns every
 // peripheral. Friend HTTP/TLS/WebSocket operations run in their own task.
@@ -123,7 +124,7 @@ bool ensure_home_base() {
 gizmo::Hud current_hud() {
   gizmo::Hud hud;
   const time_t now = time(nullptr);
-  if (now > kEpochKnown) {
+  if (gizmo::wall_time_ready() && now > kEpochKnown) {
     struct tm local;
     localtime_r(&now, &local);
     hud.has_time = true;
@@ -169,8 +170,9 @@ void set_clock(int hour, int minute) {
   const time_t seconds = mktime(&local);
   struct timeval now{seconds, 0};
   settimeofday(&now, nullptr);
+  gizmo::note_wall_time();
   dirty = true;
-  Serial.printf("clock set to %d:%02d (serial; no RTC/NTP source yet)\n", hour, minute);
+  Serial.printf("clock set to %d:%02d (serial)\n", hour, minute);
 }
 
 void apply_brightness() {

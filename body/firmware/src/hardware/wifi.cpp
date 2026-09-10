@@ -4,8 +4,10 @@
 #include <Preferences.h>
 #include <WebServer.h>
 #include <WiFi.h>
+#include <esp_sntp.h>
 #include <sys/time.h>
 #include <time.h>
+#include "gizmo/wall_time.h"
 
 namespace gizmo {
 namespace {
@@ -20,12 +22,45 @@ constexpr uint32_t kDropDebounceMs = 3000;
 constexpr time_t kTlsClockFloor = 1735689600;     // 2025-01-01; cert checks need a sane clock
 constexpr time_t kTlsClockFallback = 1788998400;  // 2026-09-10 until NTP
 constexpr uint32_t kStatusPeriodMs = 2000;
+constexpr uint32_t kNtpRetryMs = 15000;
 constexpr int kMaxListed = 12;
 
 DNSServer dns;
 WebServer http(80);
 volatile uint8_t g_sta_disconnect_reason = 0;
 bool g_wifi_events_bound = false;
+uint32_t g_ntp_started_at = 0;
+uint32_t g_ntp_retry_at = 0;
+
+void on_sntp_sync(struct timeval* tv) {
+  (void)tv;
+  note_wall_time();
+  Serial.println("wifi: NTP synced");
+}
+
+void start_sntp() {
+  sntp_set_time_sync_notification_cb(on_sntp_sync);
+  sntp_set_sync_mode(SNTP_SYNC_MODE_IMMED);
+  configTzTime("JST-9", "time.google.com", "time.cloudflare.com", "pool.ntp.org");
+  sntp_set_time_sync_notification_cb(on_sntp_sync);
+  g_ntp_started_at = millis();
+}
+
+void poll_sntp(bool online) {
+  if (!online || wall_time_ready()) return;
+  if (sntp_get_sync_status() == SNTP_SYNC_STATUS_COMPLETED) {
+    note_wall_time();
+    Serial.println("wifi: NTP synced");
+    return;
+  }
+  if (g_ntp_started_at == 0) return;
+  const uint32_t now = millis();
+  if (now - g_ntp_started_at < kNtpRetryMs) return;
+  if (now - g_ntp_retry_at < kNtpRetryMs) return;
+  g_ntp_retry_at = now;
+  Serial.println("wifi: NTP retry");
+  start_sntp();
+}
 
 void on_wifi_event(WiFiEvent_t event, WiFiEventInfo_t info) {
   if (event == ARDUINO_EVENT_WIFI_STA_DISCONNECTED) {
@@ -371,7 +406,7 @@ void WifiLink::finish_online() {
     settimeofday(&tv, nullptr);
     Serial.println("wifi: TLS clock fallback until NTP");
   }
-  configTzTime("JST-9", "pool.ntp.org", "time.google.com");
+  start_sntp();
   Serial.printf("wifi online: ssid=\"%s\" ip=%s (saved)\n", sta_ssid_, ip_.toString().c_str());
 }
 
@@ -497,6 +532,7 @@ void WifiLink::update() {
   } else if (phase_ == WifiPhase::kOnline) {
     if (WiFi.status() == WL_CONNECTED) {
       online_ok_at_ = millis();
+      poll_sntp(true);
     } else if (millis() - online_ok_at_ >= kDropDebounceMs) {
       Serial.println("wifi: dropped, reconnecting");
       saved_attempts_ = 0;

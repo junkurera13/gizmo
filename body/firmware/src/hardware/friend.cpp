@@ -14,6 +14,7 @@
 #include <string.h>
 #include <time.h>
 #include "gizmo/trust_roots.h"
+#include "gizmo/wall_time.h"
 
 #ifndef GIZMO_BRAIN_URL
 #define GIZMO_BRAIN_URL ""
@@ -375,7 +376,15 @@ bool FriendConnection::inspect_health() {
     strncpy(detail_, "HEALTH BEGIN FAIL", sizeof(detail_) - 1);
     return false;
   }
+  const char* date_key[] = {"Date"};
+  http.collectHeaders(date_key, 1);
   const int code = http.GET();
+  if (code > 0 && apply_http_date(http.header("Date").c_str())) {
+    const time_t now = time(nullptr);
+    struct tm local;
+    localtime_r(&now, &local);
+    Serial.printf("friend: clock from HTTP Date %d:%02d JST\n", local.tm_hour, local.tm_min);
+  }
   String body;
   if (code > 0) body = http.getString();
   http.end();
