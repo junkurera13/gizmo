@@ -27,7 +27,7 @@ async function app() {
     document: {
       getElementById:element, querySelectorAll:()=>[], querySelector:()=>null,
       documentElement:{classList:{add(){},remove(){},contains(){return false;}}},
-      createTextNode:text=>({textContent:text}), createElement:()=>({}), addEventListener(){},
+      createTextNode:text=>({textContent:text}), createElement:()=>({append(){}, textContent:''}), addEventListener(){},
     },
     window:{addEventListener(){}, location},
     location, navigator:{mediaDevices:{}},
@@ -39,7 +39,7 @@ async function app() {
           session: 'a'.repeat(32), mode: 'moment',
           moment: options.headers?.['X-Oddity-Moment'] || 'birthday',
           moments: [
-            {id:'birthday', line:'How many more sleeps until my birthday?', demo:{prompt:'Gizmo, how many more sleeps until my birthday?', prompt_audio:'/static/demo-birthday-kid.mp3'}},
+            {id:'birthday', line:'How many more sleeps until my birthday?', demo:{prompt:'Gizmo, how many more sleeps until my birthday?', prompt_audio:'/static/demo-birthday-kid.mp3', reply:'Eleven sleeps.', reply_audio:'/static/demo-birthday-gizmo.wav'}},
             {id:'draw', line:'What should I draw?'},
           ],
         }),
@@ -85,14 +85,17 @@ test('only completed moments expose a playable demo', async () => {
   assert.equal(ui.element('moment-say').textContent, 'Coming soon');
 });
 
-test('the recorded kid question is handed to the real Gizmo session', async () => {
+test('the recorded kid question is followed by the real Gizmo voice', async () => {
   const ui = await app();
-  ui.run('moments = [{id:"birthday", line:"How many more sleeps until my birthday?", demo:{prompt:"Gizmo, how many more sleeps until my birthday?", prompt_audio:"/static/demo-birthday-kid.mp3"}}]; syncMoment("birthday"); playDemoRecording = async () => {}');
+  ui.context.recorded = [];
+  ui.run('moments = [{id:"birthday", line:"How many more sleeps until my birthday?", demo:{prompt:"Gizmo, how many more sleeps until my birthday?", prompt_audio:"/static/demo-birthday-kid.mp3", reply:"Eleven sleeps.", reply_audio:"/static/demo-birthday-gizmo.wav"}}]; syncMoment("birthday"); playDemoRecording = async (src) => recorded.push(src)');
   await ui.run('sayMoment()');
-  assert.deepEqual(JSON.parse(ui.sent.at(-1)), {
-    type: 'text',
-    text: 'Gizmo, how many more sleeps until my birthday?',
-  });
+  assert.deepEqual([...ui.context.recorded], [
+    '/static/demo-birthday-kid.mp3',
+    '/static/demo-birthday-gizmo.wav',
+  ]);
+  assert.equal(ui.element('caption').textContent, 'Eleven sleeps.');
+  assert.match(ui.element('status').textContent, /Demo finished/);
   assert.equal(ui.element('device').dataset.ptt, 'false');
 });
 

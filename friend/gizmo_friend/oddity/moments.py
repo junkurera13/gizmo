@@ -75,6 +75,8 @@ _register(
         demo={
             "prompt": "Gizmo, how many more sleeps until my birthday?",
             "prompt_audio": "/static/demo-birthday-kid.mp3",
+            "reply": "Eleven sleeps.",
+            "reply_audio": "/static/demo-birthday-gizmo.wav",
         },
     ),
     Moment(

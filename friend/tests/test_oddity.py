@@ -258,6 +258,7 @@ class OddityRouteTests(unittest.TestCase):
                 self.assertEqual(client.get("/oddity/moments").status_code, 200)
                 self.assertEqual(client.get("/static/oddity.js").status_code, 200)
                 self.assertEqual(client.get("/static/demo-birthday-kid.mp3").status_code, 200)
+                self.assertEqual(client.get("/static/demo-birthday-gizmo.wav").status_code, 200)
                 self.assertEqual(client.get("/").status_code, 401)
                 self.assertEqual(client.post("/oddity/session").status_code, 401)
                 response = client.post("/oddity/session", headers={"x-oddity-preview": "adult-review"})

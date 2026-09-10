@@ -220,8 +220,14 @@ async function sayMoment() {
     await playDemoRecording(item.demo.prompt_audio, signal);
     setTalkPressed(false); $('talk').classList.remove('recording');
     setCaption(); status('Gizmo is thinking…', 'thinking');
+    await delay(650, signal);
+    setCaption(item.demo.reply);
+    status('Gizmo is answering…', 'playing');
+    await playDemoRecording(item.demo.reply_audio, signal);
+    history.push({role:'user', text:item.demo.prompt}, {role:'assistant', text:item.demo.reply});
+    renderNotes();
     demoPlayedMoment = item.id;
-    send({type:'text', text:item.demo.prompt});
+    status('Demo finished. Press replay to watch it again.', 'idle');
   } catch (error) {
     if (error.name !== 'AbortError') notice(error.message || 'The demo could not be played. Try again.');
   } finally {

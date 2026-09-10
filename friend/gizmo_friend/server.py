@@ -53,6 +53,7 @@ ODDITY_PUBLIC_ASSETS = {
     "/static/oddity-glass.mjs",
     "/static/oddity-boot.wav",
     "/static/demo-birthday-kid.mp3",
+    "/static/demo-birthday-gizmo.wav",
     "/static/oddity-heart-full.png",
     "/static/oddity-heart-half.png",
     "/static/oddity-heart-empty.png",
