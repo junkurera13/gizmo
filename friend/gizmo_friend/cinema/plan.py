@@ -125,7 +125,7 @@ class FilmMaker:
         )
         return FilmPlan.model_validate_json(raw)
 
-    async def prepare(self, plan: FilmPlan) -> PreparedFilm:
+    async def synthesize(self, plan: FilmPlan) -> PreparedFilm:
         # Short sentences synthesize concurrently. Their actual PCM lengths,
         # not word-count estimates, define the director's audio timeline.
         voices = await asyncio.gather(
@@ -152,12 +152,22 @@ class FilmMaker:
             audio.setsampwidth(2)
             audio.setframerate(24000)
             audio.writeframes(bytes(pcm))
-        wav = buffer.getvalue()
+        return PreparedFilm(plan, "", len(pcm) / 48000, buffer.getvalue(), timings)
+
+    async def upload_audio(self, wav: bytes) -> str:
+        if not wav:
+            raise RuntimeError("The narration recording is empty.")
         async with asyncio.timeout(20):
-            url = await self.upload.upload(
+            return await self.upload.upload(
                 wav, "audio/wav", file_name="gizmo-narration.wav"
             )
-        return PreparedFilm(plan, url, len(pcm) / 48000, wav, timings)
+
+    async def prepare(self, plan: FilmPlan) -> PreparedFilm:
+        prepared = await self.synthesize(plan)
+        url = await self.upload_audio(prepared.wav)
+        return PreparedFilm(
+            prepared.plan, url, prepared.duration, prepared.wav, prepared.timings
+        )
 
     async def transcribe(self, audio: bytes, mime: str) -> str:
         from google import genai

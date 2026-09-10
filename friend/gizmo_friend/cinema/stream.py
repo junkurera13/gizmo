@@ -45,6 +45,7 @@ class DirectorStream:
         self.frames = 0
         self.audio_samples = 0
         self.session_id = ""
+        self.ice_servers = []
 
     def spawn(self, work):
         task = asyncio.create_task(work)
@@ -168,7 +169,7 @@ class DirectorStream:
         if self.closed:
             raise RuntimeError("Film ended")
         pc = RTCPeerConnection(
-            RTCConfiguration(iceServers=[] if local else self.ice_servers)
+            RTCConfiguration(iceServers=[] if local else list(self.ice_servers))
         )
         self.viewers.add(pc)
 
@@ -193,6 +194,10 @@ class DirectorStream:
         if self.closed:
             return
         self.closed = True
+        # Unblock offer/play waiters so interrupt does not sit on track events.
+        self.opened.set()
+        self.video_ready.set()
+        self.audio_ready.set()
         if self.channel is not None and self.channel.readyState == "open":
             self.channel.send(json.dumps({"type": "stop"}))
             await asyncio.sleep(0)

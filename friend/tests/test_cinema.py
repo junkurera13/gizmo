@@ -11,17 +11,32 @@ from gizmo_friend.server import app_factory
 
 
 class FakeStream:
-    def __init__(self, key, event):
+    def __init__(self, key, event, *, hold=None):
         self.event = event
         self.first_frame = asyncio.Event()
+        self.video_ready = asyncio.Event()
+        self.audio_ready = asyncio.Event()
+        self.connect_started = asyncio.Event()
         self.latest_frame = None
         self.closed = False
         self.sent = []
+        self.tracks = {}
+        self._hold = hold
 
     async def connect(self):
-        pass
+        self.connect_started.set()
+        if self._hold is not None:
+            await self._hold.wait()
+        if self.closed:
+            return
+        self.video_ready.set()
+        self.audio_ready.set()
 
     async def answer(self, sdp, kind, **kwargs):
+        async with asyncio.timeout(1):
+            await self.video_ready.wait()
+        if self.closed:
+            raise RuntimeError("Film ended")
         return {"sdp": "answer", "type": "answer"}
 
     def send(self, event):
@@ -30,6 +45,10 @@ class FakeStream:
 
     async def close(self):
         self.closed = True
+        self.video_ready.set()
+        self.audio_ready.set()
+        if self._hold is not None:
+            self._hold.set()
 
 
 class RuntimeTests(unittest.IsolatedAsyncioTestCase):
@@ -48,8 +67,14 @@ class RuntimeTests(unittest.IsolatedAsyncioTestCase):
         )
         self.maker = AsyncMock()
         self.maker.plan.return_value = self.plan
-        self.maker.prepare.return_value = PreparedFilm(
-            self.plan, "https://audio.fal.media/test.wav", 10, b"fake"
+        self.maker.synthesize.return_value = PreparedFilm(
+            self.plan, "", 10, b"fake"
+        )
+        self.maker.upload_audio = AsyncMock(
+            return_value="https://audio.fal.media/test.wav"
+        )
+        self.maker.upload.upload = AsyncMock(
+            return_value="https://image.fal.media/frame.jpg"
         )
         self.emit = AsyncMock()
         self.session = CinemaSession(
@@ -85,9 +110,178 @@ class RuntimeTests(unittest.IsolatedAsyncioTestCase):
             started.set()
             await asyncio.Event().wait()
 
-        self.maker.prepare.side_effect = slow
+        self.maker.synthesize.side_effect = slow
         await self.session.ask("Rocket")
         await started.wait()
+        stream = self.session.stream
+        work = self.session.work
+        await self.session.interrupt()
+        self.assertTrue(work.done())
+        self.assertTrue(stream.closed)
+        self.assertEqual(stream.sent, [])
+
+    def _ready_emitted(self):
+        return any(call.args[0].get("type") == "ready" for call in self.emit.await_args_list)
+
+    async def test_offer_during_tts_does_not_configure_before_wav(self):
+        synthesizing = asyncio.Event()
+        release = asyncio.Event()
+
+        async def slow(plan):
+            synthesizing.set()
+            await release.wait()
+            return PreparedFilm(self.plan, "", 10, b"fake")
+
+        self.maker.synthesize.side_effect = slow
+        await self.session.ask("Rocket")
+        await synthesizing.wait()
+        await self.session.offer("offer", self.session.revision)
+        self.assertEqual(self.session.stream.sent, [])
+        self.assertFalse(self._ready_emitted())
+        release.set()
+        await self.until(lambda: bool(self.session.stream.sent))
+        self.assertEqual(
+            self.session.stream.sent[0]["audio_url"], "https://audio.fal.media/test.wav"
+        )
+
+    async def test_does_not_configure_until_audio_url_exists(self):
+        uploaded = asyncio.Event()
+        release = asyncio.Event()
+
+        async def slow_upload(wav):
+            uploaded.set()
+            await release.wait()
+            return "https://audio.fal.media/test.wav"
+
+        self.maker.upload_audio.side_effect = slow_upload
+        await self.session.ask("Rocket")
+        await uploaded.wait()
+        await self.until(lambda: self.session.prepared is not None)
+        self.assertFalse(self._ready_emitted())
+        self.assertEqual(self.session.stream.sent, [])
+        release.set()
+        await self.until(self._ready_emitted)
+        await self.session.offer("offer", self.session.revision)
+        await self.until(lambda: bool(self.session.stream.sent))
+        self.assertEqual(
+            self.session.stream.sent[0]["audio_url"], "https://audio.fal.media/test.wav"
+        )
+
+    async def test_ready_does_not_wait_for_director_connect(self):
+        hold = asyncio.Event()
+        session = CinemaSession(
+            Path(self.root.name) / "slow-connect",
+            "key",
+            self.emit,
+            maker=self.maker,
+            stream_factory=lambda key, event: FakeStream(key, event, hold=hold),
+        )
+        self.addAsyncCleanup(session.close)
+        await session.ask("Rocket")
+        await self.until(
+            lambda: any(
+                call.args[0].get("type") == "ready" for call in self.emit.await_args_list
+            )
+        )
+        self.assertEqual(session.stream.sent, [])
+        hold.set()
+        await session.offer("offer", session.revision)
+        await self.until(lambda: bool(session.stream.sent))
+        self.assertEqual(
+            session.stream.sent[0]["audio_url"], "https://audio.fal.media/test.wav"
+        )
+
+    async def test_continuation_image_overlaps_tts_and_survives_only_if_current(self):
+        synthesizing = asyncio.Event()
+        image_started = asyncio.Event()
+        image_release = asyncio.Event()
+        order = []
+
+        async def slow_synthesize(plan):
+            order.append("synthesize_start")
+            synthesizing.set()
+            await asyncio.Event().wait()
+
+        async def slow_image(data, mime, file_name=""):
+            order.append("image_start")
+            image_started.set()
+            await image_release.wait()
+            order.append("image_done")
+            return "https://image.fal.media/frame.jpg"
+
+        (Path(self.root.name) / "last-frame.jpg").write_bytes(b"jpeg")
+        self.plan.relation = "continue"
+        self.maker.synthesize.side_effect = slow_synthesize
+        self.maker.upload.upload.side_effect = slow_image
+        await self.session.ask("Go on")
+        await synthesizing.wait()
+        await image_started.wait()
+        self.assertEqual(set(order), {"synthesize_start", "image_start"})
+        stream = self.session.stream
+        await self.session.interrupt()
+        image_release.set()
+        await asyncio.sleep(0)
+        self.assertTrue(stream.closed)
+        self.assertEqual(stream.sent, [])
+
+    async def test_overlapping_continuation_image_is_attached_after_final_wav(self):
+        synthesizing = asyncio.Event()
+        release = asyncio.Event()
+        image_started = asyncio.Event()
+
+        async def slow_synthesize(plan):
+            synthesizing.set()
+            await release.wait()
+            return PreparedFilm(self.plan, "", 10, b"fake")
+
+        async def image(data, mime, file_name=""):
+            image_started.set()
+            return "https://image.fal.media/frame.jpg"
+
+        (Path(self.root.name) / "last-frame.jpg").write_bytes(b"jpeg")
+        self.plan.relation = "continue"
+        self.maker.synthesize.side_effect = slow_synthesize
+        self.maker.upload.upload.side_effect = image
+        await self.session.ask("Go on")
+        await synthesizing.wait()
+        await image_started.wait()
+        self.assertEqual(self.session.stream.sent, [])
+        release.set()
+        await self.until(self._ready_emitted)
+        await self.session.offer("offer", self.session.revision)
+        await self.until(lambda: bool(self.session.stream.sent))
+        self.assertEqual(
+            self.session.stream.sent[0]["image_url"],
+            "https://image.fal.media/frame.jpg",
+        )
+        self.assertEqual(
+            self.session.stream.sent[0]["audio_url"],
+            "https://audio.fal.media/test.wav",
+        )
+
+    async def test_stale_offer_after_interrupt_does_not_configure(self):
+        await self.session.ask("Rocket")
+        await self.until(self._ready_emitted)
+        first = self.session.revision
+        stream = self.session.stream
+        await self.session.ask("Why oxygen?")
+        await self.until(
+            lambda: self.session.revision != first and self.session.stream is not stream
+        )
+        with self.assertRaises(ValueError):
+            await self.session.offer("offer", first)
+        self.assertEqual(stream.sent, [])
+
+    async def test_interrupt_during_audio_upload_does_not_configure(self):
+        uploaded = asyncio.Event()
+
+        async def slow_upload(wav):
+            uploaded.set()
+            await asyncio.Event().wait()
+
+        self.maker.upload_audio.side_effect = slow_upload
+        await self.session.ask("Rocket")
+        await uploaded.wait()
         stream = self.session.stream
         work = self.session.work
         await self.session.interrupt()
@@ -228,6 +422,10 @@ class AudioTimelineTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual([row["start"] for row in prepared.timings], [0, 0.1, 0.2])
         with wave.open(io.BytesIO(prepared.wav), "rb") as audio:
             self.assertEqual(audio.readframes(audio.getnframes()), b"\x01\x00" * 7200)
+        self.assertEqual(prepared.audio_url, "https://audio.fal.media/test.wav")
+        synthesized = await maker.synthesize(plan)
+        self.assertEqual(synthesized.audio_url, "")
+        self.assertEqual(synthesized.wav, prepared.wav)
 
 
 class FakeFilmSession:

@@ -32,6 +32,7 @@ class CinemaSession:
         self.stream = None
         self.work = None
         self.lease = None
+        self.jobs: list[asyncio.Task] = []
         self.revision = 0
         self.request_id = None
         try:
@@ -45,6 +46,18 @@ class CinemaSession:
         self.closed = False
         self.turns = 0
         self.started = 0.0
+        self.marks: dict[str, float] = {}
+
+    def current(self, revision) -> bool:
+        return revision == self.revision and not self.closed
+
+    def mark(self, name: str) -> None:
+        self.marks[name] = round(time.monotonic() - self.started, 3)
+
+    def spawn(self, work) -> asyncio.Task:
+        task = asyncio.create_task(work)
+        self.jobs.append(task)
+        return task
 
     async def publish(self, event):
         event = {**event, "request_id": self.request_id}
@@ -70,6 +83,7 @@ class CinemaSession:
         self.turns += 1
         revision = self.revision
         self.started = time.monotonic()
+        self.marks = {}
         self.context.append({"user": text})
         self.work = asyncio.create_task(self.run(text, revision))
 
@@ -78,7 +92,9 @@ class CinemaSession:
             self.key, lambda event: self.provider_event(event, revision)
         )
         self.stream = stream
-        opening = asyncio.create_task(stream.connect())
+        opening = self.spawn(stream.connect())
+        image_upload = None
+        audio_upload = None
         try:
             await self.emit(
                 {
@@ -89,7 +105,8 @@ class CinemaSession:
                 }
             )
             plan = await self.maker.plan(text, self.context)
-            if revision != self.revision:
+            self.mark("plan")
+            if not self.current(revision):
                 return
             await self.emit({"type": "plan", "title": plan.title, "revision": revision})
             await self.emit(
@@ -100,10 +117,17 @@ class CinemaSession:
                     "revision": revision,
                 }
             )
-            self.prepared = prepared = await self.maker.prepare(plan)
-            await opening
-            if revision != self.revision:
+            # Last-frame continuation is independent of TTS. Do not wait for it
+            # before synthesizing, and never start Director on a partial WAV.
+            image_upload = self._start_anchor_upload(plan)
+            prepared = await self.maker.synthesize(plan)
+            self.mark("synthesize")
+            if not self.current(revision):
                 return
+            if not prepared.wav:
+                raise RuntimeError("The narration recording is empty.")
+            self.prepared = prepared
+            audio_upload = self.spawn(self.maker.upload_audio(prepared.wav))
             (self.directory / f"{revision}.wav").write_bytes(prepared.wav)
             (self.directory / f"{revision}.json").write_text(
                 json.dumps(
@@ -114,6 +138,16 @@ class CinemaSession:
                     }
                 )
             )
+            audio_url = await audio_upload
+            self.mark("audio_upload")
+            if not self.current(revision):
+                return
+            if not audio_url:
+                raise RuntimeError("The narration recording could not be uploaded.")
+            prepared.audio_url = audio_url
+            # Duration is known from PCM. Ready still waits for the hosted WAV
+            # so Director is never asked to generate against a missing soundtrack.
+            # Browser ICE starts from the earlier plan event.
             await self.emit(
                 {
                     "type": "ready",
@@ -123,8 +157,15 @@ class CinemaSession:
                     "narration": plan.narration,
                 }
             )
+            await opening
+            self.mark("director_peer")
+            if not self.current(revision):
+                return
             async with asyncio.timeout(20):
                 await self.viewer.wait()
+            self.mark("viewer")
+            if not self.current(revision):
+                return
             configuration = {
                 "type": "configure",
                 "protocol_version": 1,
@@ -135,16 +176,16 @@ class CinemaSession:
                 "prompt": plan.direction()
                 + "\nAudio timeline in seconds: "
                 + json.dumps(prepared.timings),
-                "audio_url": prepared.audio_url,
+                "audio_url": audio_url,
             }
-            anchor = self.directory / "last-frame.jpg"
-            if plan.relation != "new" and anchor.is_file():
+            if image_upload is not None:
                 async with asyncio.timeout(10):
-                    configuration["image_url"] = await self.maker.upload.upload(
-                        anchor.read_bytes(),
-                        "image/jpeg",
-                        file_name="gizmo-continuation.jpg",
-                    )
+                    image_url = await image_upload
+                if image_url:
+                    configuration["image_url"] = image_url
+            if not self.current(revision):
+                return
+            self.mark("configure")
             stream.send(configuration)
             # A lost browser cannot leave a paid infinite generation session running.
             self.lease = asyncio.create_task(
@@ -152,13 +193,14 @@ class CinemaSession:
             )
             async with asyncio.timeout(35):
                 await stream.first_frame.wait()
+            self.mark("first_frame")
         except asyncio.CancelledError:
             raise
         except Exception as error:  # noqa: BLE001 - report a failed film and close its peer
             logger.warning(
                 "Cinema failed: revision=%s error=%s", revision, type(error).__name__
             )
-            if revision == self.revision:
+            if self.current(revision):
                 await self.emit(
                     {
                         "type": "error",
@@ -168,12 +210,45 @@ class CinemaSession:
                 )
             await stream.close()
         finally:
-            if not opening.done():
-                opening.cancel()
-            await asyncio.gather(opening, return_exceptions=True)
+            await self._cancel_jobs(opening, audio_upload, image_upload)
+
+    def _start_anchor_upload(self, plan):
+        anchor = self.directory / "last-frame.jpg"
+        if plan.relation == "new" or not anchor.is_file():
+            return None
+        jpeg = anchor.read_bytes()
+        if not jpeg:
+            return None
+
+        async def upload():
+            async with asyncio.timeout(10):
+                return await self.maker.upload.upload(
+                    jpeg,
+                    "image/jpeg",
+                    file_name="gizmo-continuation.jpg",
+                )
+
+        return self.spawn(upload())
+
+    async def _cancel_jobs(self, *tasks):
+        pending = []
+        for task in (*self.jobs, *tasks):
+            if (
+                task
+                and not task.done()
+                and task is not asyncio.current_task()
+                and task not in pending
+            ):
+                pending.append(task)
+                task.cancel()
+        self.jobs = [
+            task for task in self.jobs if task not in pending and not task.done()
+        ]
+        if pending:
+            await asyncio.gather(*pending, return_exceptions=True)
 
     async def provider_event(self, event, revision):
-        if revision != self.revision or self.closed:
+        if not self.current(revision):
             return
         kind = event.get("type")
         if kind == "first_frame":
@@ -182,6 +257,7 @@ class CinemaSession:
                     "type": "playing",
                     "revision": revision,
                     "latency": round(time.monotonic() - self.started, 2),
+                    "phases": dict(self.marks),
                 }
             )
         elif kind in {"error", "transport_failed", "stream_exhausted"}:
@@ -210,6 +286,8 @@ class CinemaSession:
         if revision != self.revision or self.stream is None:
             raise ValueError("Stale film")
         result = await self.stream.answer(sdp, "offer", local=local)
+        if revision != self.revision or self.stream is None or self.stream.closed:
+            raise ValueError("Stale film")
         self.viewer.set()
         return result
 
@@ -219,6 +297,7 @@ class CinemaSession:
         if work and work is not asyncio.current_task():
             work.cancel()
             await asyncio.gather(work, return_exceptions=True)
+        await self._cancel_jobs()
         if self.lease and self.lease is not asyncio.current_task():
             self.lease.cancel()
             await asyncio.gather(self.lease, return_exceptions=True)

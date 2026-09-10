@@ -176,6 +176,18 @@ class DeviceFilmPlayer:
     async def play(self, revision):
         stream = self.cinema.stream
         prepared = self.cinema.prepared
+        if stream is None or prepared is None:
+            return
+        video_ready = getattr(stream, "video_ready", None)
+        if video_ready is not None:
+            async with asyncio.timeout(20):
+                await video_ready.wait()
+        if (
+            revision != self.cinema.revision
+            or stream.closed
+            or "video" not in getattr(stream, "tracks", {})
+        ):
+            return
         queue = asyncio.Queue(maxsize=2)
         capture = asyncio.create_task(
             self.capture(
