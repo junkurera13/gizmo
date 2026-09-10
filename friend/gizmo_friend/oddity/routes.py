@@ -36,7 +36,12 @@ def _token_ok(provided: str, expected: str) -> bool:
 def router(root: Path, static: Path) -> APIRouter:
     api = APIRouter()
     connected: set[str] = set()
+    live: dict[str, ExperienceSession] = {}
     turn_budget = OddityTurnBudget(root)
+
+    def same_origin(connection) -> bool:
+        origin = urlsplit(connection.headers.get("origin", ""))
+        return origin.scheme in {"http", "https"} and origin.netloc == connection.headers.get("host")
 
     def identity(connection) -> str:
         values = (
@@ -153,6 +158,34 @@ def router(root: Path, static: Path) -> APIRouter:
         return FileResponse(path, headers={"Cache-Control": "private, max-age=86400, immutable",
                                            "X-Content-Type-Options": "nosniff", "Vary": "Cookie"})
 
+    @api.post("/oddity/offer")
+    async def offer(request: Request):
+        session_id = identity(request)
+        if not session_id or not same_origin(request):
+            raise HTTPException(403)
+        friend = live.get(session_id)
+        if friend is None or friend.cinema is None:
+            raise HTTPException(404)
+        raw = await request.body()
+        if len(raw) > 100_000:
+            raise HTTPException(413)
+        payload = json.loads(raw)
+        if not isinstance(payload.get("sdp"), str) or payload.get("revision") is None:
+            raise HTTPException(400)
+        try:
+            revision = int(payload["revision"])
+        except (TypeError, ValueError):
+            raise HTTPException(400) from None
+        try:
+            return await friend.cinema.offer(
+                payload["sdp"],
+                revision,
+                local=not os.environ.get("RAILWAY_ENVIRONMENT_ID")
+                and request.client.host in {"127.0.0.1", "::1"},
+            )
+        except (ValueError, RuntimeError):
+            raise HTTPException(409, "That film has already ended.") from None
+
     @api.websocket("/oddity/ws")
     async def websocket(socket: WebSocket):
         session_id = identity(socket)
@@ -170,6 +203,7 @@ def router(root: Path, static: Path) -> APIRouter:
         connected.add(session_id)
         try:
             friend = ExperienceSession(root, session_id, socket.send_json)
+            live[session_id] = friend
             await socket.send_json({"type": "hello", "history": friend.history,
                                     "library": friend.library, "current": friend.current,
                                     "mode": friend.mode, "moment": friend.moment_id})
@@ -235,6 +269,7 @@ def router(root: Path, static: Path) -> APIRouter:
                 raise
         finally:
             connected.discard(session_id)
+            live.pop(session_id, None)
             if friend:
                 await friend.close()
 

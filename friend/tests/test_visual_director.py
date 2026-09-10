@@ -59,6 +59,7 @@ class VisualDecisionTests(unittest.TestCase):
             "Explain how rain forms.",
             "Show me how the Moon orbits.",
             "How do airplanes stay up?",
+            "What if I fell into Jupiter?",
         ):
             self.assertTrue(is_moving_explanation_ask(utterance), utterance)
         for utterance in (

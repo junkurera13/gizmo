@@ -46,7 +46,7 @@ Or: `python -m gizmo_friend` from a venv with this repo installed.
 | Variable | Required | What |
 | --- | --- | --- |
 | `GEMINI_API_KEY` | yes | Gemini Live voice conversation, plus Oddity speech and transcription. All separate planning, reasoning, and generated media use Fal. Gizmo has no offline brain; if Gemini is unreachable he reports the outage and retries. |
-| `FAL_KEY` | for visuals and planning | Klein 9B images, H3 Max clips, Claude director and reasoning. |
+| `FAL_KEY` | for visuals and planning | Klein 9B images, Cinema (H3 Max Director), Claude director and reasoning. |
 | `GIZMO_DIRECTOR_MODEL` | no | Visual-director override. Default `anthropic/claude-haiku-4.5` through Fal. |
 | `GIZMO_USER_ID` | optional | Fallback identity for a body that sends no `X-Gizmo-Device` header. Each device otherwise gets its own memory. |
 | `MEMOBASE_URL` | for persistent memory | Root URL of the self-hosted Railway Memobase service. |
@@ -55,7 +55,7 @@ Or: `python -m gizmo_friend` from a venv with this repo installed.
 
 ### Talk to him
 
-**OddityOS 1 browser simulator:** run `gizmo --host 127.0.0.1 --port 43148`, then open [localhost:43148/oddity](http://127.0.0.1:43148/oddity). This richer client coordinates generated narration, drawings, and video in connected beats. It uses the same server environment and media providers, with its own browser session and experience director. See [`docs/ODDITY.md`](docs/ODDITY.md).
+**OddityOS 1 browser simulator:** run `gizmo --host 127.0.0.1 --port 43148`, then open [localhost:43148/oddity](http://127.0.0.1:43148/oddity). This richer client coordinates generated narration, drawings, and Cinema films in connected beats. It uses the same server environment and Cinema runtime as Friend, with its own browser session and experience director. See [`docs/ODDITY.md`](docs/ODDITY.md).
 
 **Native emulator:** launch `Gizmo Simulator.app`. **Power on** cold-boots Gizmo. Hold **PTT** while talking; release to send. **Up** from home opens Settings (brightness and volume); Friend owns that menu so every protocol body paints the same snapshot. Down from home opens the Mac camera world; its live viewfinder is local preview only. The pink button sends only 24 kHz microphone PCM over the body WebSocket; the backend resamples it to Gemini's 16 kHz input. XIAO firmware, including a local Settings/memo OS that does not yet speak `/ws`, is in `body/firmware/`. Pins and acceptance notes are in `body/hardware/`.
 

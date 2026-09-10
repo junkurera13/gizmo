@@ -11,7 +11,7 @@ let history = [], plan = [], recorder, stream, held = false, talkHeld = false, r
 let microphoneAttempt = 0, mediaWaitResolve, audioUnlock, expectedClose = false;
 let captions = [];
 let orbitView, invitation, restoredInvitation, screenOrbit = false;
-let glass;
+let glass, peer;
 function orbit() { return orbitView ||= createOrbit($('orbit')); }
 function interactionUI() {
   return invitation ||= createInteraction($('interaction'), stage, orbit(), {
@@ -296,6 +296,7 @@ function onGlassOff() {
   $('starters').hidden = true;
   orbitView?.hide();
   screenOrbit = false;
+  detachFilm();
   stage.classList.remove('has-scene');
   $('still').hidden = true; film.hidden = true; film.removeAttribute('src'); film.load();
   setCaption(); $('chapter-title').textContent = '';
@@ -341,7 +342,7 @@ function ack(phase) {
 function stopPlayer() {
   invitation?.stop(); orbitView?.cancel();
   controller?.abort(); controller = null; playing = false; paused = false;
-  voice.pause(); film.pause(); clearInterval(progressTimer);
+  voice.pause(); film.pause(); detachFilm(); clearInterval(progressTimer);
   $('pause').hidden = true; $('pause').textContent = 'Pause'; $('play-blocked').hidden = true;
   mediaWaitResolve?.(); mediaWaitResolve = null;
 }
@@ -376,6 +377,73 @@ function mediaEnded(media, signal) {
     media.addEventListener('ended', done, {once:true}); media.addEventListener('error', fail, {once:true}); signal.addEventListener('abort', abort, {once:true});
   });
 }
+function detachFilm() {
+  peer?.close(); peer = null;
+  film.srcObject = null;
+}
+async function attachFilm(beat, signal) {
+  const generation = beat.film?.revision;
+  detachFilm();
+  if (generation == null) throw new Error('The film could not start.');
+  const pc = new RTCPeerConnection();
+  peer = pc;
+  pc.addTransceiver('video', {direction: 'recvonly'});
+  pc.addTransceiver('audio', {direction: 'recvonly'});
+  const media = new MediaStream();
+  pc.ontrack = (event) => { media.addTrack(event.track); film.srcObject = media; };
+  try {
+    await pc.setLocalDescription(await pc.createOffer());
+    if (pc.iceGatheringState !== 'complete') await new Promise((resolve, reject) => {
+      const timer = setTimeout(() => reject(new Error('Connection timed out.')), 8000);
+      pc.addEventListener('icegatheringstatechange', () => {
+        if (pc.iceGatheringState === 'complete') { clearTimeout(timer); resolve(); }
+      });
+    });
+    if (signal.aborted || peer !== pc) { pc.close(); throw new DOMException('Stopped', 'AbortError'); }
+    const response = await fetch(`/oddity/offer?session=${encodeURIComponent(session)}`, {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({revision: generation, sdp: pc.localDescription.sdp}),
+    });
+    if (!response.ok) throw new Error('Could not receive the film.');
+    const answer = await response.json();
+    if (signal.aborted || peer !== pc) { pc.close(); throw new DOMException('Stopped', 'AbortError'); }
+    await pc.setRemoteDescription(answer);
+    film.muted = muted;
+    await startMedia(film, signal);
+  } catch (error) {
+    if (peer === pc) detachFilm();
+    pc.close();
+    throw error;
+  }
+}
+function waitFilm(beat, signal) {
+  const duration = Number(beat.film?.duration) || 0;
+  if (!duration) return delay(800, signal);
+  return new Promise((resolve, reject) => {
+    let startTime = null, ending = false;
+    function clean() {
+      signal.removeEventListener('abort', abort);
+    }
+    function abort() { clean(); reject(new DOMException('Stopped', 'AbortError')); }
+    function presented(_now, metadata) {
+      if (ending || signal.aborted || peer == null) return;
+      if (film.paused || film.readyState < 2) {
+        if (film.requestVideoFrameCallback) film.requestVideoFrameCallback(presented);
+        return;
+      }
+      if (startTime === null) startTime = metadata.mediaTime;
+      if (metadata.mediaTime - startTime >= duration) {
+        ending = true; clean(); resolve();
+        return;
+      }
+      if (film.requestVideoFrameCallback) film.requestVideoFrameCallback(presented);
+    }
+    signal.addEventListener('abort', abort, {once: true});
+    if (film.requestVideoFrameCallback) film.requestVideoFrameCallback(presented);
+    else delay(duration * 1000, signal).then(() => { if (!ending) { ending = true; clean(); resolve(); } }, abort);
+  });
+}
 async function startMedia(media, signal) {
   await waitUntilUnpaused(signal);
   try { await media.play(); }
@@ -401,6 +469,13 @@ async function showScene(beat, signal) {
     orbit().show(); orbit().reset(); return;
   }
   if (beat.visual !== 'keep') { orbitView?.hide(); screenOrbit = false; }
+  if (beat.visual === 'film' || beat.film) {
+    $('still').hidden = true; film.removeAttribute('src');
+    film.hidden = false; stage.classList.add('has-scene'); $('home').hidden = false;
+    $('scene').classList.remove('scene-enter'); void $('scene').offsetWidth; $('scene').classList.add('scene-enter');
+    await attachFilm(beat, signal);
+    return;
+  }
   if (beat.image) {
     const preload = new Image(); preload.src = beat.image; await preload.decode();
     if (signal.aborted) throw new DOMException('Stopped', 'AbortError');
@@ -427,7 +502,7 @@ async function playQueue() {
       notice(beat.warnings.join(' '));
       setCaption();
       $('scene-position').textContent = `${beat.index + 1} / ${plan.length}`;
-      $('scene-kind').textContent = beat.video ? 'Moving picture' : beat.image ? 'Drawing' : '';
+      $('scene-kind').textContent = beat.film ? 'Moving picture' : beat.image ? 'Drawing' : '';
       [...$('beat-dots').children].forEach((dot, i) => dot.classList.toggle('active', i === beat.index));
       $('pause').hidden = false; status('You can interrupt at any time.', 'playing');
       const archived = {...beat};
@@ -439,6 +514,16 @@ async function playQueue() {
       }
       archive.push(archived); archive = archive.slice(-40);
       ack('started'); progressTimer = setInterval(() => ack('progress'), 2000);
+      if (beat.film) {
+        setCaption(beat.film.title || '');
+        await waitUntilUnpaused(signal);
+        await waitFilm(beat, signal);
+        await breathingRoom(beat.pause_seconds, signal);
+        film.pause(); clearInterval(progressTimer); ack('finished');
+        history.push({role:'assistant', text:beat.narration}); renderNotes();
+        if (beat.interaction) { invite(beat); return; }
+        continue;
+      }
       if (beat.video) {
         if (beat.delivery === 'after') {
           const ended = mediaEnded(film, signal);
@@ -480,7 +565,7 @@ function togglePause() {
   if (paused) { voice.pause(); film.pause(); status('Take your time.', 'paused'); }
   else {
     if (voice.getAttribute('src') && !voice.ended) voice.play().catch(() => notice('Tap Continue to resume sound.'));
-    if (!film.hidden && film.src && !film.ended) film.play().catch(() => {});
+    if (!film.hidden && (film.srcObject || film.src) && !film.ended) film.play().catch(() => {});
     status('You can interrupt at any time.', 'playing');
   }
 }
@@ -586,7 +671,7 @@ $('select').onclick = onSelect;
 $('previous').onclick = () => glass.navigate('up');
 $('next').onclick = () => glass.navigate('down');
 $('home').onclick = goHome;
-$('sound').onclick = () => { muted = !muted; voice.muted = muted; $('sound').textContent = muted ? 'Sound off' : 'Sound on'; $('sound').setAttribute('aria-pressed', String(muted)); $('sound').setAttribute('aria-label', muted ? 'Unmute narration' : 'Mute narration'); };
+$('sound').onclick = () => { muted = !muted; voice.muted = muted; film.muted = muted; $('sound').textContent = muted ? 'Sound off' : 'Sound on'; $('sound').setAttribute('aria-pressed', String(muted)); $('sound').setAttribute('aria-label', muted ? 'Unmute narration' : 'Mute narration'); };
 $('expand').onclick = async () => { try { if (document.fullscreenElement) await document.exitFullscreen(); else await document.documentElement.requestFullscreen(); } catch { notice('Fullscreen is unavailable in this browser.'); } };
 document.addEventListener('fullscreenchange', () => $('expand').setAttribute('aria-label', document.fullscreenElement ? 'Exit fullscreen' : 'Enter fullscreen'));
 $('help').onclick = () => $('help-dialog').showModal(); $('open-notes').onclick = () => $('notes-dialog').showModal();
@@ -614,7 +699,7 @@ glass = createGlass(stage, {
   ready: onGlassReady,
   off: onGlassOff,
   clearShow() { if (stage.classList.contains('has-scene')) goHome(); },
-  volume(level) { if (!muted) voice.volume = level; },
+  volume(level) { if (!muted) { voice.volume = level; film.volume = level; } },
 });
 try {
   if (document.documentElement.classList.contains('oddity-locked')) playBlink();

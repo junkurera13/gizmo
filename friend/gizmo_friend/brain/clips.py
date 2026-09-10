@@ -1,4 +1,7 @@
-"""Fal image-to-video clips for Oddity lab. Friend does not grow short clips."""
+"""Leftover Fal image-to-video provider. Not used for Friend or Oddity moving
+explanations — those play Cinema (H3 Max Director). Kept for provider unit
+tests and historical Show checkpoints.
+"""
 
 from __future__ import annotations
 

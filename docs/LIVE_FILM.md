@@ -22,6 +22,7 @@ The current desktop run uses the same app through a local Uvicorn launcher under
 - `cinema/runtime.py`: owns preparation, playback generation numbers, cancellation, context, the last-frame continuation anchor, and a bounded session lease. Provider completion is not treated as something the listener heard. Only the viewer's media-clock completion or the device's completed PCM delivery marks narration complete.
 - `cinema/routes.py`: private session cookies, same-origin requests, one active browser per identity, bounded concurrent sessions and daily film reservations. Local preview sessions can run without an access code; cloud provisioning requires explicit enablement and a code.
 - `cinema/capability.py`: Friend starts and stops that same CinemaSession on the existing body `/ws` glass/audio/held-cue contract. Browser `/cinema` is not this path.
+- `oddity/film.py`: Oddity lab and public moments start and stop that same CinemaSession on the browser glass. No held-cue firmware; the Oddity client attaches over `/oddity/offer`.
 - `static/cinema.*`: the film is the primary surface. A typed question or hold-to-talk interrupts without camera access. Stale requests/results cannot reopen an interrupted film. Browser media time determines progress and the end, rather than a generation-finished notification.
 
 An interruption currently closes the generating peer. The next turn opens a new one with the last frame and conversation context. This deliberately avoids old buffered narration leaking through a changed direction, but adds reconnection latency and incurs the provider's per-session minimum. In-place replanning with a proven audio/video cut boundary is a future improvement, not something this implementation claims to do.
@@ -37,7 +38,7 @@ Cloud WebRTC/TURN reachability and throughput have **not** been verified on Rail
 
 Friend owns the `/ws` session. Cinema is one capability that session can start and stop. The silent visual director chooses `film` by **difficulty and usefulness**, not vocabulary: super easy questions stay talk (a still only if a picture truly helps); somewhat-to-very-difficult asks where a moving illustration would make understanding better play Cinema; greetings, feelings, jokes, and simple facts never film. The kid does not need to say film, movie, or cinema, and those words are not a gate. Story openings and actual setting changes also use Cinema. Friend then reuses `cinema/runtime.py` (H3 Max Director) plus `DeviceFilmPlayer` to play 320×240 held-cue MJPEG and the original PCM on the body. PTT, Select, settings, stills, memory, and ordinary talk stay on `GizmoSession`. After the film ends or is interrupted, conversation returns to Friend. The old `GIZMO_DIRECTOR_DEVICE` whole-session swap is gone.
 
-The old Fal `minimax/h3-max/image-to-video` still→short-clip path is **not** used on Friend. Moving explanations are Cinema only. A bare “make it move” on a still already on the glass stays words and keeps the still: not a 60-second film, and not a Fal clip. Oddity lab still uses `ClipProvider` for its own shots.
+The old Fal `minimax/h3-max/image-to-video` still→short-clip path is **not** used on Friend or Oddity. Moving explanations are Cinema only. A bare “make it move” on a still already on the glass stays words and keeps the still: not a 60-second film, and not a Fal clip. Oddity stills, diagrams, and the computed orbit experiment stay as they are; only a moving explanation starts Cinema.
 
 For a desk test that should prefer a film for every ask on one body, set `GIZMO_DIRECTOR_DEVICE=<exact-device-id>`. That is now a Friend routing hint, not a replacement brain. Leave it unset for normal conversation. Held-cue firmware (`X-Gizmo-Glass-Cues: 1`) is still required for on-device playback; without it the film cannot preload.
 
@@ -77,8 +78,9 @@ Open http://127.0.0.1:8768/cinema. Type a question or hold the pink microphone b
 
 ```sh
 uv run python -m pytest friend/tests -q
-uvx ruff check friend/gizmo_friend/cinema friend/gizmo_friend/session.py friend/tests/test_cinema.py
+uvx ruff check friend/gizmo_friend/cinema friend/gizmo_friend/oddity/film.py friend/gizmo_friend/session.py friend/tests/test_cinema.py
 node --check friend/gizmo_friend/static/cinema.js
+node --check friend/gizmo_friend/static/oddity.js
 uv lock --check
 ```
 

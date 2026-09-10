@@ -1,8 +1,8 @@
 # Show — build plan
 
 **Current movement path:** when the glass should move — hard explanations and
-story scenes that need movement — Friend starts Cinema (H3 Max Director).
-Friend does not grow a short Fal clip. “Make it move” keeps the still.
+story scenes that need movement — Friend and Oddity start Cinema (H3 Max Director).
+Neither grows a short Fal clip. “Make it move” keeps the still.
 The numbered plan below preserves Show implementation history, including the
 old still→clip path.
 
