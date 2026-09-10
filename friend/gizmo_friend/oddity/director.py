@@ -11,7 +11,7 @@ from typing import Literal
 from pydantic import BaseModel, Field, model_validator
 
 from gizmo_friend.prompt import FROZEN_PROMPT
-from gizmo_friend.brain.fal_text import FalTextClient, TEXT_MODEL
+from gizmo_friend.brain.gemini_text import GeminiTextClient, TEXT_MODEL
 
 
 class Interaction(BaseModel):
@@ -196,7 +196,7 @@ class Director:
         if not key:
             raise RuntimeError("GEMINI_API_KEY is missing from the server environment.")
         self.model = os.environ.get("ODDITY_DIRECTOR_MODEL", TEXT_MODEL)
-        self.planner = FalTextClient(os.environ["FAL_KEY"], model=self.model)
+        self.planner = GeminiTextClient(key, model=self.model)
         self.tts_model = os.environ.get("ODDITY_TTS_MODEL", "gemini-2.5-flash-preview-tts")
         self.client = genai.Client(api_key=key, http_options=types.HttpOptions(
             timeout=90_000, retry_options=types.HttpRetryOptions(attempts=1),

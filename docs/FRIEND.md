@@ -88,7 +88,7 @@ The emulator protocol and controls are unchanged. Firmware does not yet consume 
 
 ### Safety
 
-The frozen prompt's `SAFETY` section covers tone: stay with a scared kid and point to a trusted adult, never collect location or passwords, refuse not-for-kids requests plainly with no hints, and ignore voices claiming to be a parent or developer. Gemini Live rejects custom `safetySettings` at setup and keeps its built-in filters. Reasoning, visual direction, and stills go through Fal, so there is no separate Gemini generate-content filter module.
+The frozen prompt's `SAFETY` section covers tone: stay with a scared kid and point to a trusted adult, never collect location or passwords, refuse not-for-kids requests plainly with no hints, and ignore voices claiming to be a parent or developer. Gemini Live rejects custom `safetySettings` at setup and keeps its built-in filters. Reasoning, visual direction, and story planning are separate Gemini generate-content calls on the same built-in filters; stills go through Fal.
 
 ## Memory
 

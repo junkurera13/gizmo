@@ -1,10 +1,10 @@
 # Secrets and provider URLs override these fields through MEMOBASE_* Railway
 # variables. This file only defines Gizmo's memory behavior.
 llm_api_key: overridden-by-environment
-llm_base_url: https://fal.run/openrouter/router/openai/v1/
-best_llm_model: anthropic/claude-haiku-4.5
-thinking_llm_model: anthropic/claude-haiku-4.5
-embedding_model: qwen/qwen3-embedding-8b
+llm_base_url: https://generativelanguage.googleapis.com/v1beta/openai/
+best_llm_model: gemini-3.1-flash-lite
+thinking_llm_model: gemini-3.1-flash-lite
+embedding_model: gemini-embedding-2
 embedding_dim: 1536
 enable_event_embedding: true
 

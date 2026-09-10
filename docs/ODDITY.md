@@ -35,7 +35,7 @@ The initial implementation plans one short sequence per user turn. It does not a
 
 | Component | Current implementation |
 | --- | --- |
-| Experience direction | `anthropic/claude-haiku-4.5` through Fal; `ODDITY_DIRECTOR_MODEL` override |
+| Experience direction | `gemini-3.1-flash-lite`; `ODDITY_DIRECTOR_MODEL` override |
 | Narration | `gemini-2.5-flash-preview-tts`; `ODDITY_TTS_MODEL` override; `GIZMO_VOICE` or Umbriel |
 | Recorded speech transcription | `gemini-3.1-flash-lite`; `ODDITY_TRANSCRIBE_MODEL` override |
 | Drawings / stills | Fal FLUX.2 Klein 9B with reference editing and Gizmo's violet/pink print style |
