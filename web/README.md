@@ -4,10 +4,6 @@ The public site. Not the device. Not Friend. Not the glass.
 
 Next.js app under `/gizmo`: landing, Manifesto, Oddware header. Copy and tone still come from `docs/PRODUCT.md`. Do not invent a second personality.
 
-## Background
-
-Full-viewport still is `web/public/bg.png`. It covers and crops.
-
 ```
 cd web
 npm install

@@ -194,35 +194,7 @@ body:has(.about-page) {
   }
 }
 
-.bg-stage {
-  position: fixed;
-  inset: 0;
-  display: flex;
-  align-items: flex-end;
-  justify-content: center;
-  overflow: hidden;
-  pointer-events: none;
-}
-
-.bg-still {
-  width: auto;
-  height: min(75dvh, 48.5rem);
-  max-width: none;
-  object-fit: contain;
-  object-position: bottom center;
-  transform: translateX(-1.2%);
-  background: transparent;
-}
-
 @media (max-width: 700px) {
-  .bg-still {
-    height: 67dvh;
-  }
-
-  .hero {
-    top: 5.6rem;
-  }
-
   .hero-line {
     font-size: clamp(2.15rem, 8.4vw, 2.85rem);
   }
@@ -277,15 +249,6 @@ body:has(.about-page) {
   .interest {
     padding: 0.48rem 0.62rem;
   }
-}
-
-.hero {
-  position: fixed;
-  top: calc(16vh - 1.58rem);
-  left: 1.5rem;
-  right: 1.5rem;
-  z-index: 1;
-  text-align: center;
 }
 
 .hero-line {
@@ -408,61 +371,4 @@ body:has(.about-page) {
 .interest:hover {
   background: #fff;
   color: #323b1e;
-}
-
-.bottombar {
-  position: fixed;
-  left: 0;
-  right: 0;
-  bottom: 0.38rem;
-  z-index: 2;
-  height: 1.1rem;
-  overflow: hidden;
-  pointer-events: none;
-}
-
-.marquee {
-  display: flex;
-  width: max-content;
-  will-change: transform;
-  animation-name: marquee;
-  animation-timing-function: linear;
-  animation-iteration-count: infinite;
-}
-
-.marquee-track {
-  display: flex;
-  flex-shrink: 0;
-  align-items: center;
-  gap: 1.4em;
-  padding-right: 1.4em;
-  font-family: var(--font-michroma), ui-sans-serif, system-ui, sans-serif;
-  font-size: 0.52rem;
-  font-weight: 400;
-  letter-spacing: 0.14em;
-  line-height: 1.1rem;
-  white-space: nowrap;
-  text-transform: uppercase;
-  color: #f3ece6;
-  -webkit-text-stroke: 0.16em currentColor;
-  paint-order: stroke fill;
-}
-
-.marquee-word {
-  flex-shrink: 0;
-}
-
-@keyframes marquee {
-  from {
-    transform: translateX(0);
-  }
-  to {
-    transform: translateX(-50%);
-  }
-}
-
-@media (prefers-reduced-motion: reduce) {
-  .marquee {
-    animation: none;
-  }
 }
