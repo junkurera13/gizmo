@@ -6,7 +6,7 @@ import {createGlass} from './oddity-glass.mjs?v=gate30';
 const $ = (id) => document.getElementById(id);
 const stage = $('stage'), voice = $('voice'), film = $('film');
 let socket, awake = false, turn = '', queue = [], ready = false, playing = false;
-let controller, currentBeat, paused = false, muted = false, archive = [], archiveIndex = -1;
+let controller, currentBeat, paused = false, muted = false, archive = [];
 let history = [], plan = [], recorder, stream, held = false, talkHeld = false, recordingTimer, progressTimer;
 let microphoneAttempt = 0, mediaWaitResolve, audioUnlock, expectedClose = false;
 let captions = [];
@@ -146,7 +146,7 @@ async function ensureMoments() {
 }
 function resetConversation() {
   interrupt();
-  history = []; archive = []; archiveIndex = -1; plan = []; turn = '';
+  history = []; archive = []; plan = []; turn = '';
   restoredInvitation = null; pendingSay = '';
   renderNotes();
   $('direction').replaceChildren();
@@ -437,7 +437,7 @@ async function playQueue() {
         archived.subject = $('still').alt;
         archived.video = film.hidden ? null : film.getAttribute('src');
       }
-      archive.push(archived); archive = archive.slice(-40); archiveIndex = archive.length - 1;
+      archive.push(archived); archive = archive.slice(-40);
       ack('started'); progressTimer = setInterval(() => ack('progress'), 2000);
       if (beat.video) {
         if (beat.delivery === 'after') {
@@ -556,20 +556,6 @@ function stopRecording() {
   $('talk').classList.remove('recording'); $('listening').hidden = true; $('talk-label').textContent = 'Hold the pink side to talk';
   stream?.getTracks().forEach(t => t.stop()); stream = null;
   status('Listening back…', 'thinking');
-}
-async function browse(direction) {
-  if (!awake || !archive.length) return;
-  interrupt();
-  if (archiveIndex < 0) archiveIndex = archive.length;
-  archiveIndex = Math.max(0, Math.min(archive.length - 1, archiveIndex + direction));
-  const beat = archive[archiveIndex]; currentBeat = null;
-  const ownController = new AbortController(); controller = ownController;
-  try {
-    await showScene(beat, ownController.signal); setCaption(beat.narration);
-    $('chapter-title').textContent = beat.title; $('scene-position').textContent = `${archiveIndex + 1} / ${archive.length}`;
-    $('scene-kind').textContent = 'Revisited'; status('An earlier moment. Talk to take it somewhere new.', 'idle');
-    send({type:'revisit', id:beat.id});
-  } catch { notice('That earlier scene is unavailable.'); }
 }
 $('power').onclick = () => (awake || glass.booting) ? sleep() : wake();
 $('reconnect').onclick = () => { notice(); connect(); };

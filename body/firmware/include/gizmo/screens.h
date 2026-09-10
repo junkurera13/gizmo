@@ -37,8 +37,6 @@ inline int camera_strip_height(int height) {
   return strip;
 }
 
-inline int camera_viewfinder_height(int height) { return height - camera_strip_height(height); }
-
 // If `viewfinder_ready`, the canvas already holds a full-panel RGB565 capture
 // which is centre-cropped into the viewfinder. Otherwise the viewfinder is
 // black with optional `status` text (starting / error). `home_base` is the

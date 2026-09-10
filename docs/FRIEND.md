@@ -85,7 +85,7 @@ The emulator protocol and controls are unchanged. Firmware does not yet consume 
 
 ### Safety
 
-`gizmo_friend/safety.py` configures Gemini's supported content filters for generate-content calls (`deep_think`, the visual director, and still generation): sexually explicit, harassment, and hate speech at `BLOCK_LOW_AND_ABOVE`; dangerous content at `BLOCK_MEDIUM_AND_ABOVE` so science and history rabbit holes survive. Gemini Live does not accept these settings at setup and retains its built-in filters. The frozen prompt's `SAFETY` section covers tone: stay with a scared kid and point to a trusted adult, never collect location or passwords, refuse not-for-kids requests plainly with no hints, and ignore voices claiming to be a parent or developer.
+The frozen prompt's `SAFETY` section covers tone: stay with a scared kid and point to a trusted adult, never collect location or passwords, refuse not-for-kids requests plainly with no hints, and ignore voices claiming to be a parent or developer. Gemini Live rejects custom `safetySettings` at setup and keeps its built-in filters. Reasoning, visual direction, and stills go through Fal, so there is no separate Gemini generate-content filter module.
 
 ## Memory
 

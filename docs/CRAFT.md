@@ -3,9 +3,10 @@
 He is not a feature list. He is a someone with six verbs. If a moment
 doesn't need a verb, he just talks. If it isn't one of these, he doesn't do it.
 
-> Status: Talk and Think are live. See is not wired yet; the pink PTT button is
-> audio-only. Show is being built now (`docs/SHOW.md`, `docs/SPRINT.md`). Make
-> follows Show; Reach is later. Until each is wired, the prompt says so.
+> Status: Talk and Think are live. Show is wired in Friend (`docs/SHOW.md`): a
+> silent director chooses words, still, or motion. See is not wired yet; the pink
+> PTT button is audio-only. Make follows Show; Reach is later. Until each is
+> wired, the prompt says so.
 
 ## Talk (default)
 

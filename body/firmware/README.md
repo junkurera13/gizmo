@@ -31,7 +31,7 @@ Current scope is a **local terminal OS** on the breadboard hardware showing the
 same boot and home as the Mac simulator: the Glass boot flipbook (1.25 s drop,
 blink, ODDITY wordmark, chime at 2.875 s, held to 5.05 s), the home character
 with the clock and five Minecraft-style hearts, push-to-talk voice memo into
-PSRAM with a VU meter, memo playback through the MAX98357A, and the Settings
+PSRAM with a VU meter, memo playback through the STEMMA PWM speaker, and the Settings
 menu driven by UP/DOWN/SELECT. Down from IDLE (and serial `d`) opens the local
 Camera world: 78% viewfinder + 22% character strip. Double-Select within 320 ms
 toggles it, matching the Mac simulator. Wi-Fi is a one-time phone captive portal:
@@ -43,9 +43,9 @@ NTP (JST) starts after join so the home clock can appear. After
 Wi-Fi is online and a brain URL is stored, firmware opens authenticated Friend
 `/ws` (health + hello + PTT audio: 16 kHz mic upsampled to 24 kHz on the wire,
 inbound 24 kHz PCM downsampled to 16 kHz before the amp). Local
-memo playback stays available when the socket is down. Backlight PWM is not
-driven: LED is tied to 3V3, so the Brightness setting is stored but has no
-hardware effect yet.
+memo playback stays available when the socket is down. LED is tied to 3V3, so
+Settings brightness scales the framebuffer on blit instead of PWM until a
+backlight GPIO exists.
 
 ### Artwork pipeline
 
@@ -89,23 +89,22 @@ they show full, matching the simulator's default level.
 | `BOOT` | power-on; Glass flipbook, chime at 2875 ms, wordmark held to 5050 ms; buttons ignored | automatically to `IDLE` |
 | `IDLE` | home: character, clock (when set), hearts | PTT down → `RECORDING` (and Friend `ptt` if `/ws` is up); UP → `SETTINGS`; Down or serial `d` → `CAMERA`; double-Select (≤320 ms) → `CAMERA`; single Select → local memo `PLAYBACK` if Friend is down, or Friend `select` if `/ws` is up |
 | `RECORDING` | PTT held; 16 kHz PDM mic → PSRAM memo (20 s cap) and, when Friend is online, resampled 24 kHz chunks on `/ws`; REC band with VU over the home character (skipped if PTT started from Camera) | PTT up or buffer full → `IDLE` (Camera stays Camera) |
-| `PLAYBACK` | memo → I2S_NUM_1 at 16 kHz and the Volume setting; PLAY band with progress over the character | end of memo or SELECT → `IDLE`; PTT → `RECORDING` |
+| `PLAYBACK` | memo → 9-bit PWM on D9 at 16 kHz and the Volume setting; PLAY band with progress over the character | end of memo or SELECT → `IDLE`; PTT → `RECORDING` |
 | `SETTINGS` | two rows, Brightness / Volume. Local menu; not yet the Friend `settings` overlay. Brightness scales RGB565 on blit (LED is tied to 3V3). Volume scales PCM and plays a short local tick on each step | UP/DOWN move rows, SELECT toggles adjust (UP/DOWN change the level, auto-repeat on hold), DOWN past Volume → `IDLE`. Values persist in NVS |
 | `CAMERA` | Down / serial `d` / double-Select / serial `c`. 78% viewfinder + 22% character strip. Local preview only: no Friend `navigate` or `frame` | Up, single Select, double-Select, serial `x` / `h` → `IDLE` |
 
 All inputs are polled and debounced with `millis()`; audio DMA is pumped in
 small non-blocking chunks from `loop()`; the haptic motor is timed the same way.
-Both I2S controllers are stopped whenever idle so the amplifier has no BCLK and
-stays silent. Friend inbound PCM is downsampled 24→16 on the body, then played
-through the existing 16 kHz I2S_NUM_1 path. Amp clocks drop as soon as the live
-ring is empty so the MAX98357A shuts down.
+The PDM mic stops when idle. Friend inbound PCM is downsampled 24→16 on the
+body, then played through the 16 kHz PWM speaker on D9. PWM drops as soon as
+the live ring is empty so D9 sits low.
 
 ## Organization
 
 ```
 platformio.ini             pinned toolchain and exact board target
 include/gizmo/board.h      every pin: camera, mic, ILI9341, amp, PTT, ladder, battery, haptic, SD CS
-include/gizmo/audio.h      PDM mic (I2S_NUM_0) + MAX98357A (I2S_NUM_1) + PSRAM memo
+include/gizmo/audio.h      PDM mic (I2S_NUM_0) + STEMMA PWM speaker (D9) + PSRAM memo
 include/gizmo/battery.h    divider ADC on D5 with presence detection
 include/gizmo/camera.h     camera ownership/lifetime interface
 include/gizmo/display.h    ILI9341 SPI panel interface
@@ -192,7 +191,7 @@ stored. Hello must confirm protocol 1. A powered-off session receives
 Friend PTT. Reconnecting to an already-powered session preserves it. The
 `glass` snapshot is acknowledged and not fetched. PTT while connected sends `ptt` then 24 kHz
 `audio` chunks (mic stays 16 kHz; body resamples 3/2). Inbound `audio` PCM is
-downsampled 24→16 and queued onto the 16 kHz MAX98357A path. Local memo still
+downsampled 24→16 and queued onto the 16 kHz PWM speaker path. Local memo still
 fills during PTT and still plays with Select when the socket is down.
 
 Point the board at a brain (serial, 115200):

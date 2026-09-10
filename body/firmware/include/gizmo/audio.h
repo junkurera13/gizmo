@@ -34,8 +34,8 @@ class Audio {
   bool playing_memo() const { return playing_ && source_ == memo_ && !live_playing_; }
   bool live_playing() const { return live_playing_; }
   // Queue already-downsampled 16 kHz mono PCM16 (Friend wire is 24 kHz; the
-  // body resamples before this). I2S clocks start only while the ring has
-  // samples so idle D9 is quiet.
+  // body resamples before this). PWM starts only while the ring has samples
+  // so idle D9 is quiet.
   size_t enqueue_live(const int16_t* samples, size_t count);
   void stop_live();
   size_t live_capacity_left() const { return live_cap_ - live_n_; }
