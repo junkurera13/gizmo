@@ -4,15 +4,21 @@
 #include <Preferences.h>
 #include <WebServer.h>
 #include <WiFi.h>
+#include <sys/time.h>
+#include <time.h>
 
 namespace gizmo {
 namespace {
 constexpr uint16_t kDnsPort = 53;
 constexpr uint32_t kSavedFirstAttemptMs = 25000;
 constexpr uint32_t kSavedRetryMs = 12000;
+constexpr uint32_t kSavedGoneConfirmMs = 4000;
+constexpr uint8_t kSavedGiveUpAttempts = 3;
 constexpr uint32_t kPortalConnectTimeoutMs = 30000;
 constexpr uint32_t kJoinCommitMs = 400;
 constexpr uint32_t kDropDebounceMs = 3000;
+constexpr time_t kTlsClockFloor = 1735689600;     // 2025-01-01; cert checks need a sane clock
+constexpr time_t kTlsClockFallback = 1788998400;  // 2026-09-10 until NTP
 constexpr uint32_t kStatusPeriodMs = 2000;
 constexpr int kMaxListed = 12;
 
@@ -42,7 +48,7 @@ bool is_auth_failure(uint8_t reason) {
 bool keep_join_error(const char* detail) {
   return detail != nullptr &&
          (strstr(detail, "WRONG") != nullptr || strstr(detail, "NOT FOUND") != nullptr ||
-          strstr(detail, "TIMEOUT") != nullptr);
+          strstr(detail, "TIMEOUT") != nullptr || strstr(detail, "UNREACHABLE") != nullptr);
 }
 
 void html_escape(const String& in, String& out) {
@@ -100,8 +106,7 @@ const char* wifi_phase_name(WifiPhase phase) {
 bool WifiLink::card_visible() const {
   if (phase_ == WifiPhase::kPortal) return true;
   if (pending_sta_) return true;
-  if (phase_ == WifiPhase::kConnecting && join_from_portal_) return true;
-  if (phase_ == WifiPhase::kConnecting && saved_attempts_ == 0) return true;
+  if (phase_ == WifiPhase::kConnecting) return true;
   return false;
 }
 
@@ -329,10 +334,21 @@ void WifiLink::start_sta(const char* ssid, const char* pass, bool from_portal) {
   WiFi.setSleep(false);
   WiFi.setTxPower(WIFI_POWER_19_5dBm);
   WiFi.setHostname("gizmo");
-  WiFi.setAutoReconnect(!from_portal);
+  WiFi.setAutoReconnect(false);
   g_sta_disconnect_reason = 0;
   WiFi.begin(sta_ssid_, sta_pass_);
-  Serial.printf("wifi sta: joining \"%s\"\n", sta_ssid_);
+  Serial.printf("wifi sta: joining \"%s\" (attempt %u)\n", sta_ssid_,
+                static_cast<unsigned>(from_portal ? 1 : saved_attempts_ + 1));
+}
+
+void WifiLink::give_up_saved_network() {
+  WiFi.setAutoReconnect(false);
+  WiFi.disconnect(false, false);
+  snprintf(detail_, sizeof(detail_), "SAVED WIFI UNREACHABLE");
+  detail_[sizeof(detail_) - 1] = '\0';
+  Serial.printf("wifi: saved \"%s\" unreachable after %u tries; opening setup AP \"%s\"\n",
+                sta_ssid_, static_cast<unsigned>(saved_attempts_), ap_ssid_);
+  start_portal();
 }
 
 void WifiLink::finish_online() {
@@ -350,6 +366,11 @@ void WifiLink::finish_online() {
   WiFi.setSleep(false);
   WiFi.setAutoReconnect(true);
   snprintf(detail_, sizeof(detail_), "ONLINE %s", ip_.toString().c_str());
+  if (time(nullptr) < kTlsClockFloor) {
+    struct timeval tv = {kTlsClockFallback, 0};
+    settimeofday(&tv, nullptr);
+    Serial.println("wifi: TLS clock fallback until NTP");
+  }
   configTzTime("JST-9", "pool.ntp.org", "time.google.com");
   Serial.printf("wifi online: ssid=\"%s\" ip=%s (saved)\n", sta_ssid_, ip_.toString().c_str());
 }
@@ -435,13 +456,18 @@ void WifiLink::update() {
       finish_online();
     } else {
       const uint8_t reason = g_sta_disconnect_reason;
+      const uint32_t waited = millis() - connect_started_;
       const uint32_t limit = join_from_portal_
                                  ? kPortalConnectTimeoutMs
                                  : (saved_attempts_ == 0 ? kSavedFirstAttemptMs : kSavedRetryMs);
       const bool auth_fail = join_from_portal_ && is_auth_failure(reason);
       const bool no_ap = join_from_portal_ && reason == WIFI_REASON_NO_AP_FOUND;
-      const bool timed_out = millis() - connect_started_ >= limit;
-      if (auth_fail || no_ap || timed_out) {
+      const wl_status_t st = WiFi.status();
+      const bool saved_gone =
+          !join_from_portal_ && waited >= kSavedGoneConfirmMs &&
+          (reason == WIFI_REASON_NO_AP_FOUND || st == WL_NO_SSID_AVAIL || st == WL_CONNECT_FAILED);
+      const bool timed_out = waited >= limit;
+      if (auth_fail || no_ap || saved_gone || timed_out) {
         if (join_from_portal_) {
           if (auth_fail) {
             strncpy(detail_, "WRONG PASSWORD", sizeof(detail_) - 1);
@@ -456,10 +482,15 @@ void WifiLink::update() {
           resume_portal();
         } else {
           ++saved_attempts_;
-          Serial.printf("wifi: saved \"%s\" not up yet; retry %u\n", sta_ssid_,
-                        static_cast<unsigned>(saved_attempts_));
-          snprintf(detail_, sizeof(detail_), "RETRYING %s", sta_ssid_);
-          start_sta(sta_ssid_, sta_pass_, false);
+          if (saved_attempts_ >= kSavedGiveUpAttempts) {
+            give_up_saved_network();
+          } else {
+            Serial.printf("wifi: saved \"%s\" not up yet; retry %u/%u\n", sta_ssid_,
+                          static_cast<unsigned>(saved_attempts_ + 1),
+                          static_cast<unsigned>(kSavedGiveUpAttempts));
+            snprintf(detail_, sizeof(detail_), "RETRYING %s", sta_ssid_);
+            start_sta(sta_ssid_, sta_pass_, false);
+          }
         }
       }
     }

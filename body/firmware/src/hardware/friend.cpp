@@ -330,9 +330,12 @@ void FriendConnection::schedule_backoff() {
   glass_seen_ = false;
   phase_ = FriendPhase::kBackoff;
   backoff_until_ = millis() + backoff_ms_;
-  snprintf(detail_, sizeof(detail_), "RETRY IN %ums", static_cast<unsigned>(backoff_ms_));
+  const uint32_t wait = backoff_ms_;
   backoff_ms_ = backoff_ms_ * 2;
   if (backoff_ms_ > 4000) backoff_ms_ = 4000;
+  if (detail_[0] == '\0' || strncmp(detail_, "RETRY", 5) == 0) {
+    snprintf(detail_, sizeof(detail_), "RETRY IN %ums", static_cast<unsigned>(wait));
+  }
 }
 
 bool FriendConnection::inspect_health() {
@@ -357,8 +360,8 @@ bool FriendConnection::inspect_health() {
   Serial.printf("friend health: %s\n", health_url);
 
   HTTPClient http;
-  http.setTimeout(2500);
-  http.setConnectTimeout(2500);
+  http.setTimeout(6000);
+  http.setConnectTimeout(6000);
   bool begun = false;
   WiFiClientSecure tls_client;
   WiFiClient plain;
@@ -825,7 +828,9 @@ void FriendConnection::update(bool wifi_online) {
   phase_ = FriendPhase::kHealth;
   last_try_ = now;
   if (!inspect_health()) {
-    if (phase_ != FriendPhase::kNeedConfig) schedule_backoff();
+    if (phase_ == FriendPhase::kNeedConfig) return;
+    if (tls_ && time(nullptr) < 1735689600) return;
+    schedule_backoff();
     return;
   }
   if (!open_socket()) {

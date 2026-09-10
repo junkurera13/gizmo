@@ -8,8 +8,9 @@
 // save the chosen SSID/password in NVS immediately, then auto-join on later
 // boots. The ESP32 radio cannot hop channels while the setup AP is up, so a
 // join drops that AP, connects STA-only, and brings the AP back only if the
-// join fails. Saved networks keep retrying in the background; serial `w`
-// forgets them and reopens the portal. The portal runs inside loop().
+// join fails. A saved network that is out of range is tried a few times, then
+// the setup AP opens again; credentials stay until the portal saves a new
+// network. Serial `w` forgets them. The portal runs inside loop().
 namespace gizmo {
 
 enum class WifiPhase : uint8_t {
@@ -44,6 +45,7 @@ class WifiLink {
   void bind_routes();
   void stop_portal();
   void start_sta(const char* ssid, const char* pass, bool from_portal);
+  void give_up_saved_network();
   void finish_online();
   void send_portal();
   void handle_join();
