@@ -54,8 +54,7 @@ let session = stored(SESSION_KEY);
 let moments = [];
 let momentIndex = 0;
 let momentId = stored(MOMENT_KEY);
-let pendingSay = '';
-let demoController, demoRunning = false, demoPlayedMoment = '', demoVisualVisible = false;
+let demoController, demoRunning = false, demoPlayedMoment = '';
 voice.addEventListener('timeupdate', () => {
   if (playing && currentBeat?.audio && !voice.paused) setCaption(captionAt(captions, voice.currentTime, voice.duration));
 });
@@ -155,8 +154,8 @@ async function ensureMoments() {
 }
 function resetConversation() {
   interrupt();
-  history = []; archive = []; plan = []; turn = '';
-  restoredInvitation = null; pendingSay = '';
+  history = []; archive = []; archiveIndex = -1; plan = []; turn = '';
+  restoredInvitation = null;
   renderNotes();
   $('direction').replaceChildren();
   if (awake) goHome();
@@ -179,32 +178,6 @@ async function selectMoment(index) {
   resetConversation();
   await connect(undefined, {fresh: true});
 }
-function demoSpeech(text, {child = false, signal} = {}) {
-  const synth = globalThis.speechSynthesis;
-  const Voice = globalThis.SpeechSynthesisUtterance;
-  if (muted || !synth || !Voice) return delay(Math.max(1200, text.length * 42), signal);
-  return new Promise((resolve, reject) => {
-    const utterance = new Voice(text);
-    const voices = synth.getVoices?.() || [];
-    const english = voices.filter(voice => /^en(?:-|_)/i.test(voice.lang || ''));
-    const preferred = child
-      ? /samantha|zira|aria|jenny|ava|sonia/i
-      : /daniel|guy|ryan|davis|george/i;
-    utterance.voice = english.find(voice => preferred.test(voice.name)) || english[child ? 0 : Math.min(1, english.length - 1)] || null;
-    utterance.rate = child ? 1.03 : 0.9;
-    utterance.pitch = child ? 1.3 : 0.78;
-    utterance.volume = 1;
-    const clean = () => signal?.removeEventListener('abort', abort);
-    const done = () => { clean(); resolve(); };
-    const abort = () => { synth.cancel(); clean(); reject(new DOMException('Stopped', 'AbortError')); };
-    utterance.onend = done;
-    utterance.onerror = done;
-    signal?.addEventListener('abort', abort, {once:true});
-    if (signal?.aborted) return abort();
-    synth.cancel();
-    synth.speak(utterance);
-  });
-}
 async function playDemoRecording(src, signal) {
   demoAudio.src = src; demoAudio.muted = muted; demoAudio.load();
   const ended = mediaEnded(demoAudio, signal); ended.catch(() => {});
@@ -223,38 +196,18 @@ function waitForAwake(signal) {
     check();
   });
 }
-function showBirthdayVisual(sleeps) {
-  const visual = $('birthday-demo');
-  $('birthday-count').textContent = String(sleeps);
-  $('birthday-moons').replaceChildren(...Array.from({length:sleeps}, (_, index) => {
-    const moon = document.createElement('i');
-    moon.style.setProperty('--moon', index);
-    return moon;
-  }));
-  $('still').hidden = true; film.hidden = true; film.removeAttribute('src'); film.load();
-  orbitView?.hide(); screenOrbit = false;
-  visual.hidden = false; visual.setAttribute('aria-hidden', 'false');
-  stage.classList.add('has-scene'); demoVisualVisible = true;
-}
-function clearDemoVisual() {
-  if (!demoVisualVisible) return;
-  const visual = $('birthday-demo');
-  visual.hidden = true; visual.setAttribute('aria-hidden', 'true');
-  stage.classList.remove('has-scene'); demoVisualVisible = false;
-}
-function stopDemo(clearVisual = true) {
+function stopDemo() {
   demoController?.abort(); demoController = null;
-  globalThis.speechSynthesis?.cancel?.();
   demoAudio.pause(); demoAudio.removeAttribute('src'); demoAudio.load();
   demoRunning = false; setTalkPressed(false);
-  if (clearVisual) { clearDemoVisual(); setCaption(); }
+  setCaption();
   renderRail();
 }
 async function sayMoment() {
   const item = currentMoment();
-  if (!item?.demo || demoRunning) return;
+  if (!item?.demo?.prompt_audio || demoRunning) return;
   await unlockAudio();
-  interrupt(); clearDemoVisual();
+  interrupt();
   const ownController = new AbortController();
   demoController = ownController; demoRunning = true; renderRail();
   const signal = ownController.signal;
@@ -264,23 +217,13 @@ async function sayMoment() {
     setTalkPressed(true); $('talk').classList.add('recording');
     setCaption(item.demo.prompt);
     await delay(260, signal);
-    if (item.demo.prompt_audio) await playDemoRecording(item.demo.prompt_audio, signal);
-    else await demoSpeech(item.demo.prompt, {child:true, signal});
+    await playDemoRecording(item.demo.prompt_audio, signal);
     setTalkPressed(false); $('talk').classList.remove('recording');
     setCaption(); status('Gizmo is thinking…', 'thinking');
-    await delay(900, signal);
-    showBirthdayVisual(Number(item.demo.sleeps) || 11);
-    setCaption(item.demo.reply);
-    history.push({role:'user', text:item.demo.prompt}, {role:'gizmo', text:item.demo.reply});
-    renderNotes();
-    status('Gizmo is answering…', 'playing');
-    if (item.demo.reply_audio) await playDemoRecording(item.demo.reply_audio, signal);
-    else await demoSpeech(item.demo.reply, {signal});
-    await delay(450, signal);
-    status('Demo finished. Press replay to watch it again.', 'idle');
     demoPlayedMoment = item.id;
+    send({type:'text', text:item.demo.prompt});
   } catch (error) {
-    if (error.name !== 'AbortError') { notice(error.message || 'The demo could not be played. Try again.'); clearDemoVisual(); }
+    if (error.name !== 'AbortError') notice(error.message || 'The demo could not be played. Try again.');
   } finally {
     if (demoController === ownController) demoController = null;
     demoRunning = false; setTalkPressed(false); $('talk').classList.remove('recording'); renderRail();
@@ -423,11 +366,6 @@ function onGlassReady() {
   inputEnabled(socket?.readyState === WebSocket.OPEN);
   $('starters').hidden = history.length > 0 || playMoments;
   syncPower();
-  if (pendingSay) {
-    const text = pendingSay;
-    pendingSay = '';
-    submitThought(text);
-  }
   if (restoredInvitation) {
     const beat = archive.find(b => b.id === restoredInvitation.id);
     if (beat?.interaction) {

@@ -92,11 +92,5 @@ html.embedded:not(.oddity-lab) .moments:not([hidden]){display:flex}
 .moment-copy{min-width:0;flex:1;text-align:center}
 #moment-line{margin:0 0 6px;font-size:12px;line-height:1.35;letter-spacing:.01em;color:#e6e0e4}
 #moment-say{border-bottom:1px solid #5c555a;padding:0 0 1px;font-size:10px;letter-spacing:.12em;text-transform:uppercase;color:#a898a0}
-.birthday-demo{position:absolute;inset:0;z-index:2;display:flex;flex-direction:column;align-items:center;justify-content:center;padding:8% 7% 20%;background:radial-gradient(circle at 50% 34%,#24212f 0,#0d0c12 48%,#050505 78%);color:#fff;text-align:center}
-.birthday-number{display:flex;align-items:baseline;gap:2cqw;font-family:Outfit,system-ui,sans-serif}.birthday-number strong{font-size:19cqw;font-weight:650;line-height:.9;letter-spacing:-.06em}.birthday-number span{font-size:5cqw;font-weight:500;letter-spacing:.04em;text-transform:uppercase}
-.birthday-moons{display:grid;grid-template-columns:repeat(6,1fr);gap:2.2cqw;width:63%;margin:7cqh auto 4cqh}.birthday-moons i{aspect-ratio:1;border-radius:50%;background:#f6efb2;box-shadow:0 0 2.8cqw #efe69a55;opacity:0;transform:translateY(2cqh) scale(.65);animation:birthday-moon-in .34s cubic-bezier(.2,.8,.2,1) forwards;animation-delay:calc(var(--moon) * 70ms)}.birthday-moons i:last-child{grid-column:4}
-.birthday-demo>p{margin:0;color:#bab4c5;font:500 3.2cqw/1.2 Outfit,system-ui,sans-serif;letter-spacing:.06em;text-transform:uppercase}
 .moments.is-playing #moment-prev,.moments.is-playing #moment-next{opacity:.3;pointer-events:none}#moment-say.is-playing{border-bottom-color:transparent;color:#fff}
-@keyframes birthday-moon-in{to{opacity:1;transform:translateY(0) scale(1)}}
 @media(max-width:600px){.embedded main{padding-top:6px}.embedded .simulator{width:min(100%,520px)}html.embedded:not(.oddity-lab) .simulator{width:min(100%,520px)}#moment-line{font-size:11px}}
-@media(prefers-reduced-motion:reduce){.birthday-moons i{animation:none;opacity:1;transform:none}}

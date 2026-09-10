@@ -257,6 +257,7 @@ class OddityRouteTests(unittest.TestCase):
                 self.assertEqual(client.get("/oddity").status_code, 200)
                 self.assertEqual(client.get("/oddity/moments").status_code, 200)
                 self.assertEqual(client.get("/static/oddity.js").status_code, 200)
+                self.assertEqual(client.get("/static/demo-birthday-kid.mp3").status_code, 200)
                 self.assertEqual(client.get("/").status_code, 401)
                 self.assertEqual(client.post("/oddity/session").status_code, 401)
                 response = client.post("/oddity/session", headers={"x-oddity-preview": "adult-review"})
@@ -313,6 +314,17 @@ class OddityRouteTests(unittest.TestCase):
                     "x-oddity-session": second.json()["session"],
                 })
                 self.assertEqual(reuse.json()["session"], second.json()["session"])
+                reused_path = root / "oddity" / reuse.json()["session"] / "session.json"
+                reused = json.loads(reused_path.read_text())
+                reused["director_addendum"] = "stale contract"
+                reused_path.write_text(json.dumps(reused))
+                client.post("/oddity/session", headers={
+                    "x-oddity-mode": "moment", "x-oddity-preview": "adult-review",
+                    "x-oddity-moment": "pompeii",
+                    "x-oddity-session": reuse.json()["session"],
+                })
+                refreshed = json.loads(reused_path.read_text())
+                self.assertNotEqual(refreshed["director_addendum"], "stale contract")
 
     def test_cloud_lab_without_token_is_unavailable(self):
         environment = {

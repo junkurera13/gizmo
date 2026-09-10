@@ -6,6 +6,7 @@ import vm from 'node:vm';
 async function app() {
   const elements = new Map();
   const fetches = [];
+  const sent = [];
   function element(id) {
     if (!elements.has(id)) elements.set(id, {
       id, dataset:{}, style:{}, hidden: id === 'moments' || id === 'preview-gate',
@@ -38,7 +39,7 @@ async function app() {
           session: 'a'.repeat(32), mode: 'moment',
           moment: options.headers?.['X-Oddity-Moment'] || 'birthday',
           moments: [
-            {id:'birthday', line:'How many more sleeps until my birthday?', demo:{prompt:'Gizmo, how many more sleeps until my birthday?', prompt_audio:'/static/demo-birthday-kid.mp3', reply:'Eleven more sleeps.', sleeps:11}},
+            {id:'birthday', line:'How many more sleeps until my birthday?', demo:{prompt:'Gizmo, how many more sleeps until my birthday?', prompt_audio:'/static/demo-birthday-kid.mp3'}},
             {id:'draw', line:'What should I draw?'},
           ],
         }),
@@ -52,8 +53,9 @@ async function app() {
   let source = await fs.readFile(new URL('../gizmo_friend/static/oddity.js', import.meta.url), 'utf8');
   source = source.replace(/^import .*;\r?\n/gm, '').replace(/\r?\nsyncPower\(\);[\s\S]*$/, '');
   vm.runInContext(source, context);
-  vm.runInContext('mountDevice = async () => {}; deviceReady = true; awake = true; socket = {readyState:1, send(){}};', context);
-  return {element, context, fetches, run: code => vm.runInContext(code, context)};
+  context.sent = sent;
+  vm.runInContext('mountDevice = async () => {}; deviceReady = true; awake = true; socket = {readyState:1, send(value){sent.push(value)}};', context);
+  return {element, context, fetches, sent, run: code => vm.runInContext(code, context)};
 }
 
 test('embedded player shows the current kid line on the rail', async () => {
@@ -67,20 +69,31 @@ test('embedded player shows the current kid line on the rail', async () => {
 
 test('a single completed demo hides scenario navigation', async () => {
   const ui = await app();
-  ui.run('moments = [{id:"birthday", line:"How many more sleeps until my birthday?", demo:{prompt:"Gizmo, how many more sleeps until my birthday?", reply:"Eleven more sleeps.", sleeps:11}}]; syncMoment("birthday")');
+  ui.run('moments = [{id:"birthday", line:"How many more sleeps until my birthday?", demo:{prompt:"Gizmo, how many more sleeps until my birthday?", prompt_audio:"/static/demo-birthday-kid.mp3"}}]; syncMoment("birthday")');
   assert.equal(ui.element('moment-prev').hidden, true);
   assert.equal(ui.element('moment-next').hidden, true);
 });
 
 test('only completed moments expose a playable demo', async () => {
   const ui = await app();
-  ui.run('moments = [{id:"birthday", line:"How many more sleeps until my birthday?", demo:{prompt:"Gizmo, how many more sleeps until my birthday?", reply:"Eleven more sleeps.", sleeps:11}}, {id:"draw", line:"What should I draw?"}]');
+  ui.run('moments = [{id:"birthday", line:"How many more sleeps until my birthday?", demo:{prompt:"Gizmo, how many more sleeps until my birthday?", prompt_audio:"/static/demo-birthday-kid.mp3"}}, {id:"draw", line:"What should I draw?"}]');
   ui.run('syncMoment("birthday")');
   assert.equal(ui.element('moment-say').disabled, false);
   assert.equal(ui.element('moment-say').textContent, 'Play demo');
   ui.run('syncMoment("draw")');
   assert.equal(ui.element('moment-say').disabled, true);
   assert.equal(ui.element('moment-say').textContent, 'Coming soon');
+});
+
+test('the recorded kid question is handed to the real Gizmo session', async () => {
+  const ui = await app();
+  ui.run('moments = [{id:"birthday", line:"How many more sleeps until my birthday?", demo:{prompt:"Gizmo, how many more sleeps until my birthday?", prompt_audio:"/static/demo-birthday-kid.mp3"}}]; syncMoment("birthday"); playDemoRecording = async () => {}');
+  await ui.run('sayMoment()');
+  assert.deepEqual(JSON.parse(ui.sent.at(-1)), {
+    type: 'text',
+    text: 'Gizmo, how many more sleeps until my birthday?',
+  });
+  assert.equal(ui.element('device').dataset.ptt, 'false');
 });
 
 test('lab mode keeps the rail hidden', async () => {

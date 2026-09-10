@@ -68,14 +68,13 @@ _register(
         seed=birthday_seed,
         contract=(
             "The kid is asking how long until their birthday. You already know the date "
-            "from memory. Answer with the number of sleeps, warmly and briefly. A small "
-            "generated visual of the wait is welcome; do not ask them to restate the date."
+            "from memory. Answer with the number of sleeps, warmly and briefly. Keep the "
+            "normal Gizmo face on screen: do not generate an image, video, diagram, or "
+            "interactive scene. Do not ask them to restate the date."
         ),
         demo={
             "prompt": "Gizmo, how many more sleeps until my birthday?",
             "prompt_audio": "/static/demo-birthday-kid.mp3",
-            "reply": "Eleven more sleeps. I checked. Your birthday is getting properly close.",
-            "sleeps": 11,
         },
     ),
     Moment(
