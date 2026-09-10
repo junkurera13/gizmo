@@ -95,24 +95,20 @@ STILL
 - An explicit request to draw, show, or make a picture gets a still unless the ask is a process unfolding over time (that is FILM).
 
 FILM
-- The kid will not say "film", "movie", or "cinema". You still choose FILM when a moving explanation is the right answer.
-- Use film when the answer is a process, mechanism, or cause-and-effect that benefits from seeing change over time: how a rocket lifts, what happens when ice melts, why the Moon orbits, how a heart pumps, why the sky is blue, how rain forms. The film is the answer; it has its own voice over continuous generated pictures.
-- How X works, what happens when, how something is made, and why a physical thing behaves that way are FILM, not words, not a still, and not a short silent clip.
-- Never film for greetings, jokes, feelings, people, stories, homework steps, math, or "what does it look like".
-- Never film for "make it move" of an existing picture (that is ANIMATE).
-- Never film for appearance, maps, anatomy diagrams, or a short clip of a thing merely existing.
+- The kid will not say "film", "movie", or "cinema". Choose FILM whenever the glass should move.
+- Use film for a moving explanation: how a rocket lifts, what happens when ice melts, why the Moon orbits, how a heart pumps, why the sky is blue. The film is the answer; it has its own voice over continuous generated pictures.
+- Use film for a story's opening or an actual move to a new setting. That moving scene is the same Cinema path, not a short silent clip. A continuation in the same setting stays WORDS and keeps the current picture.
+- How X works, what happens when, and a story scene that should move are FILM, not a still and not a short Fal clip.
+- Never film for greetings, jokes, feelings, people, homework steps, math, or "what does it look like".
+- Never film for "make it move" of an existing picture (leftover ANIMATE).
+- Never film for appearance, maps, or anatomy diagrams.
 
 MOTION
-- An explicit request for a short video or animation of a thing existing (a jellyfish pulsing, a rocket sitting there) gets MOTION for a new subject, or ANIMATE when it refers to the existing illustration. Do not downgrade that to a still.
-- A how/why/what-happens process is FILM, not MOTION, even if the kid never said film.
-- Use motion only when a short silent clip is enough and a narrated explanation is not: a jellyfish pulsing, clouds drifting over a story castle.
-- Never add motion merely because a subject is alive or capable of moving. Appearance, maps, anatomy, objects, and places remain still.
-- A story's opening or an actual move to a new setting gets one moving scene.
-  This includes a setting change introduced by the narration after "Then what?".
+- Do not use MOTION. If the glass should move, choose FILM. MOTION is a leftover alias and is treated as FILM.
+- A story's opening or an actual move to a new setting is FILM, including a setting change after "Then what?".
   A continuation, emotional twist, or changed motive in the same setting stays
-  words: keep the current scene. A request to redraw or a major visible physical
-  change can get a new scene. If no picture is on the glass, a story continuation
-  can establish its current setting. Depict the place and atmosphere, never a child.
+  words: keep the current scene. If no picture is on the glass, a story continuation
+  can establish its current setting as FILM. Depict the place and atmosphere, never a child.
 - For a new story scene, describe the location actually established in the
   narration, carrying forward established visible details. Do not depict both the
   old and new locations, a montage, dialogue, a summary of the plot, or labeled parts.
@@ -127,10 +123,10 @@ You craft the picture. kind is how it is made:
 - If story_setting is set, kind MUST be scene.
 
 ANIMATE
-- Use animate only when an illustration is currently on the glass and the kid directly asks to make it move or animate it.
+- Leftover. Use only when an illustration is currently on the glass and the kid directly asks to make it move. The product path for movement is FILM.
 - Never redraw the subject for animate.
 
-For still or motion, subject is a short concrete noun phrase with the one important detail and no style instructions. For motion or animate, motion is one short phrase describing only quiet subject motion: no camera movement, cuts, new objects, or cinematic language. For words, leave subject and motion empty. Never output the literal word "none" as motion."""
+For still or film, subject is a short concrete noun phrase with the one important detail and no style instructions. For leftover animate, motion is one short phrase of quiet subject motion. For words, leave subject and motion empty. Never output the literal word "none" as motion."""
 
 DIRECTOR_SCHEMA = {
     "type": "object",
@@ -261,11 +257,23 @@ def is_moving_explanation_ask(utterance: str) -> bool:
 
 
 def prefer_film_route(decision: VisualDecision, utterance: str) -> VisualDecision:
-    """Process asks become film even if the model said still, motion, or words."""
-    if decision.story_setting or decision.route in {"animate", "film"}:
+    """Moving glass is Cinema. Leftover animate clips are not upgraded."""
+    if decision.route == "animate":
         return decision
-    if is_moving_explanation_ask(utterance):
-        return VisualDecision(route="film", subject=decision.subject)
+    if decision.route == "motion":
+        return VisualDecision(
+            route="film",
+            subject=decision.subject,
+            story_setting=decision.story_setting,
+            kind=decision.kind,
+            story_character=decision.story_character,
+            new_story=decision.new_story,
+        )
+    if decision.route in {"still", "words"}:
+        if decision.story_setting:
+            return decision
+        if is_moving_explanation_ask(utterance):
+            return VisualDecision(route="film", subject=decision.subject)
     return decision
 
 
@@ -295,14 +303,16 @@ def decision_from_payload(
     if route == "animate":
         return VisualDecision(route="animate", motion=motion, story_setting=setting) if has_visual and motion else VisualDecision()
     if route == "film":
-        if setting:
-            if subject:
-                return VisualDecision(route="still", subject=subject, story_setting=setting, kind=kind, **identity)
-            return VisualDecision()
-        return VisualDecision(route="film", subject=subject)
+        return VisualDecision(
+            route="film", subject=subject, story_setting=setting, kind=kind, **identity,
+        ) if subject else VisualDecision()
     if route == "motion":
+        # Leftover alias: a moving scene is Cinema, not a Fal still→clip.
         if subject and motion:
-            return VisualDecision(route="motion", subject=subject, motion=motion, story_setting=setting, kind=kind, **identity)
+            return VisualDecision(
+                route="film", subject=subject, motion=motion, story_setting=setting,
+                kind=kind, **identity,
+            )
         if subject:
             return VisualDecision(route="still", subject=subject, story_setting=setting, kind=kind, **identity)
         return VisualDecision()

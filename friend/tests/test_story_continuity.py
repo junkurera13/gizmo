@@ -207,12 +207,12 @@ class DirectorContextTests(unittest.IsolatedAsyncioTestCase):
     def test_same_setting_overrules_a_redundant_model_redraw(self):
         payload = {"route": "motion", "subject": "castle courtyard", "motion": "clouds drift", "story_setting": "castle"}
         self.assertEqual(decision_from_payload(payload, has_visual=True, current_story_setting="castle").route, "words")
-        self.assertEqual(decision_from_payload(payload, has_visual=False, current_story_setting="castle").route, "motion")
+        self.assertEqual(decision_from_payload(payload, has_visual=False, current_story_setting="castle").route, "film")
         payload["redraw_requested"] = True
-        self.assertEqual(decision_from_payload(payload, has_visual=True, current_story_setting="castle").route, "motion")
+        self.assertEqual(decision_from_payload(payload, has_visual=True, current_story_setting="castle").route, "film")
         payload["redraw_requested"] = False
         payload["story_setting"] = "ocean floor"
-        self.assertEqual(decision_from_payload(payload, has_visual=True, current_story_setting="castle").route, "motion")
+        self.assertEqual(decision_from_payload(payload, has_visual=True, current_story_setting="castle").route, "film")
 
     def test_sentence_boundary_waits_for_more_than_a_short_acknowledgement(self):
         self.assertEqual(opening_narration("Right. Copper went"), "")

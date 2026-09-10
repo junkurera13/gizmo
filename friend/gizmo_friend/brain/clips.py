@@ -1,4 +1,4 @@
-"""Standalone image-to-video provider for Show; no session or storage dependencies."""
+"""Leftover Fal image-to-video for bare 'make it move'. Product movement is Cinema."""
 
 from __future__ import annotations
 

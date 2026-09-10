@@ -240,18 +240,21 @@ class MotionSessionTests(ShowSessionFixture):
         self.assertIsNone(metadata["motion"])
 
     async def test_explicit_visual_starts_before_any_voice_narration(self):
+        cinema = StubCinema()
+        self.friend._cinema = cinema
         director = FixedDirector(VisualDecision(route="motion", subject="jellyfish", motion="bell pulses"))
         self.friend.visual_director = director
         await self.friend.handle(TextLine(text="Make a short video of a jellyfish."))
-        await self.images.wait_for_calls(1)
+        await asyncio.wait_for(asyncio.shield(self.friend._director_task), 1)
         self.assertEqual(len(director.calls), 1)
         self.assertEqual(director.contexts[0][0], "")
-        await self.finish_show()
-        await self.clips.wait_for_calls(1)
+        self.assertEqual(cinema.started, ["Make a short video of a jellyfish."])
+        self.assertEqual(self.images.calls, [])
+        self.assertEqual(self.clips.calls, [])
         await self.friend._on_transport(TransportEvent(kind="transcript", text="A jellyfish pushes water to swim."))
         await self.friend._on_transport(TransportEvent(kind="done"))
         self.assertEqual(len(director.calls), 1)
-        self.assertEqual(len(self.images.calls), 1)
+        self.assertEqual(self.images.calls, [])
 
     async def test_explicit_voice_request_starts_at_final_input_transcript(self):
         director = FixedDirector(VisualDecision(route="still", subject="volcano"))
@@ -487,6 +490,41 @@ class FilmCapabilityTests(ShowSessionFixture):
         await asyncio.wait_for(asyncio.shield(self.friend._director_task), 1)
         self.assertEqual(cinema.started, ["Why do rockets fly?"])
         self.assertEqual(self.images.calls, [])
+
+    async def test_story_setting_motion_plays_cinema_with_chapter_words(self):
+        cinema = StubCinema()
+        self.friend._cinema = cinema
+        self.friend.visual_director = FixedDirector(
+            VisualDecision(
+                route="motion", subject="castle courtyard", motion="clouds drift",
+                story_setting="castle",
+            )
+        )
+        await self.friend.handle(TextLine(text="Then what?"))
+        await self.friend._on_transport(
+            TransportEvent(kind="transcript", text="Fen crossed the castle courtyard as clouds drifted over the towers.")
+        )
+        await self.friend._on_transport(TransportEvent(kind="done"))
+        await asyncio.wait_for(asyncio.shield(self.friend._director_task), 1)
+        self.assertEqual(
+            cinema.started,
+            ["Fen crossed the castle courtyard as clouds drifted over the towers."],
+        )
+        self.assertEqual(self.friend.current_story_setting, "castle")
+        self.assertEqual(self.images.calls, [])
+
+    async def test_easy_talk_does_not_start_a_film(self):
+        cinema = StubCinema()
+        self.friend._cinema = cinema
+        self.friend.visual_director = FixedDirector(VisualDecision())
+        await self.friend.handle(TextLine(text="Hi."))
+        await self.friend._on_transport(TransportEvent(kind="transcript", text="Hey."))
+        await self.friend._on_transport(TransportEvent(kind="done"))
+        if self.friend._director_task:
+            await asyncio.wait_for(asyncio.shield(self.friend._director_task), 1)
+        self.assertEqual(cinema.started, [])
+        self.assertEqual(self.images.calls, [])
+        self.assertFalse(self.friend.film_active())
 
     async def test_ptt_stops_an_active_film(self):
         cinema = StubCinema()

@@ -1,15 +1,12 @@
 """The storytelling conductor: renders every beat ahead, then cuts pictures to the voice.
 
 Conversation is improvised by Gemini Live and its pictures chase the words.
-A told piece is the other way round. A planner writes the chapter, each beat is
-drawn and voiced before it is spoken, and this conductor plays it back the way
-a film is cut: cue the picture, wait until the glass actually holds it, then
-speak that beat's words over it. The next beat is already on its way to the
-device while this one plays, so the change lands on the sentence.
-
-The conductor never talks to sockets, models, or state machines directly. The
-session hands it a Stage (the device plus the voice) and the providers. That
-keeps it testable with fakes, and keeps one owner for the glass.
+A told piece is the other way round. A planner writes the chapter; quiet beats
+are drawn and voiced before they are spoken. A chapter that should move plays
+one Cinema film (H3 Max Director) instead of Fal still→clips. The conductor
+never talks to sockets, models, or state machines directly. The session hands
+it a Stage (the device plus the voice) and the providers. That keeps it
+testable with fakes, and keeps one owner for the glass.
 """
 
 from __future__ import annotations
@@ -34,14 +31,13 @@ logger = logging.getLogger(__name__)
 # before, so these only bite when a provider is slow or down.
 STILL_WAIT_SECONDS = 14.0
 NARRATION_WAIT_SECONDS = 20.0
-# A late clip still attaches while the beat plays, so the wait for a motion
-# ack is short: the still already sits under the words.
 READY_TIMEOUT_SECONDS = 6.0
 MOTION_READY_GRACE_SECONDS = 1.5
 # A beat whose voice failed keeps its picture up this long, then moves on.
 SILENT_BEAT_SECONDS = 4.0
 # What is warmed for the chapter after this one, before the kid asks for it.
-# "plan": words only. "stills": words and pictures. "all": clips too.
+# "plan": words only. "stills": words and pictures. "all" used to mean Fal clips;
+# leftover — moving chapters play Cinema instead of clips.
 PREFETCH_LEVELS = ("plan", "stills", "all")
 
 
@@ -51,8 +47,11 @@ class Stage(Protocol):
     async def cue_still(self, stored: StoredShow, subject: str, cue: int) -> None:
         """Send a held still: the body downloads it but keeps showing the current picture."""
 
+    async def play_film(self, utterance: str) -> None:
+        """Play one Cinema film for a moving chapter. The film has its own voice."""
+
     async def cue_motion(self, stored: StoredShow, cue: int, *, hold: bool) -> None:
-        """Send frames for a cued still. Held frames wait for go; unheld frames attach now."""
+        """Leftover Fal clip frames. Product movement is play_film."""
 
     async def wait_ready(self, cue: int, kind: str, timeout: float) -> bool:
         """Wait until the body reports the cue downloaded and indexed. Decode occurs on display."""
@@ -272,27 +271,30 @@ class StoryRun:
         if board is None or self._ended:
             return None
         chapter = _ChapterRender(board=board, beats=[_BeatRender(beat=beat) for beat in board.beats])
+        if self._chapter_moves(chapter):
+            return chapter
         for render in chapter.beats:
             # Words are cheap and fast; always warm them.
             render.voice = render.keep(self._spawn(self.narration.narrate(render.beat.narration)))
         # The chapter about to play renders everything now, bounded by the slots.
         # A chapter warmed ahead renders what the prefetch level allows.
-        if not ahead:
-            self._start_pictures(chapter, clips=True)
-        elif self.prefetch in {"stills", "all"}:
-            self._start_pictures(chapter, clips=self.prefetch == "all")
+        if not ahead or self.prefetch in {"stills", "all"}:
+            self._start_pictures(chapter)
         return chapter
 
-    def _start_pictures(self, chapter: _ChapterRender, *, clips: bool) -> None:
+    def _chapter_moves(self, chapter: _ChapterRender) -> bool:
+        return self.motion and any((render.beat.motion or "").strip() for render in chapter.beats)
+
+    def _start_pictures(self, chapter: _ChapterRender) -> None:
+        if self._chapter_moves(chapter):
+            return
         if not chapter.pictures_started:
             chapter.pictures_started = True
             for render in chapter.beats:
                 render.still = render.keep(self._spawn(self._render_still(render.beat, chapter.board)))
-        if clips:
-            for render in chapter.beats:
-                self._ensure_motion(render)
 
     def _ensure_motion(self, render: _BeatRender) -> None:
+        """Leftover Fal still→clip. Product movement is _play_chapter_film."""
         if render.motion is None and render.still is not None:
             render.motion = render.keep(self._spawn(self._render_motion(render)))
 
@@ -330,6 +332,7 @@ class StoryRun:
             return None
 
     async def _render_motion(self, render: _BeatRender) -> bool:
+        """Leftover Fal image-to-video. Moving chapters use play_film instead."""
         if not self.motion or not render.beat.motion or isinstance(self.clips, NullClipProvider):
             return False
         if render.still is None:
@@ -362,7 +365,7 @@ class StoryRun:
 
     def _start(self, chapter: _ChapterRender, beat_index: int) -> None:
         self.pause()
-        self._start_pictures(chapter, clips=True)
+        self._start_pictures(chapter)
         self._current = chapter
         self._resume_at = beat_index
         self.context = StoryContext(
@@ -372,8 +375,22 @@ class StoryRun:
         )
         self._play_task = self._spawn(self._play(chapter, beat_index))
 
+    async def _play_chapter_film(self, chapter: _ChapterRender) -> None:
+        narration = " ".join(
+            render.beat.narration.strip()
+            for render in chapter.beats
+            if render.beat.narration.strip()
+        ) or chapter.board.title
+        for render in chapter.beats:
+            render.played = True
+        await self.stage.play_film(narration)
+
     async def _play(self, chapter: _ChapterRender, start: int) -> None:
         try:
+            if self._chapter_moves(chapter):
+                await self._play_chapter_film(chapter)
+                await self._finish_chapter(chapter)
+                return
             for index in range(start, len(chapter.beats)):
                 self._resume_at = index
                 await self._play_beat(chapter, index)
@@ -389,7 +406,6 @@ class StoryRun:
 
     async def _play_beat(self, chapter: _ChapterRender, index: int) -> None:
         render = chapter.beats[index]
-        self._ensure_motion(render)
         stored = await self._await(render.still, self.still_wait)
         render.played = True
         if stored is not None:
@@ -397,28 +413,22 @@ class StoryRun:
                 render.cued = self._issue_cue()
                 await self.stage.cue_still(stored, render.beat.scene, render.cued)
             cue = self._cue = render.cued
-            motion_ready = await self._motion_ready(render)
-            if motion_ready and not render.motion_cued:
-                render.motion_cued = True
-                await self.stage.cue_motion(stored, cue, hold=True)
-            await self.stage.wait_ready(cue, "motion" if motion_ready else "still", self.ready_timeout)
+            await self.stage.wait_ready(cue, "still", self.ready_timeout)
             # Let the body download while speech is still rendering.
             voice = await self._await(render.voice, self.narration_wait)
             if voice is None:
                 raise RuntimeError("Story narration unavailable")
-            await self.stage.go(cue, stored, render.beat.scene, motion_ready)
-            if not motion_ready and render.motion is not None:
-                self._attach_when_ready(render, stored, cue)
+            await self.stage.go(cue, stored, render.beat.scene, False)
         else:
             voice = await self._await(render.voice, self.narration_wait)
             if voice is None:
                 raise RuntimeError("Story narration unavailable")
         if index + 1 < len(chapter.beats):
-            self._ensure_motion(chapter.beats[index + 1])
             self._prefetch_next(chapter.beats[index + 1])
         await self.stage.speak(voice)
 
     async def _motion_ready(self, render: _BeatRender) -> bool:
+        """Leftover Fal clip readiness. Product movement is Cinema."""
         if render.motion is None:
             return False
         if render.motion.done():
@@ -435,6 +445,7 @@ class StoryRun:
             raise
 
     def _attach_when_ready(self, render: _BeatRender, stored: StoredShow, cue: int) -> None:
+        """Leftover Fal clip attach. Product movement is Cinema."""
         async def attach() -> None:
             try:
                 ready = await render.motion
@@ -458,13 +469,6 @@ class StoryRun:
                     return
                 cue = render.cued = self._issue_cue()
                 await self.stage.cue_still(stored, render.beat.scene, cue)
-                if render.motion is None:
-                    return
-                ready = await asyncio.shield(render.motion)
-                # Once the beat has started, its own playback owns the frames.
-                if ready and not render.motion_cued and not render.played:
-                    render.motion_cued = True
-                    await self.stage.cue_motion(stored, cue, hold=True)
             except asyncio.CancelledError:
                 raise
             except Exception:  # noqa: BLE001 - prefetch is an optimization

@@ -1207,17 +1207,22 @@ class GizmoSession:
                     if not self.story_character:
                         self.story_character = decision.story_character
                 decision = prefer_film_route(decision, cleaned)
-                if decision.route == "film":
-                    await self._start_film(cleaned)
+                if decision.route in {"film", "motion"}:
+                    if decision.story_setting:
+                        self.current_story_setting = decision.story_setting
+                    utterance = cleaned
+                    if decision.story_setting:
+                        chapter = (self._visual_narration or narration or "").strip()
+                        if chapter:
+                            utterance = chapter
+                    await self._start_film(utterance)
                 elif decision.route == "animate":
                     await self._animate({"motion": decision.motion})
-                elif decision.route in {"still", "motion"}:
+                elif decision.route == "still":
                     arguments: dict[str, Any] = {"subject": decision.subject}
                     arguments["story_setting"] = decision.story_setting
                     arguments["kind"] = decision.kind
                     arguments["character"] = self.story_character if decision.story_setting else ""
-                    if decision.route == "motion":
-                        arguments["motion"] = decision.motion
                     await self._show(arguments)
             except asyncio.CancelledError:
                 raise
@@ -1402,8 +1407,7 @@ class GizmoSession:
             await self.emit(self.show_event())
             logger.info("Turn latency: stage=still-glass show=%s seconds=%.3f", stored.id, self._visual_elapsed())
             if motion:
-                # Do not let staging the visual into the voice connection delay
-                # the paid motion request. The still is already committed.
+                # Leftover Fal still→clip. Product movement is Cinema via _start_film.
                 await self._start_motion(stored, motion, subject, session_id)
             if self._transport:
                 await self._transport.send_image(
@@ -1490,6 +1494,7 @@ class GizmoSession:
     async def _start_motion(
         self, stored: StoredShow, motion: str, subject: str, session_id: str
     ) -> dict[str, Any]:
+        """Leftover Fal image-to-video clip. Not the product path; Cinema is."""
         if not self._owns_glass(stored, session_id):
             return {"ok": False, "reason": "nothing up"}
         if self._current_clip_id == stored.id:
@@ -1556,6 +1561,7 @@ class GizmoSession:
             self._motion_pending.discard(stored.id)
 
     async def _animate(self, arguments: dict[str, Any]) -> dict[str, Any]:
+        """Leftover: bare 'make it move' still uses a Fal clip on the current still."""
         motion = arguments.get("motion")
         if not isinstance(motion, str) or not motion.strip():
             return {"ok": False, "reason": "motion is required"}
@@ -1866,6 +1872,19 @@ class GizmoSession:
             "type": "glass", "still": stored.still_url, "subject": subject,
             "viewing": True, "cue": cue, "hold": True,
         })
+
+    async def play_film(self, utterance: str) -> None:
+        """Told-piece moving chapter: one Cinema film, then wait until it ends."""
+        result = await self._start_film(utterance)
+        if not result.get("ok"):
+            return
+        try:
+            deadline = asyncio.get_running_loop().time() + 180
+            while self.film_active() and asyncio.get_running_loop().time() < deadline:
+                await asyncio.sleep(0.2)
+        except asyncio.CancelledError:
+            await self._stop_film(reason="interrupt", announce=False)
+            raise
 
     async def cue_motion(self, stored: StoredShow, cue: int, *, hold: bool) -> None:
         self._expect_glass(cue, "motion")

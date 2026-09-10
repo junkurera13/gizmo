@@ -79,7 +79,7 @@ class VisualDecisionTests(unittest.TestCase):
         ):
             self.assertFalse(is_moving_explanation_ask(utterance), utterance)
 
-    def test_process_asks_upgrade_to_film_and_stories_do_not(self):
+    def test_moving_glass_is_cinema_including_story_scenes(self):
         motion = VisualDecision(route="motion", subject="rocket", motion="it lifts")
         self.assertEqual(
             prefer_film_route(motion, "How does a rocket actually take off?").route,
@@ -94,7 +94,7 @@ class VisualDecisionTests(unittest.TestCase):
         )
         self.assertEqual(
             prefer_film_route(motion, "Make a short video of a jellyfish.").route,
-            "motion",
+            "film",
         )
         self.assertEqual(
             prefer_film_route(
@@ -103,15 +103,28 @@ class VisualDecisionTests(unittest.TestCase):
             ).route,
             "still",
         )
+        story = prefer_film_route(
+            VisualDecision(route="motion", subject="castle", motion="clouds drift", story_setting="castle"),
+            "Then what?",
+        )
+        self.assertEqual(story.route, "film")
+        self.assertEqual(story.story_setting, "castle")
         self.assertEqual(
             prefer_film_route(
-                VisualDecision(route="motion", subject="castle", motion="clouds drift", story_setting="castle"),
+                VisualDecision(route="still", subject="castle", story_setting="castle"),
                 "How does a rocket work?",
             ).route,
-            "motion",
+            "still",
+        )
+        self.assertEqual(
+            prefer_film_route(
+                VisualDecision(route="animate", motion="bell pulses"),
+                "Make it move.",
+            ).route,
+            "animate",
         )
 
-    def test_film_route_is_accepted_and_never_used_for_stories(self):
+    def test_film_route_is_accepted_for_explanations_and_story_scenes(self):
         self.assertEqual(
             decision_from_payload(
                 {"route": "film", "subject": "rocket exhaust", "motion": ""},
@@ -129,7 +142,7 @@ class VisualDecisionTests(unittest.TestCase):
                 },
                 has_visual=False,
             ).route,
-            "still",
+            "film",
         )
     def test_stories_are_scenes_even_if_the_model_asks_for_a_diagram(self):
         payload = {
