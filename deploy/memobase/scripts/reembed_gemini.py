@@ -43,8 +43,13 @@ async def main():
                               else row[2]["content"] for row in batch]
                     response = await client.embeddings.create(model=MODEL, input=inputs,
                                                               dimensions=1536, encoding_format="float")
-                    vectors = sorted(response.data, key=lambda item: item.index)
-                    assert [item.index for item in vectors] == list(range(len(batch)))
+                    vectors = response.data
+                    assert len(vectors) == len(batch)
+                    if any(item.index is None for item in vectors):
+                        pass  # provider omits index on some items; order is positional
+                    else:
+                        vectors = sorted(vectors, key=lambda item: item.index)
+                        assert [item.index for item in vectors] == list(range(len(batch)))
                     for row, item in zip(batch, vectors):
                         assert len(item.embedding) == 1536 and all(math.isfinite(x) for x in item.embedding)
                         connection.execute(text(f"UPDATE {table} SET embedding = CAST(:vector AS vector) "
