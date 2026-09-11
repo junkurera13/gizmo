@@ -107,7 +107,8 @@ class FilmMaker:
             os.environ["GEMINI_API_KEY"], model=os.environ.get("GIZMO_FILM_MODEL", TEXT_MODEL)
         )
         self.voice = narration_provider_from_env(
-            voice=os.environ.get("GIZMO_FILM_VOICE", "Charon"),
+            voice=os.environ.get("GIZMO_FILM_VOICE")
+            or os.environ.get("GIZMO_VOICE", "Umbriel"),
             style=FILM_NARRATION_STYLE,
         )
         self.upload = fal_client.AsyncClient(
