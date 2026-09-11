@@ -140,14 +140,17 @@ class ExperienceSession:
         async def voice():
             if beat.visual == "film":
                 return
-            try:
-                audio = await self.director.speech(beat.narration)
+            audio = None
+            for _ in range(2):  # one retry: a transient timeout shouldn't mute the beat
+                try:
+                    audio = await self.director.speech(beat.narration)
+                except Exception as error:  # noqa: BLE001 - voice failures become captions
+                    logger.warning("Oddity voice attempt failed: %s", type(error).__name__)
                 if audio:
-                    result["audio"] = self.asset(audio, ".wav")
-                elif beat.narration:
-                    result["warnings"].append("Voice is unavailable. This part has captions only.")
-            except Exception as error:  # noqa: BLE001 - voice failures become captions
-                logger.warning("Oddity voice unavailable: %s", type(error).__name__)
+                    break
+            if audio:
+                result["audio"] = self.asset(audio, ".wav")
+            elif beat.narration:
                 result["warnings"].append("Voice is unavailable. This part has captions only.")
 
         async def visual():

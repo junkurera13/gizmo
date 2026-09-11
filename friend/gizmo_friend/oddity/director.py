@@ -127,7 +127,9 @@ For each beat:
   private reasoning, and not spoken.
 
 Diagrams should use very few legible labels. Imagery has Gizmo's existing
-flat vector style. character describes an established NON-HUMAN fictional
+flat vector style. Subjects never include people, human faces, or children;
+crowds and figures belong in narration, not in a requested picture.
+character describes an established NON-HUMAN fictional
 protagonist only; copy its appearance for the same story. Leave empty for science
 and other topics.
 

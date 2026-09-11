@@ -95,7 +95,8 @@ class MomentRuntimeTests(unittest.IsolatedAsyncioTestCase):
         self.assertTrue(friend.bounded)
         await friend.begin("What happened to Pompeii?")
         await friend.task
-        self.assertTrue((self.root / "oddity-show-usage.json").exists())
+        # The reconstruction ask routes to film; bounded sessions still spend an allowance.
+        self.assertTrue((self.root / "oddity-motion-usage.json").exists())
         await friend.close()
 
     async def test_moment_process_ask_reserves_film(self):

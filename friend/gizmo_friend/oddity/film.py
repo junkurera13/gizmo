@@ -13,7 +13,7 @@ import os
 from dataclasses import dataclass
 from pathlib import Path
 
-from gizmo_friend.brain.visual_director import is_moving_explanation_ask
+from gizmo_friend.brain.visual_director import is_easy_talk, is_moving_explanation_ask
 from gizmo_friend.cinema.runtime import CinemaSession
 from gizmo_friend.oddity.director import Beat, Experience
 
@@ -29,17 +29,19 @@ class FilmReady:
 
 
 def route_moving_picture(plan: Experience, utterance: str) -> Experience:
-    """At most one Cinema film, and only when motion would help the ask.
+    """At most one Cinema film. The planner's own film choice is honored.
 
-    Director `video` is an alias for film. Easy talk and leftover clips become
-    stills. Diagrams and the computed orbit experiment stay as planned.
+    Director `video` is an alias for film; extra film asks become stills.
+    Easy talk vetoes film outright; otherwise the only utterance heuristic left
+    is upgrading a still to film for a moving ask the planner under-served.
     """
     wants_film = is_moving_explanation_ask(utterance)
+    may_film = not is_easy_talk(utterance)
     used = False
     beats: list[Beat] = []
     for beat in plan.beats:
         if beat.visual in {"video", "film"}:
-            if wants_film and not used:
+            if may_film and not used:
                 beats.append(beat.model_copy(update={"visual": "film"}))
                 used = True
             elif beat.subject.strip():

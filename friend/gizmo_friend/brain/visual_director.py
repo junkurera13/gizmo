@@ -214,6 +214,42 @@ def is_explicit_visual_request(utterance: str) -> bool:
     ))
 
 
+def is_easy_talk(utterance: str) -> bool:
+    """Chatter, feelings, quick facts and homework never justify a film —
+    no matter what the planner asked for."""
+    cleaned = " ".join(utterance.casefold().split())
+    if not cleaned or is_bare_animate_request(utterance):
+        return True
+    if re.search(r"\b(story|chapter|tale|continue)\b", cleaned):
+        return True
+    if re.search(
+        r"\b(hi|hello|hey|how are you|how's it going|whats up|what's up|"
+        r"i'm bored|im bored|tell me a joke|knock knock|"
+        r"feel|feeling|sad|happy|mad|angry|scared|lonely|love you|miss you|sorry)\b",
+        cleaned,
+    ):
+        return True
+    if re.search(
+        r"\bhow (?:old|many|much|far|big|tall|long|heavy|wide|often)\b|"
+        r"\bhow (?:do you|do i) (?:spell|say|write|pronounce|know)\b|"
+        r"\b(homework|this problem|this sum|plus|minus|times|divide|equals|prime)\b",
+        cleaned,
+    ):
+        return True
+    if re.search(
+        r"\bwhat does .{0,40}\blook like\b|\bwhere (?:is|was|are)\b|"
+        r"\bwhat color\b|\bwho (?:is|was|are)\b|\bwhen (?:is|was|did)\b",
+        cleaned,
+    ):
+        return True
+    if re.search(
+        r"\b(?:make|generate|create)\b.{0,40}\b(?:video|animation|clip)\b",
+        cleaned,
+    ) and not re.search(r"\b(how|why|what happens|explain)\b", cleaned):
+        return True
+    return False
+
+
 def is_moving_explanation_ask(utterance: str) -> bool:
     """Somewhat-to-hard asks where a moving illustration would help.
 
@@ -222,37 +258,11 @@ def is_moving_explanation_ask(utterance: str) -> bool:
     This never chooses the subject.
     """
     cleaned = " ".join(utterance.casefold().split())
-    if not cleaned or is_bare_animate_request(utterance):
-        return False
-    if re.search(r"\b(story|chapter|tale|continue)\b", cleaned):
+    if is_easy_talk(utterance):
         return False
     if re.search(
-        r"\b(hi|hello|hey|how are you|how's it going|whats up|what's up|"
-        r"i'm bored|im bored|tell me a joke|knock knock|"
-        r"feel|feeling|sad|happy|mad|angry|scared|lonely|love you|miss you|sorry)\b",
-        cleaned,
-    ):
-        return False
-    if re.search(
-        r"\bhow (?:old|many|much|far|big|tall|long|heavy|wide|often)\b|"
-        r"\bhow (?:do you|do i) (?:spell|say|write|pronounce|know)\b|"
-        r"\b(homework|this problem|this sum|plus|minus|times|divide|equals|prime)\b",
-        cleaned,
-    ):
-        return False
-    if re.search(
-        r"\bwhat does .{0,40}\blook like\b|\bwhere (?:is|was|are)\b|"
-        r"\bwhat color\b|\bwho (?:is|was|are)\b|\bwhen (?:is|was|did)\b",
-        cleaned,
-    ):
-        return False
-    if re.search(
-        r"\b(?:make|generate|create)\b.{0,40}\b(?:video|animation|clip)\b",
-        cleaned,
-    ) and not re.search(r"\b(how|why|what happens|explain)\b", cleaned):
-        return False
-    if re.search(
-        r"\bwhat happens\b|\bwhat would happen\b|\bwhat will happen\b|\bwhat if\b",
+        r"\bwhat happens\b|\bwhat would happen\b|\bwhat will happen\b|\bwhat if\b|"
+        r"\bwhat happened\b|\bwhat (?:was|were) .{0,40}\blike\b",
         cleaned,
     ):
         return True

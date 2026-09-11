@@ -711,10 +711,9 @@ async function playQueue() {
         const ended = mediaEnded(voice, signal); ended.catch(() => {});
         await startMedia(voice, signal); await ended;
       } else if (beat.narration) {
-        // A failed TTS call is not silently replaced by timed fake speech.
-        $('play-blocked').textContent = 'Continue after reading'; $('play-blocked').hidden = false;
-        await new Promise((resolve) => { mediaWaitResolve = resolve; $('play-blocked').onclick = () => { $('play-blocked').hidden = true; resolve(); }; });
-        if (signal.aborted) throw new DOMException('Stopped', 'AbortError');
+        // No audio: the caption carries the beat, held for a readable span —
+        // never a dead stop waiting for a tap.
+        await breathingRoom(Math.min(9, Math.max(3, beat.narration.length * 0.055)), signal);
       }
       await breathingRoom(beat.pause_seconds, signal);
       film.pause(); clearInterval(progressTimer); ack('finished');
