@@ -32,6 +32,13 @@ bool decode_idle_slot(int slot, const draw::Canvas& canvas) {
   return decode(idle_frame_start(unique), idle_frame_end(unique), canvas);
 }
 
+bool decode_listening_slot(int slot, const draw::Canvas& canvas) {
+  if (slot < 0) slot = 0;
+  if (slot >= kListeningSlots) slot = kListeningSlots - 1;
+  const int unique = kListeningSlotFrame[slot];
+  return decode(listening_frame_start(unique), listening_frame_end(unique), canvas);
+}
+
 const uint8_t* heart(Heart state) {
   switch (state) {
     case Heart::kFull: return _binary_assets_heart_full_rgb565a_start;

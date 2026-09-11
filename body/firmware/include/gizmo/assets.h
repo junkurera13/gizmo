@@ -19,6 +19,8 @@ bool decode_boot_slot(int slot, const draw::Canvas& canvas);
 bool decode_home_base(const draw::Canvas& canvas);
 // Decode the idle animation frame for `slot` (0..kIdleSlots-1) into the canvas.
 bool decode_idle_slot(int slot, const draw::Canvas& canvas);
+// Decode the listening animation frame for `slot` (0..kListeningSlots-1).
+bool decode_listening_slot(int slot, const draw::Canvas& canvas);
 
 // RGB565+A8 heart sprite, kHeartAssetSide square.
 const uint8_t* heart(Heart state);

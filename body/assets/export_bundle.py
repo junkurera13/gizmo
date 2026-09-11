@@ -283,6 +283,16 @@ def export(args: argparse.Namespace) -> dict[str, object]:
         # that does not animate still reads it.
         write_bytes(temporary, "home/base.jpg", (temporary / idle_frames[0]).read_bytes())
 
+        listening_dir = glass / "sprites/listening"
+        listening_sources = sorted(listening_dir.glob("*.png"))
+        listening_config = sprite_config.get("listening", {})
+        listening_frames: list[str] = []
+        for frame_index, listening_source in enumerate(listening_sources):
+            listening_frame = home_base(listening_source, size)
+            relative = f"home/listening/{frame_index:02d}.jpg"
+            write_bytes(temporary, relative, encode_jpeg(listening_frame, args.jpeg_quality))
+            listening_frames.append(relative)
+
         font_path = glass / "fonts/Outfit[wght].ttf"
         atlas, clock_metadata, clock_font = export_clock_atlas(font_path, args.width)
         write_bytes(temporary, str(clock_metadata["path"]), atlas)
@@ -357,6 +367,11 @@ def export(args: argparse.Namespace) -> dict[str, object]:
                     "frames": idle_frames,
                     "period_ms": int(idle_config.get("period_ms", 110)),
                     "slots": idle_config.get("slots") or [0],
+                },
+                "listening": {
+                    "frames": listening_frames,
+                    "period_ms": int(listening_config.get("period_ms", 130)),
+                    "slots": listening_config.get("slots") or [0],
                 },
                 "status_scope": "home_only",
                 "status_top_fraction": 0.065,

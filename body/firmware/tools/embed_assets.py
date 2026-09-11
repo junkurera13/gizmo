@@ -115,6 +115,14 @@ def main() -> None:
         embedded.append(name)
     idle_slots: list[int] = idle.get("slots") or [0]
 
+    listening = home.get("listening") or {}
+    listening_frames: list[str] = listening.get("frames") or []
+    for index, relative in enumerate(listening_frames):
+        name = f"listening_{index:02d}.jpg"
+        write(ASSETS / name, (bundle / relative).read_bytes())
+        embedded.append(name)
+    listening_slots: list[int] = listening.get("slots") or [0]
+
     heart_side = None
     for state in ("empty", "half", "full"):
         with Image.open(bundle / home["battery"]["paths"][state]) as opened:
@@ -160,6 +168,11 @@ def main() -> None:
         f"constexpr int kIdleUniqueFrames = {len(idle_frames)};",
         f"constexpr uint32_t kIdleFramePeriodMs = {idle.get('period_ms', 110)};",
         f"constexpr uint8_t kIdleSlotFrame[kIdleSlots] = {{{', '.join(str(s) for s in idle_slots)}}};",
+        "",
+        f"constexpr int kListeningSlots = {len(listening_slots)};",
+        f"constexpr int kListeningUniqueFrames = {len(listening_frames)};",
+        f"constexpr uint32_t kListeningFramePeriodMs = {listening.get('period_ms', 130)};",
+        f"constexpr uint8_t kListeningSlotFrame[kListeningSlots] = {{{', '.join(str(s) for s in listening_slots)}}};",
         "",
         f"constexpr uint32_t kChimeSampleRate = {DEVICE_SAMPLE_RATE};",
         f"constexpr size_t kChimeSamples = {chime_samples};",
@@ -209,6 +222,20 @@ def main() -> None:
     lines.append("  switch (unique) {")
     for index in range(len(idle_frames)):
         lines.append(f"    case {index}: return {symbol(f'idle_{index:02d}.jpg')}_end;")
+    lines.append("    default: return nullptr;")
+    lines.append("  }")
+    lines.append("}")
+    lines.append("inline const uint8_t* listening_frame_start(int unique) {")
+    lines.append("  switch (unique) {")
+    for index in range(len(listening_frames)):
+        lines.append(f"    case {index}: return {symbol(f'listening_{index:02d}.jpg')}_start;")
+    lines.append("    default: return nullptr;")
+    lines.append("  }")
+    lines.append("}")
+    lines.append("inline const uint8_t* listening_frame_end(int unique) {")
+    lines.append("  switch (unique) {")
+    for index in range(len(listening_frames)):
+        lines.append(f"    case {index}: return {symbol(f'listening_{index:02d}.jpg')}_end;")
     lines.append("    default: return nullptr;")
     lines.append("  }")
     lines.append("}")

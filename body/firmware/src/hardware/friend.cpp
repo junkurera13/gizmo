@@ -532,6 +532,7 @@ void FriendConnection::accept_session_state(const char* state) {
   if (strcmp(state, "booting") == 0) last_try_ = millis();
   session_ready_ = strcmp(state, "listening") == 0 || strcmp(state, "talking") == 0 ||
                    strcmp(state, "thinking") == 0 || strcmp(state, "asleep") == 0;
+  session_listening_ = strcmp(state, "listening") == 0;
   if (strcmp(state, "powered_off") == 0) {
     // A new device identity starts powered off. Never cold-boot an already
     // powered session just because the Wi-Fi socket reconnected.

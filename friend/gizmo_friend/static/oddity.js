@@ -90,17 +90,31 @@ const blinkFrames = Object.fromEntries([10, 11, 12, 13].map((id) => {
   image.src = `/static/oddity-blink-${id}.jpg?v=blink2`;
   return [id, image];
 }));
-// The idle character blinks like the device does: open ~4s, then
-// half -> closed -> half at 110ms per step.
-const FRIEND_FRAMES = ['/static/oddity-character.png?v=char2', '/static/oddity-character-half.png?v=char2', '/static/oddity-character-closed.png?v=char2'];
-function blinkFriend(step = 0) {
-  const imgs = document.querySelectorAll('img[src*="oddity-character"]');
+// Face flipbooks, mirroring the device: the lean-in listen loop while he's
+// awake on the home face, and a blink at rest.
+const IDLE_FRAMES = ['/static/oddity-character.png?v=char3', '/static/oddity-character-half.png?v=char3', '/static/oddity-character-closed.png?v=char3'];
+const LISTEN_FRAMES = Array.from({ length: 7 }, (_, i) => `/static/oddity-listening-0${i + 1}.png?v=listen1`);
+const LISTEN_SLOTS = [0, 0, 1, 2, 3, 4, 5, 6, 6, 5, 4, 3, 2, 1];
+let listenSlot = 0;
+function faceImgs() {
+  return document.querySelectorAll('img[src*="oddity-character"], img[src*="oddity-listening"]');
+}
+function faceTick(step = 0) {
+  const imgs = faceImgs();
+  if (awake && !playing && !demoRunning && !stage.classList.contains('has-scene')) {
+    const src = LISTEN_FRAMES[LISTEN_SLOTS[listenSlot]];
+    listenSlot = (listenSlot + 1) % LISTEN_SLOTS.length;
+    imgs.forEach((img) => (img.src = src));
+    setTimeout(() => faceTick(0), 130);
+    return;
+  }
+  listenSlot = 0;
   if (step === 0) {
-    imgs.forEach((img) => (img.src = FRIEND_FRAMES[0]));
-    setTimeout(() => blinkFriend(1), 3600 + Math.random() * 2200);
+    imgs.forEach((img) => (img.src = IDLE_FRAMES[0]));
+    setTimeout(() => faceTick(1), 3600 + Math.random() * 2200);
   } else {
-    imgs.forEach((img) => (img.src = FRIEND_FRAMES[[1, 2, 1][step - 1]]));
-    setTimeout(() => blinkFriend(step < 3 ? step + 1 : 0), 110);
+    imgs.forEach((img) => (img.src = IDLE_FRAMES[[1, 2, 1][step - 1]]));
+    setTimeout(() => faceTick(step < 3 ? step + 1 : 0), 110);
   }
 }
 let blinkTimer = 0;
@@ -818,7 +832,7 @@ window.addEventListener('blur', () => { setTalkPressed(false); if (held) cancelR
 document.addEventListener('visibilitychange', () => { if (document.hidden) { setTalkPressed(false); cancelRecording(); if (playing && !paused) togglePause(); } });
 window.addEventListener('pagehide', () => { expectedClose = true; stopDemo(); setTalkPressed(false); cancelRecording(); stopPlayer(); socket?.close(); });
 syncPower();
-blinkFriend();
+faceTick();
 glass = createGlass(stage, {
   ready: onGlassReady,
   off: onGlassOff,

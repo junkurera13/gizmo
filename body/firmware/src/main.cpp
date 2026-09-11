@@ -61,7 +61,8 @@ Preferences prefs;
 
 uint16_t* framebuffer = nullptr;
 uint16_t* home_base = nullptr;  // decoded once, copied under every home screen
-int idle_slot_drawn = -1;
+int home_slot_drawn = -1;
+int home_set_drawn = -1;  // 0 = idle flipbook, 1 = listening lean
 gizmo::draw::Canvas canvas;
 gizmo::SettingsSnapshot settings;
 
@@ -115,9 +116,14 @@ int current_idle_slot() {
   return static_cast<int>((millis() / gizmo::assets::kIdleFramePeriodMs) % gizmo::assets::kIdleSlots);
 }
 
+int current_listening_slot() {
+  return static_cast<int>((millis() / gizmo::assets::kListeningFramePeriodMs) % gizmo::assets::kListeningSlots);
+}
+
 bool ensure_home_base() {
-  const int slot = current_idle_slot();
-  if (home_base != nullptr && idle_slot_drawn == slot) return true;
+  const int set = friend_link.session_listening() ? 1 : 0;
+  const int slot = set ? current_listening_slot() : current_idle_slot();
+  if (home_base != nullptr && home_set_drawn == set && home_slot_drawn == slot) return true;
   if (!ensure_framebuffer()) return false;
   const size_t bytes = static_cast<size_t>(canvas.width) * canvas.height * sizeof(uint16_t);
   if (home_base == nullptr) {
@@ -125,11 +131,14 @@ bool ensure_home_base() {
     if (home_base == nullptr) return false;
   }
   const gizmo::draw::Canvas target{home_base, canvas.width, canvas.height};
-  if (!gizmo::assets::decode_idle_slot(slot, target)) {
+  const bool ok = set ? gizmo::assets::decode_listening_slot(slot, target)
+                      : gizmo::assets::decode_idle_slot(slot, target);
+  if (!ok) {
     Serial.println("home base: jpeg decode failed");
     gizmo::draw::clear(target, gizmo::draw::kBlack);
   }
-  idle_slot_drawn = slot;
+  home_set_drawn = set;
+  home_slot_drawn = slot;
   return true;
 }
 
@@ -887,7 +896,11 @@ void loop() {
       } else if (now - last_redraw >= kIdleRedrawMs && hud_changed(current_hud(), last_hud)) {
         dirty = true;
       }
-      if (current_idle_slot() != idle_slot_drawn) dirty = true;
+      {
+        const int set = friend_link.session_listening() ? 1 : 0;
+        const int slot = set ? current_listening_slot() : current_idle_slot();
+        if (set != home_set_drawn || slot != home_slot_drawn) dirty = true;
+      }
       break;
     case State::kCamera:
       camera_loop();

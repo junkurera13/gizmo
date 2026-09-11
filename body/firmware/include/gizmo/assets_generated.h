@@ -20,6 +20,11 @@ constexpr int kIdleUniqueFrames = 3;
 constexpr uint32_t kIdleFramePeriodMs = 110;
 constexpr uint8_t kIdleSlotFrame[kIdleSlots] = {0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 2, 1, 0};
 
+constexpr int kListeningSlots = 14;
+constexpr int kListeningUniqueFrames = 7;
+constexpr uint32_t kListeningFramePeriodMs = 130;
+constexpr uint8_t kListeningSlotFrame[kListeningSlots] = {0, 0, 1, 2, 3, 4, 5, 6, 6, 5, 4, 3, 2, 1};
+
 constexpr uint32_t kChimeSampleRate = 16000;
 constexpr size_t kChimeSamples = 10720;
 
@@ -75,6 +80,20 @@ extern "C" const uint8_t _binary_assets_idle_01_jpg_start[] asm("_binary_assets_
 extern "C" const uint8_t _binary_assets_idle_01_jpg_end[] asm("_binary_assets_idle_01_jpg_end");
 extern "C" const uint8_t _binary_assets_idle_02_jpg_start[] asm("_binary_assets_idle_02_jpg_start");
 extern "C" const uint8_t _binary_assets_idle_02_jpg_end[] asm("_binary_assets_idle_02_jpg_end");
+extern "C" const uint8_t _binary_assets_listening_00_jpg_start[] asm("_binary_assets_listening_00_jpg_start");
+extern "C" const uint8_t _binary_assets_listening_00_jpg_end[] asm("_binary_assets_listening_00_jpg_end");
+extern "C" const uint8_t _binary_assets_listening_01_jpg_start[] asm("_binary_assets_listening_01_jpg_start");
+extern "C" const uint8_t _binary_assets_listening_01_jpg_end[] asm("_binary_assets_listening_01_jpg_end");
+extern "C" const uint8_t _binary_assets_listening_02_jpg_start[] asm("_binary_assets_listening_02_jpg_start");
+extern "C" const uint8_t _binary_assets_listening_02_jpg_end[] asm("_binary_assets_listening_02_jpg_end");
+extern "C" const uint8_t _binary_assets_listening_03_jpg_start[] asm("_binary_assets_listening_03_jpg_start");
+extern "C" const uint8_t _binary_assets_listening_03_jpg_end[] asm("_binary_assets_listening_03_jpg_end");
+extern "C" const uint8_t _binary_assets_listening_04_jpg_start[] asm("_binary_assets_listening_04_jpg_start");
+extern "C" const uint8_t _binary_assets_listening_04_jpg_end[] asm("_binary_assets_listening_04_jpg_end");
+extern "C" const uint8_t _binary_assets_listening_05_jpg_start[] asm("_binary_assets_listening_05_jpg_start");
+extern "C" const uint8_t _binary_assets_listening_05_jpg_end[] asm("_binary_assets_listening_05_jpg_end");
+extern "C" const uint8_t _binary_assets_listening_06_jpg_start[] asm("_binary_assets_listening_06_jpg_start");
+extern "C" const uint8_t _binary_assets_listening_06_jpg_end[] asm("_binary_assets_listening_06_jpg_end");
 extern "C" const uint8_t _binary_assets_heart_empty_rgb565a_start[] asm("_binary_assets_heart_empty_rgb565a_start");
 extern "C" const uint8_t _binary_assets_heart_empty_rgb565a_end[] asm("_binary_assets_heart_empty_rgb565a_end");
 extern "C" const uint8_t _binary_assets_heart_half_rgb565a_start[] asm("_binary_assets_heart_half_rgb565a_start");
@@ -139,6 +158,30 @@ inline const uint8_t* idle_frame_end(int unique) {
     case 0: return _binary_assets_idle_00_jpg_end;
     case 1: return _binary_assets_idle_01_jpg_end;
     case 2: return _binary_assets_idle_02_jpg_end;
+    default: return nullptr;
+  }
+}
+inline const uint8_t* listening_frame_start(int unique) {
+  switch (unique) {
+    case 0: return _binary_assets_listening_00_jpg_start;
+    case 1: return _binary_assets_listening_01_jpg_start;
+    case 2: return _binary_assets_listening_02_jpg_start;
+    case 3: return _binary_assets_listening_03_jpg_start;
+    case 4: return _binary_assets_listening_04_jpg_start;
+    case 5: return _binary_assets_listening_05_jpg_start;
+    case 6: return _binary_assets_listening_06_jpg_start;
+    default: return nullptr;
+  }
+}
+inline const uint8_t* listening_frame_end(int unique) {
+  switch (unique) {
+    case 0: return _binary_assets_listening_00_jpg_end;
+    case 1: return _binary_assets_listening_01_jpg_end;
+    case 2: return _binary_assets_listening_02_jpg_end;
+    case 3: return _binary_assets_listening_03_jpg_end;
+    case 4: return _binary_assets_listening_04_jpg_end;
+    case 5: return _binary_assets_listening_05_jpg_end;
+    case 6: return _binary_assets_listening_06_jpg_end;
     default: return nullptr;
   }
 }
