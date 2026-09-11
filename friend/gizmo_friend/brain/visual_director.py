@@ -220,7 +220,7 @@ def is_easy_talk(utterance: str) -> bool:
     cleaned = " ".join(utterance.casefold().split())
     if not cleaned or is_bare_animate_request(utterance):
         return True
-    if re.search(r"\b(story|chapter|tale|continue)\b", cleaned):
+    if re.search(r"\bcontinue\b", cleaned):
         return True
     if re.search(
         r"\b(hi|hello|hey|how are you|how's it going|whats up|what's up|"

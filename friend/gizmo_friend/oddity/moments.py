@@ -144,9 +144,11 @@ _register(
         contract=(
             "This is a living encyclopedia, not an article. Set the scene, reconstruct "
             "what happened in three short beats totaling 35 to 40 seconds, and change the "
-            "picture as the story moves. Every visual must be gentle, colorful, kid-friendly, "
-            "and free of injury, bodies, remains, or frightening close-ups. If they interrupt, "
-            "answer that curiosity first, then continue. Keep Vesuvius serious but not gory."
+            "picture as the story moves. The eruption itself is motion — plan one film "
+            "beat for it; stills carry the setup and the aftermath. Every visual must be "
+            "gentle, colorful, kid-friendly, and free of injury, bodies, remains, or "
+            "frightening close-ups. If they interrupt, answer that curiosity first, then "
+            "continue. Keep Vesuvius serious but not gory."
         ),
         demo={
             "prompt": "Gizmo, what happened to Pompeii a long time ago?",
