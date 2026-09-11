@@ -75,6 +75,12 @@ _register(
         demo={
             "prompt": "Gizmo, how many more sleeps until my birthday?",
             "prompt_audio": "/static/demo-birthday-kid.mp3",
+            "prompt_timed": [
+                [0.19, "Gizmo,"],
+                [1.30, "how many more"],
+                [2.19, "sleeps until my"],
+                [3.07, "birthday?"],
+            ],
             "reply": "Eleven sleeps.",
             "reply_audio": "/static/demo-birthday-gizmo.wav",
         },
@@ -141,6 +147,12 @@ _register(
         demo={
             "prompt": "Gizmo, what happened to Pompeii a long time ago?",
             "prompt_audio": "/static/demo-pompeii-kid.mp3",
+            "prompt_timed": [
+                [0.25, "Gizmo,"],
+                [1.29, "what happened to"],
+                [2.26, "Pompeii"],
+                [2.59, "a long time ago?"],
+            ],
             "reply": (
                 "Almost two thousand years ago, the city of Pompeii sat at the "
                 "foot of a mountain called Vesuvius, and one day it erupted "

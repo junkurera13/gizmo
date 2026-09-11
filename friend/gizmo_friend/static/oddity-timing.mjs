@@ -12,6 +12,14 @@ export function captionChunks(text, limit = 95) {
   if (line) chunks.push(line);
   return chunks;
 }
+export function timedCaptionAt(entries, time) {
+  let text = '';
+  for (const [start, caption] of entries) {
+    if (time < start) break;
+    text = caption;
+  }
+  return text;
+}
 export function captionAt(chunks, time, duration) {
   if (!chunks.length) return '';
   const total = chunks.reduce((sum, chunk) => sum + chunk.length, 0);

@@ -1,4 +1,4 @@
-import {captionChunks, captionAt} from './oddity-timing.mjs?v=gate43';
+import {captionChunks, captionAt, timedCaptionAt} from './oddity-timing.mjs?v=gate44';
 import {mountDevice} from './oddity-device.mjs';
 import {createOrbit} from './oddity-orbit.mjs';
 import {createInteraction} from './oddity-interaction.mjs';
@@ -56,12 +56,15 @@ let momentIndex = 0;
 let momentId = stored(MOMENT_KEY);
 let demoController, demoRunning = false, demoPlayedMoment = '', demoOwnsScene = false;
 let demoCaptions = [];
+let demoTimed = null;
 voice.addEventListener('timeupdate', () => {
   if (playing && currentBeat?.audio && !voice.paused) setCaption(captionAt(captions, voice.currentTime, voice.duration));
 });
 demoAudio.addEventListener('timeupdate', () => {
-  if (demoRunning && demoCaptions.length && !demoAudio.paused) {
-    setCaption(captionAt(demoCaptions, demoAudio.currentTime, demoAudio.duration));
+  if (demoRunning && (demoTimed || demoCaptions.length) && !demoAudio.paused) {
+    setCaption(demoTimed
+      ? timedCaptionAt(demoTimed, demoAudio.currentTime)
+      : captionAt(demoCaptions, demoAudio.currentTime, demoAudio.duration));
   }
 });
 
@@ -184,9 +187,10 @@ async function selectMoment(index) {
   resetConversation();
   await connect(undefined, {fresh: true});
 }
-async function playDemoRecording(src, signal, text = '') {
+async function playDemoRecording(src, signal, text = '', timed = null) {
   demoCaptions = captionChunks(text);
-  if (text) setCaption(demoCaptions[0] || text);
+  demoTimed = timed;
+  if (text) setCaption(timed ? timedCaptionAt(timed, 0) : demoCaptions[0] || text);
   demoAudio.src = src; demoAudio.muted = muted; demoAudio.load();
   const ended = mediaEnded(demoAudio, signal); ended.catch(() => {});
   await startMedia(demoAudio, signal);
@@ -208,6 +212,7 @@ function stopDemo() {
   demoController?.abort(); demoController = null;
   demoAudio.pause(); demoAudio.removeAttribute('src'); demoAudio.load();
   demoCaptions = [];
+  demoTimed = null;
   if (demoOwnsScene) {
     film.pause(); film.removeAttribute('src'); film.load();
     stage.classList.remove('has-scene'); $('home').hidden = true;
@@ -250,7 +255,7 @@ async function sayMoment() {
     status('Listen to the question…', 'listening');
     setTalkPressed(true); $('talk').classList.add('recording');
     await delay(260, signal);
-    await playDemoRecording(item.demo.prompt_audio, signal, item.demo.prompt);
+    await playDemoRecording(item.demo.prompt_audio, signal, item.demo.prompt, item.demo.prompt_timed);
     setTalkPressed(false); $('talk').classList.remove('recording');
     setCaption(); status('Gizmo is thinking…', 'thinking');
     await delay(650, signal);
