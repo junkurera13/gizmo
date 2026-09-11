@@ -92,7 +92,7 @@ const blinkFrames = Object.fromEntries([10, 11, 12, 13].map((id) => {
 }));
 // The idle character blinks like the device does: open ~4s, then
 // half -> closed -> half at 110ms per step.
-const FRIEND_FRAMES = ['/static/oddity-character.png', '/static/oddity-character-half.png', '/static/oddity-character-closed.png'];
+const FRIEND_FRAMES = ['/static/oddity-character.png?v=char2', '/static/oddity-character-half.png?v=char2', '/static/oddity-character-closed.png?v=char2'];
 function blinkFriend(step = 0) {
   const imgs = document.querySelectorAll('img[src*="oddity-character"]');
   if (step === 0) {
