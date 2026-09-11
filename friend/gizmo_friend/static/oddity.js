@@ -2,7 +2,7 @@ import {captionChunks, captionAt, timedCaptionAt} from './oddity-timing.mjs?v=ga
 import {mountDevice} from './oddity-device.mjs';
 import {createOrbit} from './oddity-orbit.mjs';
 import {createInteraction} from './oddity-interaction.mjs';
-import {createGlass} from './oddity-glass.mjs?v=gate30';
+import {createGlass} from './oddity-glass.mjs?v=gate31';
 const $ = (id) => document.getElementById(id);
 const stage = $('stage'), voice = $('voice'), film = $('film'), demoAudio = $('demo-audio');
 let socket, awake = false, turn = '', queue = [], ready = false, playing = false;
@@ -87,7 +87,7 @@ function showPreviewGate(message = '') {
 const BLINK_SLOTS = [10, 10, 10, 11, 12, 13, 12, 11, 10, 10, 12, 13, 12];
 const blinkFrames = Object.fromEntries([10, 11, 12, 13].map((id) => {
   const image = new Image();
-  image.src = `/static/oddity-blink-${id}.jpg`;
+  image.src = `/static/oddity-blink-${id}.jpg?v=blink2`;
   return [id, image];
 }));
 // The idle character blinks like the device does: open ~4s, then

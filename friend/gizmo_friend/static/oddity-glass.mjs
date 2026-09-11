@@ -87,7 +87,7 @@ function clockText(date = new Date()) {
 }
 
 export function bootFrameSrc(id) {
-  return `/static/oddity-boot-${String(id).padStart(2, '0')}.jpg`;
+  return `/static/oddity-boot-${String(id).padStart(2, '0')}.jpg?v=boot2`;
 }
 
 export function preloadBootFrames(ImageSource = globalThis.Image) {
