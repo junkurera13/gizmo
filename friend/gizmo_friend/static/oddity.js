@@ -103,7 +103,7 @@ function blinkFriend(step = 0) {
     setTimeout(() => blinkFriend(step < 3 ? step + 1 : 0), 110);
   }
 }
-if (!window.matchMedia('(prefers-reduced-motion: reduce)').matches) blinkFriend();
+blinkFriend();
 let blinkTimer = 0;
 let blinkSlot = 0;
 function playBlink() {
