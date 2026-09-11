@@ -57,7 +57,7 @@ ODDITY_PUBLIC_ASSETS = {
     "/static/demo-pompeii-kid.mp3",
     "/static/demo-pompeii-1.mp4",
     "/static/demo-pompeii-1.wav",
-    "/static/demo-pompeii-2-loop.mp4",
+    "/static/demo-pompeii-2.mp4",
     "/static/demo-pompeii-2.wav",
     "/static/demo-pompeii-3.mp4",
     "/static/demo-pompeii-3.wav",
