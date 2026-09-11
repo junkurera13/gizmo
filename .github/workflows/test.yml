@@ -4,6 +4,7 @@ on:
   push:
     branches: [main]
   pull_request:
+  workflow_dispatch:
 
 jobs:
   python:
@@ -29,7 +30,7 @@ jobs:
 
   deploy:
     needs: [python, node]
-    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    if: (github.event_name == 'push' || github.event_name == 'workflow_dispatch') && github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
     env:
       RAILWAY_TOKEN: ${{ secrets.RAILWAY_TOKEN }}
