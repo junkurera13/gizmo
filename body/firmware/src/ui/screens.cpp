@@ -1,5 +1,6 @@
 #include "gizmo/screens.h"
 #include <stdio.h>
+#include <string.h>
 #include "gizmo/assets.h"
 
 namespace gizmo {
@@ -203,6 +204,20 @@ void render_wifi_setup(const draw::Canvas& canvas, const char* title, const char
   draw::text_centered(canvas, canvas.width / 2, y + 26, line && line[0] ? line : "GIZMO", draw::kWhite, 2);
   draw::text_centered(canvas, canvas.width / 2, y + 52, detail && detail[0] ? detail : "WAITING FOR PHONE", draw::kDim,
                       1);
+}
+
+void render_caption(const draw::Canvas& canvas, const char* line) {
+  if (!canvas.valid() || !line || !line[0]) return;
+  constexpr int kCaptionHeight = 24;
+  const int y = canvas.height - kCaptionHeight;
+  draw::fill_rect(canvas, 0, y, canvas.width, kCaptionHeight, draw::kBlack);
+  draw::fill_rect(canvas, 0, y, canvas.width, 1, draw::kFaint);
+  char shown[160];
+  strlcpy(shown, line, sizeof(shown));
+  while (shown[0] && draw::text_width(shown, 1) > canvas.width - 16) {
+    shown[strlen(shown) - 1] = '\0';
+  }
+  draw::text_centered(canvas, canvas.width / 2, y + 8, shown, draw::kWhite, 1);
 }
 
 }  // namespace gizmo

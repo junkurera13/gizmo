@@ -68,6 +68,7 @@ State state = State::kBoot;
 uint32_t state_since = 0;
 uint32_t last_redraw = 0;
 uint32_t record_started = 0;
+char caption_line[160] = "";
 int boot_slot_drawn = -1;
 bool boot_chimed = false;
 bool dirty = true;
@@ -304,6 +305,7 @@ void render() {
       if (wifi.card_visible()) {
         gizmo::render_wifi_setup(canvas, wifi.card_title(), wifi.card_line(), wifi.detail());
       }
+      gizmo::render_caption(canvas, caption_line);
       break;
     case State::kRecording:
       paint_home_base();
@@ -814,6 +816,7 @@ void loop() {
     }
   }
   show_player.update();
+  if (friend_link.take_line(caption_line, sizeof(caption_line))) dirty = true;
   gizmo::GlassReady glass_ack;
   while (show_player.take_glass_ready(glass_ack)) friend_link.send_glass_ready(glass_ack);
   if (had_show != show_player.available()) dirty = true;
@@ -885,6 +888,7 @@ void loop() {
 
   if ((state == State::kIdle || state == State::kRecording) && show_player.available() && ensure_framebuffer()) {
     if (show_player.render(framebuffer, dirty)) {
+      gizmo::render_caption(canvas, caption_line);
       display.blit_rgb565(framebuffer, canvas.width, canvas.height);
       last_redraw = now;
     }

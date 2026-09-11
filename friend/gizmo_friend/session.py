@@ -155,6 +155,7 @@ class GizmoSession:
         self._visual_started_at = 0.0
         self._voice_started = False
         self._suppress_live_output = False
+        self._device_line = False
         self._show_idle_task: asyncio.Task[None] | None = None
         self._show_visible_at = 0.0
         self._ask_revision = 0
@@ -707,7 +708,13 @@ class GizmoSession:
             self._warm_task.cancel()
         self._warm_task = None
 
+    async def _clear_line(self) -> None:
+        if self._device_line:
+            self._device_line = False
+            await self.emit({"type": "line", "text": ""})
+
     async def _interrupt(self) -> None:
+        await self._clear_line()
         self.mouth.cancel()
         if self._transport:
             try:
@@ -943,6 +950,7 @@ class GizmoSession:
         if kind == "transcript_delta":
             if self._suppress_live_output:
                 return
+            await self._clear_line()
             await self._start_talking()
             if self._visual_turn_open:
                 self._visual_narration_delta = (
@@ -967,9 +975,10 @@ class GizmoSession:
         if kind == "user_transcript_preview":
             partial = event.text.strip()
             if partial:
-                await self.emit(
-                    {"type": "user_partial", "text": partial[:MAX_CONTEXT_TEXT]}
-                )
+                text = partial[:MAX_CONTEXT_TEXT]
+                self._device_line = True
+                await self.emit({"type": "user_partial", "text": text})
+                await self.emit({"type": "line", "text": text})
             if self._hold is not None:
                 self._hold_utterance = event.text.strip()[:MAX_CONTEXT_TEXT]
                 await self._consider_scout(self._hold_utterance, final=False, voice_started=self._hold_has_audio())
@@ -985,6 +994,10 @@ class GizmoSession:
             return
         if kind == "user_transcript":
             self._record_transcript("user", event.text)
+            self._device_line = True
+            await self.emit(
+                {"type": "line", "text": event.text.strip()[:MAX_CONTEXT_TEXT]}
+            )
             if self._hold is not None:
                 self._hold_utterance = event.text.strip()[:MAX_CONTEXT_TEXT]
                 await self._consider_scout(self._hold_utterance, final=True)
@@ -1294,7 +1307,8 @@ class GizmoSession:
             self.machine.apply("done")
         if not self.film_active():
             self._suppress_live_output = False
-        await self.emit({"type": "glass", "viewing": False, "reason": "film"})
+        self._device_line = False
+        await self.emit({"type": "glass", "viewing": False, "reason": "film", "text": ""})
         await self.emit({"type": "state", "reason": "film"})
 
     async def _dismiss_show(self, reason: str, *, cancel_pending: bool = True) -> None:
@@ -1317,7 +1331,10 @@ class GizmoSession:
             clear_pending_image = getattr(self._transport, "clear_pending_image", None)
             if clear_pending_image:
                 await clear_pending_image()
-            await self.emit({"type": "glass", "viewing": False, "reason": reason})
+            self._device_line = False
+            await self.emit(
+                {"type": "glass", "viewing": False, "reason": reason, "text": ""}
+            )
 
     def show_event(self) -> dict[str, Any] | None:
         if self.current_show is None:

@@ -583,7 +583,7 @@ void FriendConnection::on_message(const char* json, size_t len) {
   }
 
   StaticJsonDocument<320> filter;
-  for (const char* key : {"type", "state", "protocol_version", "viewing", "still", "frames", "cue", "hold", "go"}) {
+  for (const char* key : {"type", "state", "protocol_version", "viewing", "still", "frames", "cue", "hold", "go", "text"}) {
     filter[key] = true;
   }
   DynamicJsonDocument document(len > 2048 ? 2048 : len + 512);
@@ -615,6 +615,11 @@ void FriendConnection::on_message(const char* json, size_t len) {
 
   if (strcmp(type, "glass") == 0) {
     if (hello_ok_) {
+      const char* caption = document["text"];
+      if (caption != nullptr && strcmp(line_, caption)) {
+        strlcpy(line_, caption, sizeof(line_));
+        line_changed_ = true;
+      }
       const uint32_t cue = document["cue"] | 0u;
       const bool hold = document["hold"] | false;
       const char* still = document["still"] | "";
@@ -666,6 +671,15 @@ void FriendConnection::on_message(const char* json, size_t len) {
 
   if (!hello_ok_) return;
 
+  if (strcmp(type, "line") == 0) {
+    const char* text = document["text"] | "";
+    if (strcmp(line_, text)) {
+      strlcpy(line_, text, sizeof(line_));
+      line_changed_ = true;
+    }
+    return;
+  }
+
   if (strcmp(type, "state") == 0) {
     const char* state = document["state"];
     if (state != nullptr) accept_session_state(state);
@@ -692,6 +706,13 @@ bool FriendConnection::take_show(ShowRequest& request) {
   strlcpy(request.base, url_, sizeof(request.base));
   strlcpy(request.token, token_, sizeof(request.token));
   strlcpy(request.device, device_id_, sizeof(request.device));
+  return true;
+}
+
+bool FriendConnection::take_line(char* dest, size_t cap) {
+  if (!line_changed_ || cap == 0) return false;
+  line_changed_ = false;
+  strlcpy(dest, line_, cap);
   return true;
 }
 

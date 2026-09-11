@@ -44,6 +44,8 @@ class FriendConnection {
   bool speaker_pending() const { return speaker_n_ > 0; }
   bool take_barge_in();
   bool take_show(ShowRequest& request);
+  // Latest caption line from the brain (kid's own words, subtitles).
+  bool take_line(char* dest, size_t cap);
 
   void on_socket_event(int type, uint8_t* payload, size_t length);
 
@@ -106,6 +108,8 @@ class FriendConnection {
   // A story beat sent ahead of its words. Handed to the player before show_.
   ShowRequest held_;
   bool held_changed_ = false;
+  char line_[160] = "";
+  bool line_changed_ = false;
 };
 
 const char* friend_phase_name(FriendPhase phase);

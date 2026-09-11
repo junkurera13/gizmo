@@ -261,6 +261,7 @@ class DeviceFilmPlayer:
             return segment, event, ready
 
         pending = None
+        position = 0.0
         try:
             index = 0
             item = await preload(index)
@@ -269,7 +270,13 @@ class DeviceFilmPlayer:
                 if not await asyncio.wait_for(ready, 10):
                     raise RuntimeError("Device could not preload film")
                 self.acks.pop((event["cue"], "motion"), None)
-                await self.send({**event, "go": True})
+                caption = ""
+                for timing in prepared.timings or []:
+                    if timing.get("start", 0.0) <= position < timing.get("end", 0.0):
+                        caption = str(timing.get("narration", ""))[:150]
+                        break
+                await self.send({**event, "go": True, "text": caption})
+                position += len(segment.pcm) / 48000
                 # The next held cue downloads during this segment's narration.
                 pending = asyncio.create_task(preload(index + 1))
                 if self.on_talking:
@@ -396,7 +403,7 @@ class DeviceFilm:
                 await self.player.show_conjuring()
         elif event["type"] == "ended":
             self.state = "listening"
-            await self.send({"type": "glass", "viewing": False})
+            await self.send({"type": "glass", "viewing": False, "text": ""})
             await self.send({"type": "state"})
 
     async def stop(self):
@@ -435,7 +442,7 @@ class DeviceFilm:
         await self.send(
             {"type": "hello", "protocol_version": 1, "settings": self.settings.public()}
         )
-        await self.send({"type": "glass", "viewing": False})
+        await self.send({"type": "glass", "viewing": False, "text": ""})
         try:
             while True:
                 message = await self.socket.receive_json()
@@ -473,7 +480,7 @@ class DeviceFilm:
                         await self.send(self.settings.snapshot())
                     else:
                         await self.stop()
-                        await self.send({"type": "glass", "viewing": False})
+                        await self.send({"type": "glass", "viewing": False, "text": ""})
                 elif kind == "navigate":
                     self.settings.navigate(message.get("direction"))
                     if self.settings.open:

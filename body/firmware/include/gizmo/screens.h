@@ -47,4 +47,8 @@ void render_camera_world(const draw::Canvas& canvas, const uint16_t* home_base, 
 // Setup / join card over home while Wi-Fi still needs attention.
 void render_wifi_setup(const draw::Canvas& canvas, const char* title, const char* line, const char* detail);
 
+// Brain-sent caption line (the kid's own words, or film subtitles), drawn as a
+// strip at the bottom over whatever is on screen. Empty line draws nothing.
+void render_caption(const draw::Canvas& canvas, const char* line);
+
 }  // namespace gizmo
