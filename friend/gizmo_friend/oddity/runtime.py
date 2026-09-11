@@ -262,7 +262,8 @@ class ExperienceSession:
         except asyncio.CancelledError:
             raise
         except Exception as error:  # noqa: BLE001 - turn failures stay on the glass
-            logger.warning("Oddity experience failed: %s code=%s", type(error).__name__, getattr(error, "code", None))
+            logger.warning("Oddity experience failed: %s code=%s", type(error).__name__, getattr(error, "code", None),
+                           exc_info=True)
             await self.event("error", turn, message="That thought didn't come through. Try again in a moment.")
 
     async def playback(self, message: dict):

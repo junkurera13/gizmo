@@ -98,8 +98,8 @@ const blinkFrames = Object.fromEntries([10, 11, 12, 13].map((id) => {
 const IDLE_FRAMES = ['/static/oddity-character.png?v=char3', '/static/oddity-character-half.png?v=char3', '/static/oddity-character-closed.png?v=char3'];
 const LISTEN_FRAMES = Array.from({ length: 7 }, (_, i) => `/static/oddity-listening-0${i + 1}.png?v=listen1`);
 const LISTEN_SLOTS = [0, 0, 0, 0, 0, 0, 1, 2, 3, 4, 5, 6, 6, 6, 6, 6, 6, 6, 6, 6, 6, 6, 6, 5, 4, 3, 2, 1];
-const THINK_FRAMES = Array.from({ length: 15 }, (_, i) => `/static/oddity-thinking-${String(i + 1).padStart(2, '0')}.png?v=think1`);
-const THINK_SLOTS = [6, 7, 8, 9, 10, 11, 12, 13, 14, 14, 14, 13, 12, 11, 10, 9, 8, 7, 6];
+const THINK_FRAMES = Array.from({ length: 15 }, (_, i) => `/static/oddity-thinking-${String(i + 1).padStart(2, '0')}.png?v=think2`);
+const THINK_SLOTS = [7, 8, 9, 10, 11, 12, 13, 14, 14, 14, 13, 12, 11, 10, 9, 8, 7];
 let listenSlot = 0, listenFrame = -1, thinkSlot = 0, faceNextAt = 0, listenNextAt = 0, thinkNextAt = 0, blinkStep = 0;
 function faceImgs() {
   return document.querySelectorAll('img[src*="oddity-character"], img[src*="oddity-listening"], img[src*="oddity-thinking"]');
@@ -422,7 +422,7 @@ function handle(event) {
     case 'error':
       notice(event.message); ready = true;
       invitation?.enable();
-      if (!playing && !queue.length) status('Try that thought again.', 'idle');
+      if (!playing && !queue.length) { status('Try that thought again.', 'idle'); setCaption(); }
       break;
   }
 }
@@ -635,7 +635,17 @@ async function showScene(beat, signal) {
     $('still').hidden = true; film.removeAttribute('src');
     film.hidden = false; stage.classList.remove('scene-ending'); stage.classList.add('has-scene'); $('home').hidden = false;
     $('scene').classList.remove('scene-enter'); void $('scene').offsetWidth; $('scene').classList.add('scene-enter');
-    await attachFilm(beat, signal);
+    try {
+      await attachFilm(beat, signal);
+    } catch (error) {
+      // A dead film (late offer, expired session) must not take the turn down
+      // with it: fall back to the face and let the narration play as captions.
+      if (signal.aborted) throw error;
+      beat.film = null; beat.visual = 'face';
+      film.hidden = true; film.removeAttribute('src'); film.load();
+      stage.classList.remove('has-scene'); $('home').hidden = true;
+      beat.warnings = [...(beat.warnings || []), 'The film could not be received.'];
+    }
     return;
   }
   if (beat.image) {
@@ -712,7 +722,7 @@ async function playQueue() {
       if (beat.interaction) { invite(beat); return; }
     }
   } catch (error) {
-    if (!signal.aborted) { notice(error.message || 'This scene could not be played. Try again.'); send({type:'interrupt'}); queue = []; ready = true; }
+    if (!signal.aborted) { notice(error.message || 'This scene could not be played. Try again.'); send({type:'interrupt'}); queue = []; ready = true; setCaption(); }
   } finally {
     if (controller === ownController && turn === localTurn) {
       playing = false; clearInterval(progressTimer);

@@ -53,7 +53,8 @@ class InteractionTests(unittest.IsolatedAsyncioTestCase):
     async def test_reply_invitation_rejects_unseen_reveal_and_answers_by_voice(self):
         invitation = Beat(narration='What do you think?', visual='face', purpose='Predict',
             interaction=Interaction(kind='reply', prompt='Which way?'))
-        with self.assertRaises(ValidationError): Experience(title='Spoiler', beats=[invitation, self.director.beats[0]])
+        # Anything planned after an invitation can never play; the plan is truncated there.
+        self.assertEqual(len(Experience(title='Spoiler', beats=[invitation, self.director.beats[0]]).beats), 1)
         self.director.beats = [invitation]
         ack = await self.present()
         await self.session.playback({**ack, 'phase':'finished'})

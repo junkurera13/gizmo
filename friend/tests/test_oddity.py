@@ -199,10 +199,17 @@ class OddityTests(unittest.IsolatedAsyncioTestCase):
         self.session.revisit(None)
         self.assertIsNone(self.session.current["screen"])
 
-    def test_plan_rejects_incoherent_media(self):
-        with self.assertRaises(ValidationError): Beat(narration="Hi", visual="video", purpose="Missing brief")
-        with self.assertRaises(ValidationError): Beat(narration="Hi", visual="film", purpose="Missing brief")
-        with self.assertRaises(ValidationError): Experience(title="Too many films", beats=[beat("video"), beat("film")])
+    def test_plan_degrades_incoherent_media(self):
+        # A visual beat with no drawable subject keeps the current screen
+        # instead of rejecting the whole plan.
+        self.assertEqual(Beat(narration="Hi", visual="video", purpose="Missing brief").visual, "keep")
+        self.assertEqual(Beat(narration="Hi", visual="film", purpose="Missing brief").visual, "keep")
+        # Multiple film asks stay routable: the first becomes film, the rest stills.
+        plan = Experience(title="Too many films", beats=[beat("video"), beat("film")])
+        routed = route_moving_picture(plan, "What if I fell into Jupiter?")
+        self.assertEqual([b.visual for b in routed.beats], ["film", "image"])
+        # A beat carrying nothing at all is still rejected.
+        with self.assertRaises(ValidationError): Beat(narration="", visual="face", purpose="Empty")
 
     def test_runtime_does_not_call_clip_provider(self):
         import inspect

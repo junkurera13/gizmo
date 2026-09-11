@@ -157,11 +157,14 @@ class CinemaSession:
                     "narration": plan.narration,
                 }
             )
-            await opening
+            async with asyncio.timeout(30):
+                await opening
             self.mark("director_peer")
             if not self.current(revision):
                 return
-            async with asyncio.timeout(20):
+            # The browser only sends its offer once the film beat actually plays,
+            # after any earlier beats in the turn — that can be minutes.
+            async with asyncio.timeout(180):
                 await self.viewer.wait()
             self.mark("viewer")
             if not self.current(revision):
@@ -179,8 +182,11 @@ class CinemaSession:
                 "audio_url": audio_url,
             }
             if image_upload is not None:
-                async with asyncio.timeout(10):
-                    image_url = await image_upload
+                try:
+                    async with asyncio.timeout(10):
+                        image_url = await image_upload
+                except Exception:  # noqa: BLE001 - a missing anchor must not kill the film
+                    image_url = None
                 if image_url:
                     configuration["image_url"] = image_url
             if not self.current(revision):

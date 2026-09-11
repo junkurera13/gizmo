@@ -33,10 +33,13 @@ class Beat(BaseModel):
 
     @model_validator(mode="after")
     def coherent(self):
+        # Sloppy plans degrade, they do not kill the turn: a visual beat with no
+        # drawable subject keeps the current screen, and video without a described
+        # change is only a still.
         if self.visual in {"image", "diagram", "video", "film"} and not self.subject.strip():
-            raise ValueError("A new visual needs a concrete subject")
+            self.visual = "keep"
         if self.visual == "video" and not self.motion.strip():
-            raise ValueError("Video needs a meaningful change to depict")
+            self.visual = "image"
         if not self.narration.strip() and self.visual in {"face", "keep"}:
             raise ValueError("An empty beat does not advance the experience")
         if self.visual == "orbit" and (not self.interaction or self.interaction.kind != "orbit"):
@@ -55,10 +58,11 @@ class Experience(BaseModel):
 
     @model_validator(mode="after")
     def bounded(self):
-        if sum(b.visual in {"video", "film"} for b in self.beats) > 1:
-            raise ValueError("At most one film in a turn")
-        if any(b.interaction for b in self.beats[:-1]):
-            raise ValueError("Stop planning at the invitation; the answer determines what happens next")
+        # Extra film asks are routed down to stills by route_moving_picture, and
+        # anything planned after an invitation can never play: drop it.
+        invited = next((i for i, b in enumerate(self.beats) if b.interaction), None)
+        if invited is not None:
+            self.beats = self.beats[:invited + 1]
         return self
 
 
