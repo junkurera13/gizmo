@@ -6,24 +6,24 @@ on:
   pull_request:
   workflow_dispatch:
 
+# A superseded run is dead work — cancel it instead of paying for it.
+concurrency:
+  group: tests-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
-  python:
+  tests:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
       - uses: astral-sh/setup-uv@v5
         with:
           enable-cache: true
-      - run: uv sync --locked
-      - run: uv run python -m unittest discover -s friend/tests -p 'test_*.py'
-
-  node:
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
         with:
           node-version: "22"
+      - run: uv sync --locked
+      - run: uv run python -m unittest discover -s friend/tests -p 'test_*.py'
       - name: run mjs tests
         working-directory: friend/tests
         run: for f in *.test.mjs; do node --test "$f" || exit 1; done

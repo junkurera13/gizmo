@@ -23,7 +23,7 @@ export default defineRailway(() => {
     source: github("junkurera13/gizmo", {
       branch: "main",
       rootDirectory: "deploy/memobase",
-      checkSuites: true,
+      checkSuites: false,
     }),
     rootDirectory: "deploy/memobase",
     replicas: { [region]: 1 },
@@ -44,7 +44,7 @@ export default defineRailway(() => {
   const brain = service("gizmo-brain", {
     source: github("junkurera13/gizmo", {
       branch: "main",
-      checkSuites: true,
+      checkSuites: false,
     }),
     replicas: { [region]: 1 },
     healthcheck: "/health",
