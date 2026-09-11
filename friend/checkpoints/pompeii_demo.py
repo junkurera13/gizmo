@@ -24,6 +24,7 @@ from dotenv import load_dotenv
 
 from gizmo_friend.cinema.plan import FilmBeat, FilmMaker, FilmPlan, PreparedFilm
 from gizmo_friend.cinema.stream import DirectorStream
+from gizmo_friend.oddity.demo_voice import DEMO_NARRATION_STYLE
 
 ROOT = Path(__file__).resolve().parents[2]
 STATIC = ROOT / "friend" / "gizmo_friend" / "static"
@@ -77,16 +78,6 @@ PLAN = FilmPlan(
 # Silence before each beat's words lets the scene establish first and hides
 # Director's habit of starting the next visual slightly before its line.
 LEAD_SECONDS = 0.6
-# A calmer read than the brisk explainer pace suits a demo loop.
-DEMO_STYLE = (
-    "Read the following verbatim as a clear, curious explainer speaking to one "
-    "interested listener. Use a gentle, unhurried conversational pace, about "
-    "140–150 words per minute. Sound warm and matter-of-fact. Keep pitch "
-    "movement restrained, consonants crisp, and pauses clean at full stops. "
-    "Start promptly and finish cleanly. Do not add words."
-)
-
-
 async def synthesize_with_leads(maker: FilmMaker, plan: FilmPlan) -> PreparedFilm:
     voices = await asyncio.gather(
         *(maker.voice.narrate(beat.narration) for beat in plan.beats)
@@ -187,7 +178,7 @@ async def main():
     maker = FilmMaker()
     stream = DirectorStream(os.environ["FAL_KEY"], lambda event: asyncio.sleep(0))
     try:
-        maker.voice.style = DEMO_STYLE
+        maker.voice.style = DEMO_NARRATION_STYLE
         prepared = await synthesize_with_leads(maker, PLAN)
         print(f"narration: {prepared.duration:.1f}s")
         audio_url = await maker.upload_audio(prepared.wav)

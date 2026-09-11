@@ -64,25 +64,29 @@ def _register(*moments: Moment) -> None:
 _register(
     Moment(
         id="birthday",
-        line="How many more sleeps until my birthday?",
+        line="How many more days until my birthday?",
         seed=birthday_seed,
         contract=(
-            "The kid is asking how long until their birthday. You already know the date "
-            "from memory. Answer with the number of sleeps, warmly and briefly. Keep the "
+            "The kid is asking how many days remain until their birthday. You already know "
+            "the date from memory. Answer with the number of days in two or three warm, friendly "
+            "sentences. Keep the "
             "normal Gizmo face on screen: do not generate an image, video, diagram, or "
             "interactive scene. Do not ask them to restate the date."
         ),
         demo={
-            "prompt": "Gizmo, how many more sleeps until my birthday?",
-            "prompt_audio": "/static/demo-birthday-kid.mp3",
+            "prompt": "Gizmo, how many more days until my birthday?",
+            "prompt_audio": "/static/demo-birthday-kid.mp3?v=days1",
             "prompt_timed": [
                 [0.19, "Gizmo,"],
                 [1.30, "how many more"],
-                [2.19, "sleeps until my"],
+                [2.19, "days until my"],
                 [3.07, "birthday?"],
             ],
-            "reply": "Eleven sleeps.",
-            "reply_audio": "/static/demo-birthday-gizmo.wav",
+            "reply": (
+                "Eleven more days. That's close enough to start getting excited. "
+                "Your birthday will be here before you know it."
+            ),
+            "reply_audio": "/static/demo-birthday-gizmo.wav?v=days1",
         },
     ),
     Moment(

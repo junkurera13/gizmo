@@ -21,10 +21,15 @@ class MomentCatalogTests(unittest.TestCase):
         self.assertEqual(len(public), 2)
         self.assertNotIn("seed", public[0])
         self.assertNotIn("contract", public[0])
-        self.assertEqual(public[0]["demo"]["prompt_audio"], "/static/demo-birthday-kid.mp3")
-        self.assertEqual(public[0]["demo"]["reply"], "Eleven sleeps.")
-        self.assertEqual(public[0]["demo"]["reply_audio"], "/static/demo-birthday-gizmo.wav")
-        self.assertNotIn("sleeps", public[0]["demo"])
+        self.assertEqual(public[0]["demo"]["prompt_audio"], "/static/demo-birthday-kid.mp3?v=days1")
+        self.assertEqual(
+            public[0]["demo"]["reply"],
+            "Eleven more days. That's close enough to start getting excited. "
+            "Your birthday will be here before you know it.",
+        )
+        self.assertEqual(public[0]["demo"]["reply_audio"], "/static/demo-birthday-gizmo.wav?v=days1")
+        self.assertNotIn("video", public[0]["demo"])
+        self.assertNotIn("image", public[0]["demo"])
         self.assertEqual(public[1]["demo"]["prompt_audio"], "/static/demo-pompeii-kid.mp3")
         self.assertEqual(public[1]["demo"]["video"], "/static/demo-pompeii.mp4")
         self.assertEqual(public[1]["demo"]["reply_audio"], "/static/demo-pompeii.wav")

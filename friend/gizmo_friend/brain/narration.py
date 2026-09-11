@@ -19,6 +19,8 @@ from dataclasses import dataclass, field
 
 import httpx
 
+from gizmo_friend.voice import AGENT_VOICE
+
 try:
     import audioop
 except ImportError:  # Python 3.13+
@@ -83,7 +85,7 @@ def pcm_from_part(mime_type: str, data: bytes) -> bytes:
 @dataclass
 class GeminiNarrationProvider(NarrationProvider):
     api_key: str = field(repr=False)
-    voice: str = "Umbriel"
+    voice: str = AGENT_VOICE
     model: str = NARRATION_MODEL
     timeout_seconds: float = NARRATION_TIMEOUT_SECONDS
     style: str = NARRATION_STYLE
@@ -152,7 +154,7 @@ def narration_provider_from_env(
         return NullNarrationProvider()
     return GeminiNarrationProvider(
         api_key=key,
-        voice=voice or os.environ.get("GIZMO_VOICE", "Umbriel"),
+        voice=voice or AGENT_VOICE,
         model=os.environ.get("GIZMO_NARRATION_MODEL", NARRATION_MODEL),
         style=style,
     )

@@ -39,7 +39,7 @@ async function app() {
           session: 'a'.repeat(32), mode: 'moment',
           moment: options.headers?.['X-Oddity-Moment'] || 'birthday',
           moments: [
-            {id:'birthday', line:'How many more sleeps until my birthday?', demo:{prompt:'Gizmo, how many more sleeps until my birthday?', prompt_audio:'/static/demo-birthday-kid.mp3', reply:'Eleven sleeps.', reply_audio:'/static/demo-birthday-gizmo.wav'}},
+            {id:'birthday', line:'How many more days until my birthday?', demo:{prompt:'Gizmo, how many more days until my birthday?', prompt_audio:'/static/demo-birthday-kid.mp3', reply:'Eleven more days.', reply_audio:'/static/demo-birthday-gizmo.wav'}},
             {id:'draw', line:'What should I draw?'},
           ],
         }),
@@ -61,7 +61,7 @@ async function app() {
 test('embedded player shows the current kid line on the rail', async () => {
   const ui = await app();
   assert.equal(ui.run('playMoments'), true);
-  ui.run('moments = [{id:"birthday", line:"How many more sleeps until my birthday?"}, {id:"draw", line:"What should I draw?"}]');
+  ui.run('moments = [{id:"birthday", line:"How many more days until my birthday?"}, {id:"draw", line:"What should I draw?"}]');
   ui.run('syncMoment("draw")');
   assert.equal(ui.element('moments').hidden, false);
   assert.equal(ui.element('moment-line').textContent, 'What should I draw?');
@@ -69,7 +69,7 @@ test('embedded player shows the current kid line on the rail', async () => {
 
 test('a single completed demo hides scenario navigation', async () => {
   const ui = await app();
-  ui.run('moments = [{id:"birthday", line:"How many more sleeps until my birthday?", demo:{prompt:"Gizmo, how many more sleeps until my birthday?", prompt_audio:"/static/demo-birthday-kid.mp3"}}]; syncMoment("birthday")');
+  ui.run('moments = [{id:"birthday", line:"How many more days until my birthday?", demo:{prompt:"Gizmo, how many more days until my birthday?", prompt_audio:"/static/demo-birthday-kid.mp3"}}]; syncMoment("birthday")');
   assert.equal(ui.element('moment-prev').hidden, true);
   assert.equal(ui.element('moment-next').hidden, true);
 });
@@ -83,7 +83,7 @@ test('two completed demos show left and right navigation', async () => {
 
 test('only completed moments expose a playable demo', async () => {
   const ui = await app();
-  ui.run('moments = [{id:"birthday", line:"How many more sleeps until my birthday?", demo:{prompt:"Gizmo, how many more sleeps until my birthday?", prompt_audio:"/static/demo-birthday-kid.mp3", reply_audio:"/static/demo-birthday-gizmo.wav"}}, {id:"draw", line:"What should I draw?"}]');
+  ui.run('moments = [{id:"birthday", line:"How many more days until my birthday?", demo:{prompt:"Gizmo, how many more days until my birthday?", prompt_audio:"/static/demo-birthday-kid.mp3", reply_audio:"/static/demo-birthday-gizmo.wav"}}, {id:"draw", line:"What should I draw?"}]');
   ui.run('syncMoment("birthday")');
   assert.equal(ui.element('moment-say').disabled, false);
   assert.equal(ui.element('moment-say').textContent, 'Play demo');
@@ -95,13 +95,13 @@ test('only completed moments expose a playable demo', async () => {
 test('the recorded kid question is followed by the real Gizmo voice', async () => {
   const ui = await app();
   ui.context.recorded = [];
-  ui.run('moments = [{id:"birthday", line:"How many more sleeps until my birthday?", demo:{prompt:"Gizmo, how many more sleeps until my birthday?", prompt_audio:"/static/demo-birthday-kid.mp3", reply:"Eleven sleeps.", reply_audio:"/static/demo-birthday-gizmo.wav"}}]; syncMoment("birthday"); playDemoRecording = async (src, signal, text) => { recorded.push(src); setCaption(text); }');
+  ui.run('moments = [{id:"birthday", line:"How many more days until my birthday?", demo:{prompt:"Gizmo, how many more days until my birthday?", prompt_audio:"/static/demo-birthday-kid.mp3", reply:"Eleven more days. That\'s close enough to start getting excited. Your birthday will be here before you know it.", reply_audio:"/static/demo-birthday-gizmo.wav"}}]; syncMoment("birthday"); playDemoRecording = async (src, signal, text) => { recorded.push(src); setCaption(text); }');
   await ui.run('sayMoment()');
   assert.deepEqual([...ui.context.recorded], [
     '/static/demo-birthday-kid.mp3',
     '/static/demo-birthday-gizmo.wav',
   ]);
-  assert.equal(ui.element('caption').textContent, 'Eleven sleeps.');
+  assert.equal(ui.element('caption').textContent, "Eleven more days. That's close enough to start getting excited. Your birthday will be here before you know it.");
   assert.match(ui.element('status').textContent, /Demo finished/);
   assert.equal(ui.element('device').dataset.ptt, 'false');
 });
@@ -119,13 +119,13 @@ test('Pompeii plays three synchronized narrated videos', async () => {
 
 test('lab mode keeps the rail hidden', async () => {
   const ui = await app();
-  ui.run('playMoments = false; moments = [{id:"birthday", line:"How many more sleeps until my birthday?"}]; syncMoment("birthday")');
+  ui.run('playMoments = false; moments = [{id:"birthday", line:"How many more days until my birthday?"}]; syncMoment("birthday")');
   assert.equal(ui.element('moments').hidden, true);
 });
 
 test('cycling a moment starts a new session without the previous id', async () => {
   const ui = await app();
-  ui.run('moments = [{id:"birthday", line:"How many more sleeps until my birthday?"}, {id:"draw", line:"What should I draw?"}]');
+  ui.run('moments = [{id:"birthday", line:"How many more days until my birthday?"}, {id:"draw", line:"What should I draw?"}]');
   ui.run('session = "b".repeat(32); momentId = "birthday"; momentIndex = 0; playMoments = true');
   await ui.run('selectMoment(1)');
   assert.equal(ui.run('momentId'), 'draw');

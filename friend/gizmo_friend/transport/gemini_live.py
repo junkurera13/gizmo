@@ -11,6 +11,7 @@ from google.genai import types
 
 from gizmo_friend.tools.allowlist import NON_BLOCKING_TOOLS, TOOL_SCHEMAS, assert_allowlist
 from gizmo_friend.transport.base import TransportEvent
+from gizmo_friend.voice import AGENT_VOICE
 
 try:
     import audioop
@@ -21,7 +22,7 @@ except ImportError:  # Python 3.13+
 MODEL = "gemini-3.1-flash-live-preview"
 # Gizmo's one voice. Google's default is Puck (upbeat), the opposite of him.
 # Umbriel is the easy-going male voice: unhurried, low energy, warm underneath.
-VOICE = "Umbriel"
+VOICE = AGENT_VOICE
 INPUT_RATE = 16_000
 DEVICE_RATE = 24_000
 OUTPUT_RATE = 24_000
@@ -92,7 +93,7 @@ def live_config(instructions: str, resume_handle: str = "") -> types.LiveConnect
         speech_config=types.SpeechConfig(
             voice_config=types.VoiceConfig(
                 prebuilt_voice_config=types.PrebuiltVoiceConfig(
-                    voice_name=os.environ.get("GIZMO_VOICE", VOICE)
+                    voice_name=VOICE
                 )
             )
         ),

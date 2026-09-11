@@ -12,6 +12,7 @@ from pydantic import BaseModel, Field, model_validator
 
 from gizmo_friend.prompt import FROZEN_PROMPT
 from gizmo_friend.brain.gemini_text import GeminiTextClient, TEXT_MODEL
+from gizmo_friend.voice import AGENT_VOICE
 
 
 class Interaction(BaseModel):
@@ -228,7 +229,7 @@ class Director:
                     response_modalities=["AUDIO"],
                     speech_config=types.SpeechConfig(voice_config=types.VoiceConfig(
                         prebuilt_voice_config=types.PrebuiltVoiceConfig(
-                            voice_name=os.environ.get("GIZMO_VOICE", "Umbriel")),
+                            voice_name=AGENT_VOICE),
                     )),
                 ),
             )

@@ -16,6 +16,7 @@ from pydantic import BaseModel, Field
 from gizmo_friend.brain.gemini_text import TEXT_MODEL, GeminiTextClient
 from gizmo_friend.brain.narration import narration_provider_from_env
 from gizmo_friend.prompt import ART_STYLE, FROZEN_PROMPT
+from gizmo_friend.voice import AGENT_VOICE
 
 FILM_NARRATION_STYLE = (
     "Read the following verbatim as a clear, curious science explainer speaking "
@@ -107,8 +108,7 @@ class FilmMaker:
             os.environ["GEMINI_API_KEY"], model=os.environ.get("GIZMO_FILM_MODEL", TEXT_MODEL)
         )
         self.voice = narration_provider_from_env(
-            voice=os.environ.get("GIZMO_FILM_VOICE")
-            or os.environ.get("GIZMO_VOICE", "Umbriel"),
+            voice=AGENT_VOICE,
             style=FILM_NARRATION_STYLE,
         )
         self.upload = fal_client.AsyncClient(
