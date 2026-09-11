@@ -12,6 +12,6 @@
 .launch-speed output{min-width:32px;text-align:right;font-variant-numeric:tabular-nums;color:#ffc6df}
 .experiment-actions{display:flex;gap:8px;justify-content:center}.experiment-actions button{flex:1}
 .interaction .orbit-result{font-size:clamp(11px,2.4cqw,14px);min-height:1.2em;margin:7px 0 2px;color:#f5c3db}
-.interaction small{font-size:clamp(8px,1.7cqw,10px);color:#b4a0c0}.reply-hint{font-size:12px;color:#c1acc9}
+.interaction small{font-size:clamp(8px,1.7cqw,10px);color:#b4a0c0}
 @media(max-width:600px){.interaction{left:7%;right:7%;bottom:8%}.interaction .invitation{font-size:12px;margin-bottom:7px}.interaction button{font-size:11px;min-height:29px;padding:6px}.interaction .orbit-result{margin-top:5px}.launch-speed{gap:6px}}
 @media(prefers-reduced-motion:reduce){.interaction{animation:none}.interaction button{transition:none}}

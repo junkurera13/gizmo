@@ -43,8 +43,6 @@ export function createInteraction(root, stage, orbit, callbacks) {
         discuss = button('What happened?', () => { if (!awaiting || !trial || discuss.disabled) return; discuss.disabled = true; callbacks.answer({}); }); discuss.disabled = true;
         row.append(launch, discuss); root.append(speedRow, row, outcome);
         const note = document.createElement('small'); note.textContent = '1× = circular speed · no air · time sped up'; root.append(note);
-      } else {
-        const hint = document.createElement('p'); hint.className = 'reply-hint'; hint.textContent = 'Hold pink to tell me. Or type below.'; root.append(hint);
       }
     },
     confirmed() { if (awaiting && discuss && trial) discuss.disabled = false; },
