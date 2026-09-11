@@ -216,7 +216,7 @@ class ExperienceSession:
                 await self.event("status", turn, stage="hearing")
                 text = await self.director.transcribe(audio, mime)
             text = text.strip()[:3000]
-            if not text:
+            if not text or not any(c.isalnum() for c in text):
                 await self.event("error", turn, message="I didn't catch any words. Try again, or type your thought.")
                 return
             self.utterance = text

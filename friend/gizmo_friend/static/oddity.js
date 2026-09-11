@@ -8,6 +8,7 @@ const stage = $('stage'), voice = $('voice'), film = $('film'), demoAudio = $('d
 let socket, awake = false, turn = '', queue = [], ready = false, playing = false;
 let controller, currentBeat, paused = false, muted = false, archive = [];
 let history = [], plan = [], recorder, stream, held = false, talkHeld = false, recordingTimer, progressTimer;
+let micMeter = null, micLevel = 0, micLoud = 0;
 let microphoneAttempt = 0, mediaWaitResolve, audioUnlock, expectedClose = false;
 let captions = [];
 let orbitView, invitation, restoredInvitation, screenOrbit = false;
@@ -779,6 +780,24 @@ async function startRecording() {
     const recordingStream = await navigator.mediaDevices.getUserMedia({audio:{echoCancellation:true, noiseSuppression:true}, video:false});
     if (!held || attempt !== microphoneAttempt) { recordingStream.getTracks().forEach(t => t.stop()); return; }
     stream = recordingStream;
+    // Level meter: if nothing audible arrives, the clip is never sent — an
+    // empty press should do nothing, not generate a reply to silence.
+    micLevel = 0; micLoud = 0;
+    try {
+      const source = audioUnlock.createMediaStreamSource(stream);
+      const analyser = audioUnlock.createAnalyser();
+      analyser.fftSize = 512;
+      source.connect(analyser);
+      const bins = new Uint8Array(analyser.frequencyBinCount);
+      micMeter = setInterval(() => {
+        analyser.getByteTimeDomainData(bins);
+        let peak = 0;
+        for (const v of bins) peak = Math.max(peak, Math.abs(v - 128));
+        const level = peak / 128;
+        if (level > micLevel) micLevel = level;
+        if (level > 0.045) micLoud += 1;  // ~60ms windows clearly above noise floor
+      }, 60);
+    } catch { micMeter = null; micLoud = 99; }
     const mime = ['audio/webm;codecs=opus','audio/mp4','audio/webm','audio/ogg;codecs=opus'].find(t => MediaRecorder.isTypeSupported(t));
     recorder = new MediaRecorder(stream, mime ? {mimeType:mime, audioBitsPerSecond:64000} : undefined);
     const activeRecorder = recorder;
@@ -786,7 +805,10 @@ async function startRecording() {
     recorder.ondataavailable = ({data}) => { if (data.size) { chunks.push(data); size += data.size; if (size > 1_400_000 && held) stopRecording(); } };
     recorder.onstop = async () => {
       recordingStream.getTracks().forEach(t => t.stop());
+      clearInterval(micMeter); micMeter = null;
       const blob = new Blob(chunks, {type:activeRecorder.mimeType});
+      if (attempt !== microphoneAttempt) return;
+      if (micLoud < 2) { status('I didn’t hear anything.', 'idle'); setCaption(); return; }
       if (blob.size < 100 || blob.size > 1_500_000) { notice('That recording was empty or too long. Try again.'); return; }
       const reader = new FileReader();
       reader.onload = () => { if (attempt === microphoneAttempt) send({type:'recording', mime:blob.type, audio:reader.result.split(',')[1]}); };
