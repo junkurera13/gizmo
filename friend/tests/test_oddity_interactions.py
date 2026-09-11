@@ -50,16 +50,16 @@ class InteractionTests(unittest.IsolatedAsyncioTestCase):
         self.assertNotIn('escape', str(context['journey']['observations']))
         with self.assertRaises(ValueError): await self.session.experiment({**ack, 'speed': 1})
 
-    async def test_choice_is_validated_and_unseen_reveal_is_rejected(self):
+    async def test_reply_invitation_rejects_unseen_reveal_and_answers_by_voice(self):
         invitation = Beat(narration='What do you think?', visual='face', purpose='Predict',
-            interaction=Interaction(kind='choice', prompt='Which way?', options=['Around Earth', 'Straight out']))
+            interaction=Interaction(kind='reply', prompt='Which way?'))
         with self.assertRaises(ValidationError): Experience(title='Spoiler', beats=[invitation, self.director.beats[0]])
         self.director.beats = [invitation]
         ack = await self.present()
         await self.session.playback({**ack, 'phase':'finished'})
-        for bad in [-1, 2, True, '1']:
-            with self.assertRaises(ValueError): self.session.answer({**ack, 'choice':bad})
-        self.assertEqual(self.session.answer({**ack, 'choice':1, 'text':'Injected script'}), 'Straight out')
+        # A reply is answered with the kid's own words, not a button.
+        with self.assertRaises(ValueError): self.session.answer(ack)
+        with self.assertRaises(ValueError): self.session.answer({**ack, 'choice': 0})
 
     async def test_invitation_and_goal_survive_reload_but_interrupt_consumes_gate(self):
         ack = await self.present()

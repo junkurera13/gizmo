@@ -1,13 +1,12 @@
 // An invitation belongs to the currently presented beat. Nothing auto-submits.
 export function createInteraction(root, stage, orbit, callbacks) {
-  let spec, selected = 0, speed = 1, awaiting = false, launching = false, trial = false;
+  let spec, speed = 1, awaiting = false, launching = false, trial = false;
   const button = (text, action, name) => {
     const el = document.createElement('button'); el.type = 'button'; el.textContent = text;
     if (name) el.setAttribute('aria-label', name); el.onclick = action; return el;
   };
-  let choices = [], slider, output, launch, discuss, outcome;
+  let slider, output, launch, discuss, outcome;
   const stop = () => { awaiting = false; launching = false; orbit.cancel(); root.hidden = true; stage.classList.remove('awaiting'); };
-  function focusChoice() { choices.forEach((el, i) => { el.dataset.selected = String(i === selected); el.setAttribute('aria-pressed', String(i === selected)); }); }
   function updateSpeed(value) {
     speed = Math.max(.4, Math.min(1.7, Math.round(value * 10) / 10)); slider.value = speed;
     output.textContent = `${speed.toFixed(1)}×`; trial = false; discuss.disabled = true;
@@ -18,19 +17,14 @@ export function createInteraction(root, stage, orbit, callbacks) {
   return {
     get active() { return awaiting; },
     stop,
-    enable() { if (!awaiting) return; choices.forEach(el => el.disabled = false); if (discuss && trial) discuss.disabled = false; },
+    enable() { if (!awaiting) return; if (discuss && trial) discuss.disabled = false; },
     show(value) {
-      stop(); spec = value; selected = 0; speed = value.speed || 1; trial = false; choices = [];
+      stop(); spec = value; speed = value.speed || 1; trial = false;
       slider = output = launch = discuss = null; awaiting = true;
       root.replaceChildren(); root.hidden = false; stage.classList.add('awaiting');
       root.dataset.kind = value.kind;
       const prompt = document.createElement('p'); prompt.className = 'invitation'; prompt.textContent = value.prompt; root.append(prompt);
-      if (value.kind === 'choice') {
-        const row = document.createElement('div'); row.className = 'choices';
-        choices = value.options.map((text, index) => button(text, () => {
-          if (!awaiting) return; selected = index; focusChoice(); choices.forEach(el => el.disabled = true); callbacks.answer({choice:index});
-        })); row.append(...choices); root.append(row); focusChoice();
-      } else if (value.kind === 'orbit') {
+      if (value.kind === 'orbit') {
         const speedRow = document.createElement('label'); speedRow.className = 'launch-speed'; speedRow.textContent = 'Launch speed';
         slider = document.createElement('input'); slider.type = 'range'; slider.min = '.4'; slider.max = '1.7'; slider.step = '.1'; slider.value = speed;
         slider.setAttribute('aria-label', 'Launch speed'); slider.oninput = () => updateSpeed(Number(slider.value));
@@ -56,14 +50,12 @@ export function createInteraction(root, stage, orbit, callbacks) {
     confirmed() { if (awaiting && discuss && trial) discuss.disabled = false; },
     step(direction) {
       if (!awaiting) return false;
-      if (spec.kind === 'choice') { selected = (selected + direction + choices.length) % choices.length; focusChoice(); }
       if (spec.kind === 'orbit' && !launching) updateSpeed(speed - direction * .1);
       return true;
     },
     select() {
       if (!awaiting) return false;
-      if (spec.kind === 'choice') choices[selected]?.click();
-      else if (spec.kind === 'orbit') (trial && !discuss.disabled ? discuss : launch)?.click();
+      if (spec.kind === 'orbit') (trial && !discuss.disabled ? discuss : launch)?.click();
       else callbacks.reply();
       return true;
     },

@@ -29,12 +29,6 @@ def interaction_answer(current: dict, message: dict, turn: str) -> tuple[str, di
     if (not invitation or not current.get("awaiting") or message.get("turn") != turn
             or message.get("id") != current.get("id")):
         raise ValueError("That invitation is no longer active")
-    if invitation["kind"] == "choice":
-        index = message.get("choice")
-        if isinstance(index, bool) or not isinstance(index, int) or not 0 <= index < len(invitation["options"]):
-            raise ValueError("Choose one of the available options")
-        answer = invitation["options"][index]
-        return answer, {"kind": "choice", "prompt": invitation["prompt"], "answer": answer}
     if invitation["kind"] == "orbit":
         trials = current.get("trials", [])
         if not trials:

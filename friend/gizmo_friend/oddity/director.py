@@ -16,22 +16,9 @@ from gizmo_friend.voice import AGENT_VOICE
 
 
 class Interaction(BaseModel):
-    kind: Literal["choice", "reply", "orbit"]
+    kind: Literal["reply", "orbit"]
     prompt: str = Field(min_length=1, max_length=140)
-    options: list[str] = Field(default_factory=list, max_length=3)
     speed: float = Field(default=1.0, ge=0.4, le=1.7)
-
-    @model_validator(mode="after")
-    def coherent(self):
-        if self.kind == "choice" and not (2 <= len(self.options) <= 3):
-            raise ValueError("A choice needs two or three options")
-        if any(not option.strip() or len(option) > 55 for option in self.options):
-            raise ValueError("Choices must be short and nonempty")
-        if len(set(self.options)) != len(self.options):
-            raise ValueError("Choices must be distinct")
-        if self.kind != "choice" and self.options:
-            raise ValueError("Only a choice has options")
-        return self
 
 
 class Beat(BaseModel):
@@ -83,7 +70,7 @@ ODDITYOS 1 EXPERIENCE CONTRACT (overrides only the device's delivery/capability 
 You now direct BOTH narration and the screen as a single coherent experience.
 Return an Experience JSON object. This is a browser client with generated images,
 explanatory diagrams, one live Cinema film (H3 Max Director, with its own voice),
-exact narrated speech, choices, conversational invitations, and one accurate
+exact narrated speech, conversational invitations, and one accurate
 interactive orbit experiment. No other simulations, camera input, live search,
 stock footage, or video editing are available. Do not claim otherwise. For current
 facts requiring verification, say you cannot check live information. For timeless
@@ -159,14 +146,11 @@ An observation is evidence of an action, not proof that the kid understands.
 You can end the FINAL beat with interaction. The runtime then waits indefinitely
 for the kid. Never write a reveal or answer after a question whose response should
 change the explanation. Never pretend a response happened. On the next turn,
-respond to their actual choice, words, or observed experimental result before
+respond to their actual words or observed experimental result before
 advancing. No correctness badges, scores, forced quizzes, or compulsory questions.
 Leave interaction null when a stopping point or simple answer is enough.
 
 Interaction kinds:
-- choice: a short prompt and 2-3 short options, for a prediction or meaningful
-  branch. Use visual keep/image/diagram/film/face as appropriate. The kid may
-  always talk or type something else. Do not reveal the answer before they choose.
 - reply: a short question and no options. Leave room for an observation or thought.
 - orbit: visual MUST be orbit. This is Newton's cannon above a spherical Earth:
   launch radius 1.4 Earth radii, horizontal speed relative to circular speed,
