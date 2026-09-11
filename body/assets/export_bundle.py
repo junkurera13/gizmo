@@ -182,11 +182,11 @@ def render_home_preview(
     heart_spacing = heart_layout_side * 0.2
     group_spacing = cap_height * 0.7
     hearts_width = 5 * heart_layout_side + 4 * heart_spacing
-    group_width = clock_width + group_spacing + hearts_width
-    x = (width - group_width) / 2
+    group_width = hearts_width + group_spacing + clock_width
     top = height * 0.045
-    draw.text((x, top), clock, font=font, fill="white", anchor="lt")
-    heart_x = x + clock_width + group_spacing
+    x = width - width * 0.045 - group_width
+    heart_x = x
+    draw.text((x + hearts_width + group_spacing, top), clock, font=font, fill="white", anchor="lt")
     for index in range(5):
         filled = half_steps - index * 2
         state = "full" if filled >= 2 else "half" if filled == 1 else "empty"
@@ -272,8 +272,11 @@ def export(args: argparse.Namespace) -> dict[str, object]:
         idle_source = idle_sources[0]
         idle_config = sprite_config.get("idle", {})
         idle_frames: list[str] = []
+        home: Image.Image | None = None
         for frame_index, idle_frame_source in enumerate(idle_sources):
             home_frame = home_base(idle_frame_source, size)
+            if home is None:
+                home = home_frame
             relative = f"home/idle/{frame_index:02d}.jpg"
             write_bytes(temporary, relative, encode_jpeg(home_frame, args.jpeg_quality))
             idle_frames.append(relative)
