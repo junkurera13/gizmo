@@ -99,7 +99,7 @@ const THINK_FRAMES = Array.from({ length: 15 }, (_, i) => `/static/oddity-thinki
 const THINK_SLOTS = [6, 7, 8, 9, 10, 11, 12, 13, 14, 14, 14, 13, 12, 11, 10, 9, 8, 7, 6];
 let listenSlot = 0, listenFrame = -1, thinkSlot = 0, faceNextAt = 0, listenNextAt = 0, thinkNextAt = 0, blinkStep = 0;
 function faceImgs() {
-  return document.querySelectorAll('img[src*="oddity-character"], img[src*="oddity-listening"]');
+  return document.querySelectorAll('img[src*="oddity-character"], img[src*="oddity-listening"], img[src*="oddity-thinking"]');
 }
 // One interval owns the face: the lean while talk is held, the unwind on
 // release, then the blink at rest. Listening has its own deadline so a press
