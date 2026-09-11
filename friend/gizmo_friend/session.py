@@ -1595,6 +1595,13 @@ class GizmoSession:
             await self._drop_hold()
             await self._end_story()
             self._cancel_pending_show()
+            # A new story/explanation prefers Cinema like the Oddity glass;
+            # StoryRun remains the fallback when a film cannot start.
+            if self.film_active():
+                return
+            if (await self._start_film(intent.premise or utterance)).get("ok"):
+                self._directed_ask_revision = self._ask_revision
+                return
             self._start_story(intent.premise, intent.opener)
             return
         if story is None:
