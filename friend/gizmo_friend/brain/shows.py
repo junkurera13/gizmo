@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import io
-import fcntl
 import hashlib
 import json
 import os
@@ -18,6 +17,7 @@ from urllib.parse import quote
 
 from PIL import Image, ImageOps
 
+from gizmo_friend.brain.file_lock import exclusive_file_lock
 from gizmo_friend.brain.images import ConjuredStill
 from gizmo_friend.brain.show_media import MAX_FRAME_DIMENSION, MAX_FRAME_FPS, MJPEG_ENCODING_VERSION, encode_mjpeg, strip_audio
 
@@ -120,11 +120,8 @@ class ShowStore:
         directory.mkdir(parents=True, exist_ok=True)
         descriptor = os.open(directory / f".{name}.lock", os.O_CREAT | os.O_RDWR, 0o600)
         with os.fdopen(descriptor, "a+b") as handle:
-            fcntl.flock(handle, fcntl.LOCK_EX)
-            try:
+            with exclusive_file_lock(handle):
                 yield directory
-            finally:
-                fcntl.flock(handle, fcntl.LOCK_UN)
 
     def save(
         self,

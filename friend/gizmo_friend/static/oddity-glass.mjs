@@ -212,6 +212,30 @@ export function createGlass(stage, hooks = {}) {
     startCameraFeed();
   }
 
+  function openDemoCamera(src) {
+    if (world === 'off' || booting || settings.open || !cameraFeed) return null;
+    hooks.clearShow?.();
+    settings.closePanel();
+    cameraOpen = true;
+    cameraStream?.getTracks().forEach((track) => track.stop());
+    cameraStream = null;
+    cameraFeed.pause?.();
+    cameraFeed.srcObject = null;
+    cameraFeed.src = src;
+    cameraFeed.muted = true;
+    cameraFeed.loop = false;
+    cameraFeed.playbackRate = 1;
+    cameraFeed.hidden = false;
+    cameraFeed.load?.();
+    setWorld('camera');
+    const camera = $('glass-camera');
+    camera?.classList.remove('is-replying');
+    if (cameraStatus) {
+      cameraStatus.hidden = true;
+    }
+    return cameraFeed;
+  }
+
   async function startCameraFeed() {
     if (!cameraOpen) return;
     if (!navigator.mediaDevices?.getUserMedia) {
@@ -251,7 +275,10 @@ export function createGlass(stage, hooks = {}) {
     cameraStream?.getTracks().forEach((track) => track.stop());
     cameraStream = null;
     if (cameraFeed) {
+      cameraFeed.pause?.();
       cameraFeed.srcObject = null;
+      cameraFeed.removeAttribute?.('src');
+      cameraFeed.load?.();
       cameraFeed.hidden = true;
     }
     if (cameraStatus) {
@@ -364,6 +391,7 @@ export function createGlass(stage, hooks = {}) {
     powerOff,
     navigate,
     select,
+    openDemoCamera,
     closeCamera,
     syncReply,
     paintSettings,

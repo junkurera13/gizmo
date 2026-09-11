@@ -2,9 +2,9 @@ import {captionChunks, captionAt, timedCaptionAt} from './oddity-timing.mjs?v=ga
 import {mountDevice} from './oddity-device.mjs';
 import {createOrbit} from './oddity-orbit.mjs';
 import {createInteraction} from './oddity-interaction.mjs';
-import {createGlass} from './oddity-glass.mjs?v=gate31';
+import {createGlass} from './oddity-glass.mjs?v=gate36';
 const $ = (id) => document.getElementById(id);
-const stage = $('stage'), voice = $('voice'), film = $('film'), demoAudio = $('demo-audio');
+const stage = $('stage'), voice = $('voice'), film = $('film'), demoAudio = $('demo-audio'), cameraFeed = $('camera-feed');
 let socket, awake = false, turn = '', queue = [], ready = false, playing = false;
 let controller, currentBeat, paused = false, muted = false, archive = [];
 let history = [], plan = [], recorder, stream, held = false, talkHeld = false, recordingTimer, progressTimer;
@@ -57,7 +57,7 @@ let session = stored(SESSION_KEY);
 let moments = [];
 let momentIndex = 0;
 let momentId = stored(MOMENT_KEY);
-let demoController, demoRunning = false, demoPlayedMoment = '', demoOwnsScene = false;
+let demoController, demoRunning = false, demoPlayedMoment = '', demoOwnsScene = false, demoOwnsCamera = false;
 let demoCaptions = [];
 let demoTimed = null;
 voice.addEventListener('timeupdate', () => {
@@ -223,7 +223,7 @@ async function ensureMoments() {
 }
 function resetConversation() {
   interrupt();
-  history = []; archive = []; archiveIndex = -1; plan = []; turn = '';
+  history = []; archive = []; plan = []; turn = '';
   restoredInvitation = null;
   renderNotes();
   $('direction').replaceChildren();
@@ -247,11 +247,13 @@ async function selectMoment(index) {
   resetConversation();
   await connect(undefined, {fresh: true});
 }
-async function playDemoRecording(src, signal, text = '', timed = null) {
+async function playDemoRecording(src, signal, text = '', timed = null, playbackRate = 1) {
   demoCaptions = captionChunks(text);
   demoTimed = timed;
   if (text) setCaption(timed ? timedCaptionAt(timed, 0) : demoCaptions[0] || text);
   demoAudio.src = src; demoAudio.muted = muted; demoAudio.load();
+  demoAudio.defaultPlaybackRate = playbackRate;
+  demoAudio.playbackRate = playbackRate;
   const ended = mediaEnded(demoAudio, signal); ended.catch(() => {});
   await startMedia(demoAudio, signal);
   await ended;
@@ -274,10 +276,17 @@ function stopDemo() {
   demoCaptions = [];
   demoTimed = null;
   if (demoOwnsScene) {
-    film.pause(); film.removeAttribute('src'); film.load();
+    film.pause(); film.classList.remove('is-demo-question'); film.removeAttribute('src'); film.load();
+    $('demo-math')?.classList.remove('is-active');
+    if ($('demo-math')) $('demo-math').hidden = true;
     stage.classList.remove('has-scene'); $('home').hidden = true;
     demoOwnsScene = false;
   }
+  if (demoOwnsCamera) {
+    glass?.closeCamera?.();
+    demoOwnsCamera = false;
+  }
+  $('next').classList.remove('is-demo-pressed');
   demoRunning = false; setTalkPressed(false);
   setCaption();
   renderRail();
@@ -293,41 +302,188 @@ function dissolveScene() {
     stage.classList.remove('scene-ending');
     if (playing || queue.length || demoRunning || invitation?.active) return;
     stage.classList.remove('has-scene'); $('home').hidden = true; setCaption();
+    $('demo-math')?.classList.remove('is-active');
+    if ($('demo-math')) $('demo-math').hidden = true;
   }, 800);
 }
 async function showDemoVideo(src, signal) {
-  orbitView?.hide(); screenOrbit = false; $('still').hidden = true;
-  film.pause(); swapFilm(src); film.muted = true; film.loop = false;
+  $('demo-math')?.classList.remove('is-active');
+  if ($('demo-math')) $('demo-math').hidden = true;
+  orbitView?.hide(); screenOrbit = false; $('still').classList.remove('is-demo-reference'); $('still').hidden = true;
+  film.pause(); film.classList.remove('is-demo-question'); swapFilm(src); film.muted = true; film.loop = false;
   stage.classList.remove('scene-ending');
   stage.classList.add('has-scene'); $('home').hidden = false; demoOwnsScene = true;
   await startMedia(film, signal);
+}
+async function playDemoQuestionVideo(src, signal) {
+  $('demo-math')?.classList.remove('is-active');
+  if ($('demo-math')) $('demo-math').hidden = true;
+  orbitView?.hide(); screenOrbit = false; $('still').classList.remove('is-demo-reference'); $('still').hidden = true;
+  film.pause(); film.classList.add('is-demo-question'); swapFilm(src);
+  film.muted = muted; film.loop = false; film.playbackRate = 1;
+  stage.classList.remove('scene-ending'); stage.classList.add('has-scene'); $('home').hidden = false;
+  demoOwnsScene = true;
+  const ended = mediaEnded(film, signal); ended.catch(() => {});
+  await startMedia(film, signal);
+  await ended;
+}
+async function showDemoImage(src, subject, signal) {
+  const preload = new Image();
+  preload.src = src;
+  await preload.decode();
+  if (signal.aborted) throw new DOMException('Stopped', 'AbortError');
+  orbitView?.hide(); screenOrbit = false;
+  $('demo-math')?.classList.remove('is-active');
+  if ($('demo-math')) $('demo-math').hidden = true;
+  film.pause(); film.classList.remove('is-demo-question'); film.hidden = true; film.removeAttribute('src'); film.load();
+  $('still').src = src; $('still').alt = subject || 'Drawing reference';
+  $('still').classList.add('is-demo-reference'); $('still').hidden = false;
+  stage.classList.remove('scene-ending'); stage.classList.add('has-scene'); $('home').hidden = false;
+  $('scene').classList.remove('scene-enter'); void $('scene').offsetWidth; $('scene').classList.add('scene-enter');
+  demoOwnsScene = true;
+}
+function showDemoMath(math, signal) {
+  if (signal.aborted) throw new DOMException('Stopped', 'AbortError');
+  orbitView?.hide(); screenOrbit = false;
+  film.pause(); film.classList.remove('is-demo-question'); film.hidden = true; film.removeAttribute('src'); film.load();
+  $('still').classList.remove('is-demo-reference'); $('still').hidden = true;
+  const visual = $('demo-math');
+  const attempt = String(math.attempt || '8 + 5 = 12');
+  const wrong = attempt.match(/^(.*?=\s*)(\S+)$/);
+  $('math-attempt').replaceChildren(document.createTextNode(wrong?.[1] || attempt));
+  if (wrong) {
+    const value = document.createElement('span'); value.className = 'math-wrong'; value.textContent = wrong[2];
+    $('math-attempt').append(value);
+  }
+  $('math-make-ten').textContent = math.make_ten || '8 + 2 = 10';
+  $('math-left').textContent = math.left || '3 left';
+  $('math-answer').textContent = math.answer || '10 + 3 = 13';
+  visual.setAttribute('aria-label', math.description || 'A visual correction showing eight plus five equals thirteen.');
+  visual.hidden = false; visual.classList.remove('is-active'); void visual.offsetWidth; visual.classList.add('is-active');
+  stage.classList.remove('scene-ending'); stage.classList.add('has-scene'); $('home').hidden = false;
+  $('scene').classList.remove('scene-enter'); void $('scene').offsetWidth; $('scene').classList.add('scene-enter');
+  demoOwnsScene = true;
+}
+function waitForMediaTime(media, seconds, signal) {
+  return new Promise((resolve, reject) => {
+    if (signal.aborted) return reject(new DOMException('Stopped', 'AbortError'));
+    if ((media.currentTime || 0) >= seconds) return resolve();
+    function clean() {
+      media.removeEventListener('timeupdate', check);
+      media.removeEventListener('ended', ended);
+      signal.removeEventListener('abort', abort);
+    }
+    function check() {
+      if ((media.currentTime || 0) < seconds) return;
+      clean(); resolve();
+    }
+    function ended() {
+      clean(); reject(new Error('The camera clip ended before the question cue.'));
+    }
+    function abort() {
+      clean(); reject(new DOMException('Stopped', 'AbortError'));
+    }
+    media.addEventListener('timeupdate', check);
+    media.addEventListener('ended', ended, {once:true});
+    signal.addEventListener('abort', abort, {once:true});
+  });
+}
+async function openDemoCamera(camera, signal) {
+  const down = $('next');
+  down.classList.add('is-demo-pressed');
+  try {
+    await delay(120, signal);
+    const feed = glass?.openDemoCamera?.(camera.video);
+    if (!feed) throw new Error('The demo camera could not open.');
+    demoOwnsCamera = true;
+    await delay(100, signal);
+    feed.currentTime = Number(camera.start_at) || 0;
+    return feed;
+  } finally {
+    down.classList.remove('is-demo-pressed');
+  }
+}
+async function playCameraDemo(item, signal) {
+  const camera = item.demo.camera;
+  const homeWaitMs = Math.max(0, Number(camera.home_wait_ms) || 0);
+  if (homeWaitMs) {
+    status('Gizmo is ready.', 'idle');
+    await delay(homeWaitMs, signal);
+  }
+  status('Gizmo’s camera is live.', 'idle');
+  const feed = await openDemoCamera(camera, signal);
+  feed.loop = Boolean(camera.loop);
+  feed.playbackRate = 1;
+  await startMedia(feed, signal);
+  try {
+    for (const cue of camera.cues || []) {
+      await waitForMediaTime(feed, cue.at, signal);
+      status('Listen to the question…', 'listening');
+      setTalkPressed(true); $('talk').classList.add('recording');
+      try {
+        await playDemoRecording(cue.audio, signal);
+      } finally {
+        setTalkPressed(false); $('talk').classList.remove('recording');
+      }
+      history.push({role:'user', text:cue.prompt}); renderNotes();
+    }
+    setCaption();
+    const replyWaitMs = Math.max(0, Number(camera.reply_wait_ms) || 0);
+    if (replyWaitMs) {
+      status('Gizmo is thinking…', 'thinking');
+      await delay(replyWaitMs, signal);
+    }
+    status('Gizmo is answering…', 'playing');
+    await playDemoRecording(item.demo.reply_audio, signal, item.demo.reply, null, item.demo.reply_audio_rate || 1);
+  } finally {
+    feed.pause();
+    setCaption();
+    glass?.closeCamera?.();
+    demoOwnsCamera = false;
+  }
+  history.push({role:'assistant', text:item.demo.reply}); renderNotes();
 }
 async function sayMoment() {
   const item = currentMoment();
   if (!item?.demo?.prompt_audio || demoRunning) return;
   await unlockAudio();
+  if (demoOwnsCamera) {
+    glass?.closeCamera?.();
+    demoOwnsCamera = false;
+  }
   interrupt();
   const ownController = new AbortController();
   demoController = ownController; demoRunning = true; renderRail();
   const signal = ownController.signal;
   try {
     if (!awake) { wake(); await waitForAwake(signal); }
-    status('Listen to the question…', 'listening');
-    setTalkPressed(true); $('talk').classList.add('recording');
-    await delay(260, signal);
-    await playDemoRecording(item.demo.prompt_audio, signal, item.demo.prompt, item.demo.prompt_timed);
-    setTalkPressed(false); $('talk').classList.remove('recording');
-    setCaption(); status('Gizmo is thinking…', 'thinking');
-    await delay(650, signal);
-    history.push({role:'user', text:item.demo.prompt});
-    const beats = item.demo.beats?.length ? item.demo.beats : [item.demo];
-    for (let index = 0; index < beats.length; index += 1) {
-      const beat = beats[index];
-      if (beat.video) await showDemoVideo(beat.video, signal);
-      status('Gizmo is answering…', 'playing');
-      await playDemoRecording(beat.reply_audio, signal, beat.reply);
-      history.push({role:'assistant', text:beat.reply}); renderNotes();
-      if (index < beats.length - 1) await delay(180, signal);
+    if (item.demo.camera?.video) {
+      await playCameraDemo(item, signal);
+    } else {
+      status('Listen to the question…', 'listening');
+      setTalkPressed(true); $('talk').classList.add('recording');
+      if (item.demo.question_video) {
+        await delay(120, signal);
+        await playDemoQuestionVideo(item.demo.question_video, signal);
+      } else {
+        await delay(260, signal);
+        await playDemoRecording(item.demo.prompt_audio, signal, item.demo.prompt, item.demo.prompt_timed);
+      }
+      setTalkPressed(false); $('talk').classList.remove('recording');
+      setCaption(); status('Gizmo is thinking…', 'thinking');
+      await delay(650, signal);
+      history.push({role:'user', text:item.demo.prompt});
+      const beats = item.demo.beats?.length ? item.demo.beats : [item.demo];
+      for (let index = 0; index < beats.length; index += 1) {
+        const beat = beats[index];
+        if (beat.math) showDemoMath(beat.math, signal);
+        else if (beat.image) await showDemoImage(beat.image, beat.subject, signal);
+        else if (beat.video) await showDemoVideo(beat.video, signal);
+        status('Gizmo is answering…', 'playing');
+        await playDemoRecording(beat.reply_audio, signal, beat.reply);
+        history.push({role:'assistant', text:beat.reply}); renderNotes();
+        if (index < beats.length - 1) await delay(180, signal);
+      }
     }
     if (demoOwnsScene) film.pause();
     demoPlayedMoment = item.id;
@@ -655,6 +811,8 @@ async function startMedia(media, signal) {
   }
 }
 async function showScene(beat, signal) {
+  $('demo-math')?.classList.remove('is-active');
+  if ($('demo-math')) $('demo-math').hidden = true;
   if (beat.visual === 'orbit' || beat.kind === 'orbit') {
     $('still').hidden = true; film.hidden = true; film.removeAttribute('src'); film.load();
     screenOrbit = true; stage.classList.remove('scene-ending'); stage.classList.add('has-scene'); $('home').hidden = false;
@@ -683,6 +841,7 @@ async function showScene(beat, signal) {
   if (beat.image) {
     const preload = new Image(); preload.src = beat.image; await preload.decode();
     if (signal.aborted) throw new DOMException('Stopped', 'AbortError');
+    $('still').classList.remove('is-demo-reference');
     $('still').src = beat.image; $('still').alt = beat.subject; $('still').hidden = false;
     film.hidden = true; film.removeAttribute('src'); film.load();
     stage.classList.remove('scene-ending'); stage.classList.add('has-scene'); $('home').hidden = false;
