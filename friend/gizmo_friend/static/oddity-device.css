@@ -64,7 +64,7 @@ main{padding:0 16px}.simulator{width:min(650px,100%,calc((100svh - 180px)*1145/1
 .stage.has-scene .glass-home .friend,.stage.has-scene .glass-hud{opacity:0}
 .stage.has-scene .scene{inset:0 0 20% 0}
 .stage.has-scene .scene img,.stage.has-scene .scene video{object-fit:cover}
-.stage.has-scene:after{content:'';position:absolute;left:0;right:0;bottom:0;height:20%;z-index:2;background:#04060d;border-top:1px solid #ffffff12}
+.stage.has-scene:after{content:'';position:absolute;left:0;right:0;bottom:0;height:20%;z-index:2;background:#04060d}
 .stage.has-scene .caption{top:80%;bottom:0;left:7%;right:7%;max-height:none;display:flex;align-items:center;justify-content:center;text-align:center;font-size:clamp(13px,3.4cqw,19px);line-height:1.28}
 #film{transition:opacity .22s ease}
 #film.swap{opacity:0}
