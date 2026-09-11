@@ -95,34 +95,44 @@ const blinkFrames = Object.fromEntries([10, 11, 12, 13].map((id) => {
 const IDLE_FRAMES = ['/static/oddity-character.png?v=char3', '/static/oddity-character-half.png?v=char3', '/static/oddity-character-closed.png?v=char3'];
 const LISTEN_FRAMES = Array.from({ length: 7 }, (_, i) => `/static/oddity-listening-0${i + 1}.png?v=listen1`);
 const LISTEN_SLOTS = [0, 0, 1, 2, 3, 4, 5, 6, 6, 5, 4, 3, 2, 1];
-let listenSlot = 0;
-let listenFrame = -1;  // drawn listening frame; settles back to 0 on release
+let listenSlot = 0, listenFrame = -1, faceNextAt = 0, listenNextAt = 0, blinkStep = 0;
 function faceImgs() {
   return document.querySelectorAll('img[src*="oddity-character"], img[src*="oddity-listening"]');
 }
-function faceTick(step = 0) {
+// One interval owns the face: the lean while talk is held, the unwind on
+// release, then the blink at rest. Listening has its own deadline so a press
+// mid-blink-wait still starts the lean immediately.
+function faceTick() {
+  const now = Date.now();
   const imgs = faceImgs();
   if (talkHeld || held || recorder?.state === 'recording') {
+    if (now < listenNextAt) return;
     listenSlot = (listenSlot + 1) % LISTEN_SLOTS.length;
     listenFrame = LISTEN_SLOTS[listenSlot];
     imgs.forEach((img) => (img.src = LISTEN_FRAMES[listenFrame]));
-    setTimeout(() => faceTick(0), 130);
+    listenNextAt = now + 130;
+    blinkStep = 0;
     return;
   }
   if (listenFrame > 0) {
+    if (now < listenNextAt) return;
     listenFrame -= 1;
     imgs.forEach((img) => (img.src = LISTEN_FRAMES[listenFrame]));
-    setTimeout(() => faceTick(0), 130);
+    listenNextAt = now + 130;
+    blinkStep = 0;
     return;
   }
   listenFrame = -1;
   listenSlot = 0;
-  if (step === 0) {
+  if (now < faceNextAt) return;
+  if (blinkStep === 0) {
     imgs.forEach((img) => (img.src = IDLE_FRAMES[0]));
-    setTimeout(() => faceTick(1), 3600 + Math.random() * 2200);
+    faceNextAt = now + 3600 + Math.random() * 2200;
+    blinkStep = 1;
   } else {
-    imgs.forEach((img) => (img.src = IDLE_FRAMES[[1, 2, 1][step - 1]]));
-    setTimeout(() => faceTick(step < 3 ? step + 1 : 0), 110);
+    imgs.forEach((img) => (img.src = IDLE_FRAMES[[1, 2, 1][blinkStep - 1]]));
+    blinkStep = blinkStep < 3 ? blinkStep + 1 : 0;
+    faceNextAt = now + 110;
   }
 }
 let blinkTimer = 0;
@@ -840,7 +850,7 @@ window.addEventListener('blur', () => { setTalkPressed(false); if (held) cancelR
 document.addEventListener('visibilitychange', () => { if (document.hidden) { setTalkPressed(false); cancelRecording(); if (playing && !paused) togglePause(); } });
 window.addEventListener('pagehide', () => { expectedClose = true; stopDemo(); setTalkPressed(false); cancelRecording(); stopPlayer(); socket?.close(); });
 syncPower();
-faceTick();
+setInterval(faceTick, 50);
 glass = createGlass(stage, {
   ready: onGlassReady,
   off: onGlassOff,
