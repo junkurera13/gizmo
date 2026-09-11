@@ -267,9 +267,19 @@ def export(args: argparse.Namespace) -> dict[str, object]:
                 write_bytes(temporary, relative, encoded)
             sequence.append(relative)
 
-        idle_source = glass / "sprites/idle/01.png"
-        home = home_base(idle_source, size)
-        write_bytes(temporary, "home/base.jpg", encode_jpeg(home, args.jpeg_quality))
+        idle_dir = glass / "sprites/idle"
+        idle_sources = sorted(idle_dir.glob("*.png"))
+        idle_source = idle_sources[0]
+        idle_config = sprite_config.get("idle", {})
+        idle_frames: list[str] = []
+        for frame_index, idle_frame_source in enumerate(idle_sources):
+            home_frame = home_base(idle_frame_source, size)
+            relative = f"home/idle/{frame_index:02d}.jpg"
+            write_bytes(temporary, relative, encode_jpeg(home_frame, args.jpeg_quality))
+            idle_frames.append(relative)
+        # home/base.jpg stays the open pose; the camera backdrop and any consumer
+        # that does not animate still reads it.
+        write_bytes(temporary, "home/base.jpg", (temporary / idle_frames[0]).read_bytes())
 
         font_path = glass / "fonts/Outfit[wght].ttf"
         atlas, clock_metadata, clock_font = export_clock_atlas(font_path, args.width)
@@ -340,6 +350,11 @@ def export(args: argparse.Namespace) -> dict[str, object]:
             },
             "home": {
                 "base": "home/base.jpg",
+                "idle": {
+                    "frames": idle_frames,
+                    "period_ms": int(idle_config.get("period_ms", 110)),
+                    "slots": idle_config.get("slots") or [0],
+                },
                 "status_scope": "home_only",
                 "status_top_fraction": 0.045,
                 "clock": clock_metadata,

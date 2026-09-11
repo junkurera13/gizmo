@@ -15,6 +15,11 @@ constexpr uint32_t kBootChimeAtMs = 2875;
 constexpr uint32_t kBootDropMs = 1250;
 constexpr uint8_t kBootSlotFrame[kBootSlots] = {0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 10, 10, 11, 12, 13, 12, 11, 10, 10, 12, 13, 12, 14};
 
+constexpr int kIdleSlots = 40;
+constexpr int kIdleUniqueFrames = 3;
+constexpr uint32_t kIdleFramePeriodMs = 110;
+constexpr uint8_t kIdleSlotFrame[kIdleSlots] = {0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 2, 1, 0};
+
 constexpr uint32_t kChimeSampleRate = 16000;
 constexpr size_t kChimeSamples = 10720;
 
@@ -64,6 +69,12 @@ extern "C" const uint8_t _binary_assets_boot_14_jpg_start[] asm("_binary_assets_
 extern "C" const uint8_t _binary_assets_boot_14_jpg_end[] asm("_binary_assets_boot_14_jpg_end");
 extern "C" const uint8_t _binary_assets_home_base_jpg_start[] asm("_binary_assets_home_base_jpg_start");
 extern "C" const uint8_t _binary_assets_home_base_jpg_end[] asm("_binary_assets_home_base_jpg_end");
+extern "C" const uint8_t _binary_assets_idle_00_jpg_start[] asm("_binary_assets_idle_00_jpg_start");
+extern "C" const uint8_t _binary_assets_idle_00_jpg_end[] asm("_binary_assets_idle_00_jpg_end");
+extern "C" const uint8_t _binary_assets_idle_01_jpg_start[] asm("_binary_assets_idle_01_jpg_start");
+extern "C" const uint8_t _binary_assets_idle_01_jpg_end[] asm("_binary_assets_idle_01_jpg_end");
+extern "C" const uint8_t _binary_assets_idle_02_jpg_start[] asm("_binary_assets_idle_02_jpg_start");
+extern "C" const uint8_t _binary_assets_idle_02_jpg_end[] asm("_binary_assets_idle_02_jpg_end");
 extern "C" const uint8_t _binary_assets_heart_empty_rgb565a_start[] asm("_binary_assets_heart_empty_rgb565a_start");
 extern "C" const uint8_t _binary_assets_heart_empty_rgb565a_end[] asm("_binary_assets_heart_empty_rgb565a_end");
 extern "C" const uint8_t _binary_assets_heart_half_rgb565a_start[] asm("_binary_assets_heart_half_rgb565a_start");
@@ -112,6 +123,22 @@ inline const uint8_t* boot_frame_end(int unique) {
     case 12: return _binary_assets_boot_12_jpg_end;
     case 13: return _binary_assets_boot_13_jpg_end;
     case 14: return _binary_assets_boot_14_jpg_end;
+    default: return nullptr;
+  }
+}
+inline const uint8_t* idle_frame_start(int unique) {
+  switch (unique) {
+    case 0: return _binary_assets_idle_00_jpg_start;
+    case 1: return _binary_assets_idle_01_jpg_start;
+    case 2: return _binary_assets_idle_02_jpg_start;
+    default: return nullptr;
+  }
+}
+inline const uint8_t* idle_frame_end(int unique) {
+  switch (unique) {
+    case 0: return _binary_assets_idle_00_jpg_end;
+    case 1: return _binary_assets_idle_01_jpg_end;
+    case 2: return _binary_assets_idle_02_jpg_end;
     default: return nullptr;
   }
 }

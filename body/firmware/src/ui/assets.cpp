@@ -25,6 +25,13 @@ bool decode_home_base(const draw::Canvas& canvas) {
   return decode(_binary_assets_home_base_jpg_start, _binary_assets_home_base_jpg_end, canvas);
 }
 
+bool decode_idle_slot(int slot, const draw::Canvas& canvas) {
+  if (slot < 0) slot = 0;
+  if (slot >= kIdleSlots) slot = kIdleSlots - 1;
+  const int unique = kIdleSlotFrame[slot];
+  return decode(idle_frame_start(unique), idle_frame_end(unique), canvas);
+}
+
 const uint8_t* heart(Heart state) {
   switch (state) {
     case Heart::kFull: return _binary_assets_heart_full_rgb565a_start;

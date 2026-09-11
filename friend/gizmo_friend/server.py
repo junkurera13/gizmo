@@ -43,6 +43,8 @@ ODDITY_PUBLIC_ASSETS = {
     "/static/oddity-blink-12.jpg",
     "/static/oddity-blink-13.jpg",
     "/static/oddity-character.png",
+    "/static/oddity-character-half.png",
+    "/static/oddity-character-closed.png",
     "/static/oddity-device.css",
     "/static/oddity-device.mjs",
     "/static/oddity-michroma.ttf",

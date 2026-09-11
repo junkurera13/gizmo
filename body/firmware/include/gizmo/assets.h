@@ -17,6 +17,8 @@ enum class Heart : uint8_t { kEmpty, kHalf, kFull };
 bool decode_boot_slot(int slot, const draw::Canvas& canvas);
 // Decode the home base (character on black) into the canvas.
 bool decode_home_base(const draw::Canvas& canvas);
+// Decode the idle animation frame for `slot` (0..kIdleSlots-1) into the canvas.
+bool decode_idle_slot(int slot, const draw::Canvas& canvas);
 
 // RGB565+A8 heart sprite, kHeartAssetSide square.
 const uint8_t* heart(Heart state);

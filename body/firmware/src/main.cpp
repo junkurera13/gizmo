@@ -61,6 +61,7 @@ Preferences prefs;
 
 uint16_t* framebuffer = nullptr;
 uint16_t* home_base = nullptr;  // decoded once, copied under every home screen
+int idle_slot_drawn = -1;
 gizmo::draw::Canvas canvas;
 gizmo::SettingsSnapshot settings;
 
@@ -110,17 +111,25 @@ bool ensure_framebuffer() {
   return framebuffer != nullptr;
 }
 
+int current_idle_slot() {
+  return static_cast<int>((millis() / gizmo::assets::kIdleFramePeriodMs) % gizmo::assets::kIdleSlots);
+}
+
 bool ensure_home_base() {
-  if (home_base != nullptr) return true;
+  const int slot = current_idle_slot();
+  if (home_base != nullptr && idle_slot_drawn == slot) return true;
   if (!ensure_framebuffer()) return false;
   const size_t bytes = static_cast<size_t>(canvas.width) * canvas.height * sizeof(uint16_t);
-  home_base = static_cast<uint16_t*>(heap_caps_malloc(bytes, MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT));
-  if (home_base == nullptr) return false;
+  if (home_base == nullptr) {
+    home_base = static_cast<uint16_t*>(heap_caps_malloc(bytes, MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT));
+    if (home_base == nullptr) return false;
+  }
   const gizmo::draw::Canvas target{home_base, canvas.width, canvas.height};
-  if (!gizmo::assets::decode_home_base(target)) {
+  if (!gizmo::assets::decode_idle_slot(slot, target)) {
     Serial.println("home base: jpeg decode failed");
     gizmo::draw::clear(target, gizmo::draw::kBlack);
   }
+  idle_slot_drawn = slot;
   return true;
 }
 
@@ -878,6 +887,7 @@ void loop() {
       } else if (now - last_redraw >= kIdleRedrawMs && hud_changed(current_hud(), last_hud)) {
         dirty = true;
       }
+      if (current_idle_slot() != idle_slot_drawn) dirty = true;
       break;
     case State::kCamera:
       camera_loop();

@@ -107,6 +107,14 @@ def main() -> None:
     write(ASSETS / "home_base.jpg", (bundle / home["base"]).read_bytes())
     embedded.append("home_base.jpg")
 
+    idle = home.get("idle") or {}
+    idle_frames: list[str] = idle.get("frames") or []
+    for index, relative in enumerate(idle_frames):
+        name = f"idle_{index:02d}.jpg"
+        write(ASSETS / name, (bundle / relative).read_bytes())
+        embedded.append(name)
+    idle_slots: list[int] = idle.get("slots") or [0]
+
     heart_side = None
     for state in ("empty", "half", "full"):
         with Image.open(bundle / home["battery"]["paths"][state]) as opened:
@@ -148,6 +156,11 @@ def main() -> None:
         f"constexpr uint32_t kBootDropMs = {int(entrance.get('duration_ms', 0))};",
         f"constexpr uint8_t kBootSlotFrame[kBootSlots] = {{{', '.join(str(s) for s in slots)}}};",
         "",
+        f"constexpr int kIdleSlots = {len(idle_slots)};",
+        f"constexpr int kIdleUniqueFrames = {len(idle_frames)};",
+        f"constexpr uint32_t kIdleFramePeriodMs = {idle.get('period_ms', 110)};",
+        f"constexpr uint8_t kIdleSlotFrame[kIdleSlots] = {{{', '.join(str(s) for s in idle_slots)}}};",
+        "",
         f"constexpr uint32_t kChimeSampleRate = {DEVICE_SAMPLE_RATE};",
         f"constexpr size_t kChimeSamples = {chime_samples};",
         "",
@@ -182,6 +195,20 @@ def main() -> None:
     lines.append("  switch (unique) {")
     for index in range(len(unique)):
         lines.append(f"    case {index}: return {symbol(f'boot_{index:02d}.jpg')}_end;")
+    lines.append("    default: return nullptr;")
+    lines.append("  }")
+    lines.append("}")
+    lines.append("inline const uint8_t* idle_frame_start(int unique) {")
+    lines.append("  switch (unique) {")
+    for index in range(len(idle_frames)):
+        lines.append(f"    case {index}: return {symbol(f'idle_{index:02d}.jpg')}_start;")
+    lines.append("    default: return nullptr;")
+    lines.append("  }")
+    lines.append("}")
+    lines.append("inline const uint8_t* idle_frame_end(int unique) {")
+    lines.append("  switch (unique) {")
+    for index in range(len(idle_frames)):
+        lines.append(f"    case {index}: return {symbol(f'idle_{index:02d}.jpg')}_end;")
     lines.append("    default: return nullptr;")
     lines.append("  }")
     lines.append("}")
