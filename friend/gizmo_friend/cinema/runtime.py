@@ -252,6 +252,11 @@ class CinemaSession:
             return
         kind = event.get("type")
         if kind == "first_frame":
+            logger.info(
+                "Cinema first frame: latency=%.2fs phases=%s",
+                time.monotonic() - self.started,
+                self.marks,
+            )
             await self.emit(
                 {
                     "type": "playing",
