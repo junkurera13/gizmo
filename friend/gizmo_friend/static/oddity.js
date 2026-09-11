@@ -94,7 +94,7 @@ const blinkFrames = Object.fromEntries([10, 11, 12, 13].map((id) => {
 // awake on the home face, and a blink at rest.
 const IDLE_FRAMES = ['/static/oddity-character.png?v=char3', '/static/oddity-character-half.png?v=char3', '/static/oddity-character-closed.png?v=char3'];
 const LISTEN_FRAMES = Array.from({ length: 7 }, (_, i) => `/static/oddity-listening-0${i + 1}.png?v=listen1`);
-const LISTEN_SLOTS = [0, 0, 1, 2, 3, 4, 5, 6, 6, 5, 4, 3, 2, 1];
+const LISTEN_SLOTS = [0, 0, 0, 0, 0, 0, 1, 2, 3, 4, 5, 6, 6, 6, 6, 6, 6, 6, 6, 6, 6, 6, 6, 5, 4, 3, 2, 1];
 let listenSlot = 0, listenFrame = -1, faceNextAt = 0, listenNextAt = 0, blinkStep = 0;
 function faceImgs() {
   return document.querySelectorAll('img[src*="oddity-character"], img[src*="oddity-listening"]');

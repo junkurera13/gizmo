@@ -20,10 +20,10 @@ constexpr int kIdleUniqueFrames = 3;
 constexpr uint32_t kIdleFramePeriodMs = 110;
 constexpr uint8_t kIdleSlotFrame[kIdleSlots] = {0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 2, 1, 0};
 
-constexpr int kListeningSlots = 14;
+constexpr int kListeningSlots = 28;
 constexpr int kListeningUniqueFrames = 7;
 constexpr uint32_t kListeningFramePeriodMs = 130;
-constexpr uint8_t kListeningSlotFrame[kListeningSlots] = {0, 0, 1, 2, 3, 4, 5, 6, 6, 5, 4, 3, 2, 1};
+constexpr uint8_t kListeningSlotFrame[kListeningSlots] = {0, 0, 0, 0, 0, 0, 1, 2, 3, 4, 5, 6, 6, 6, 6, 6, 6, 6, 6, 6, 6, 6, 6, 5, 4, 3, 2, 1};
 
 constexpr uint32_t kChimeSampleRate = 16000;
 constexpr size_t kChimeSamples = 10720;
