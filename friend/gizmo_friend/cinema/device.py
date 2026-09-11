@@ -36,6 +36,13 @@ FPS = 12
 SEGMENT_SECONDS = 5
 
 
+def frame_image(frame) -> Image.Image:
+    """Fit the film above a bottom caption bar, matching the emulator layout."""
+    canvas = Image.new("RGB", (320, 240), (5, 17, 31))
+    canvas.paste(ImageOps.contain(frame.to_image(), (320, 180)), (0, 0))
+    return canvas
+
+
 @dataclass
 class DeviceSegment:
     show: StoredShow
@@ -143,11 +150,7 @@ class DeviceFilmPlayer:
                 timestamp = frame.time - first_time
                 if timestamp + 0.001 < next_frame / FPS:
                     continue
-                image = await asyncio.to_thread(
-                    lambda frame=frame: ImageOps.pad(
-                        frame.to_image(), (320, 240), color=(5, 17, 31)
-                    )
-                )
+                image = await asyncio.to_thread(frame_image, frame)
                 while (
                     next_frame / FPS <= timestamp + 0.001 and next_frame < target_frames
                 ):
