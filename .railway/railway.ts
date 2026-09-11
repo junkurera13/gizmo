@@ -37,6 +37,7 @@ export default defineRailway(() => {
       PROJECT_ID: "gizmo",
       LOG_FORMAT: "json",
       MEMOBASE_LLM_API_KEY: preserve(),
+      MEMOBASE_ENABLE_EVENT_EMBEDDING: preserve(),
       MEMOBASE_INTERNAL_URL: "http://${{RAILWAY_PRIVATE_DOMAIN}}:8000",
     },
   });
@@ -56,6 +57,8 @@ export default defineRailway(() => {
       ODDITY_PREVIEW_TOKEN: preserve(),
       ODDITY_LAB_TOKEN: preserve(),
       GIZMO_USER_ID: "gizmo-owner",
+      GIZMO_DIRECTOR_DEVICE: preserve(),
+      GIZMO_FILM_VOICE: preserve(),
       GIZMO_DATA_DIR: "/data",
       MEMOBASE_URL: memobase.env.MEMOBASE_INTERNAL_URL,
       MEMOBASE_API_KEY: memobase.env.ACCESS_TOKEN,

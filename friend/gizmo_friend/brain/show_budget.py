@@ -17,9 +17,13 @@ class ShowBudget:
     device_default = 40
     global_default = 400
     environment_name = "GIZMO_DAILY_SHOW_LIMIT"
+    device_environment_name = ""
 
     def __init__(self, data_root: Path, *, device_limit: int | None = None, global_limit: int | None = None) -> None:
         self.root = Path(data_root)
+        if device_limit is None and self.device_environment_name:
+            raw = os.environ.get(self.device_environment_name, "").strip()
+            device_limit = int(raw) if raw else None
         self.device_limit = max(0, self.device_default if device_limit is None else device_limit)
         self.global_limit = max(0, global_limit if global_limit is not None else int(
             os.environ.get(self.environment_name, str(self.global_default))

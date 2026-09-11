@@ -26,6 +26,7 @@ class FilmBudget(ShowBudget):
     device_default = 8
     global_default = 30
     environment_name = "GIZMO_DAILY_FILM_LIMIT"
+    device_environment_name = "GIZMO_DAILY_FILM_DEVICE_LIMIT"
 
 
 def router(root: Path, static: Path):

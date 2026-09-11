@@ -157,7 +157,13 @@ class FriendCinema:
             self.player.playback = asyncio.create_task(self.player.play(event["revision"]))
             self.session.viewer.set()
             return
-        if kind in {"error", "buffering"}:
+        if kind == "buffering":
+            # Generation warmup misses playback deadlines before the first
+            # chunk lands; the browser shows a spinner. On the body the
+            # preload timeouts in DeviceFilmPlayer decide real stalls.
+            logger.info("Friend cinema buffering device=%s", self.device_id)
+            return
+        if kind == "error":
             await self.stop()
             await self._emit(
                 {

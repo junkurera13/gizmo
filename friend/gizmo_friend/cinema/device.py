@@ -387,7 +387,10 @@ class DeviceFilm:
         if event["type"] == "ready":
             self.playback = asyncio.create_task(self.player.play(event["revision"]))
             self.cinema.viewer.set()
-        elif event["type"] in {"error", "buffering"}:
+        elif event["type"] == "buffering":
+            # Warmup deadline misses are normal; preload timeouts catch real stalls.
+            logger.info("Device film buffering device=%s", self.device)
+        elif event["type"] == "error":
             # Don't let a provider stall advance the independent device PCM clock.
             await self.stop()
             await self.send(
