@@ -142,10 +142,9 @@ _register(
         line="What happened to Pompeii?",
         seed="",
         contract=(
-            "This is a living encyclopedia, not an article. Set the scene, reconstruct "
-            "what happened in three short beats totaling 35 to 40 seconds, and change the "
-            "picture as the story moves. The eruption itself is motion — plan one film "
-            "beat for it; stills carry the setup and the aftermath. Every visual must be "
+            "This is a living encyclopedia, not an article: the story of Pompeii is a "
+            "film. Brief Cinema to set the scene, reconstruct the eruption, and land on "
+            "what the ash preserved, in roughly 35 to 45 seconds. Every shot must be "
             "gentle, colorful, kid-friendly, and free of injury, bodies, remains, or "
             "frightening close-ups. If they interrupt, answer that curiosity first, then "
             "continue. Keep Vesuvius serious but not gory."

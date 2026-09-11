@@ -12,7 +12,7 @@ let micMeter = null, micLevel = 0, micLoud = 0;
 let microphoneAttempt = 0, mediaWaitResolve, audioUnlock, expectedClose = false;
 let captions = [];
 let orbitView, invitation, restoredInvitation, screenOrbit = false;
-let glass, peer;
+let glass, peer, pendingFilm = null;
 function orbit() { return orbitView ||= createOrbit($('orbit')); }
 function interactionUI() {
   return invitation ||= createInteraction($('interaction'), stage, orbit(), {
@@ -399,7 +399,10 @@ function handle(event) {
   if (event.turn && event.turn !== turn) return;
   switch (event.type) {
     case 'status':
-      status(event.stage === 'hearing' ? 'Listening back…' : 'Thinking it through…', 'thinking'); break;
+      // Hearing is a quiet beat — your words land as a caption first, and the
+      // thinking animation only starts when the plan does.
+      if (event.stage === 'hearing') { status('Listening back…'); break; }
+      status('Thinking it through…', 'thinking'); break;
     case 'user_partial':
       if (!playing && !demoRunning) setCaption(event.text); break;
     case 'transcript':
@@ -415,6 +418,11 @@ function handle(event) {
       status('Making room for that thought…', 'preparing'); break;
     case 'preparing':
       if (!playing) status('The next moving picture is taking shape…', 'preparing'); break;
+    case 'film':
+      // Connect the viewer while the score is still being written; a failure
+      // here is harmless — the film beat reconnects when it plays.
+      if (event.phase === 'pending' && awake) connectFilm(event.revision).catch(() => {});
+      break;
     case 'beat': queue.push(event.beat); playQueue(); break;
     case 'ready': ready = true; if (!playing && !queue.length) finish(); break;
     case 'observation': if (event.id === currentBeat?.id) invitation?.confirmed(); break;
@@ -540,44 +548,64 @@ function mediaEnded(media, signal) {
   });
 }
 function detachFilm() {
-  peer?.close(); peer = null;
+  peer?.close(); peer = null; pendingFilm = null;
   film.srcObject = null;
 }
-async function attachFilm(beat, signal) {
-  const generation = beat.film?.revision;
-  detachFilm();
-  if (generation == null) throw new Error('The film could not start.');
+// Connect the viewer peer for a film revision. Director does not paint until
+// film_play, so connecting early (on the server's pending event, during the
+// opener) costs nothing and removes the signaling wait from the cut.
+function connectFilm(generation) {
+  if (generation == null) return Promise.reject(new Error('The film could not start.'));
+  if (pendingFilm?.revision === generation && peer === pendingFilm.pc) return pendingFilm.promise;
+  peer?.close();
   const pc = new RTCPeerConnection();
   peer = pc;
   pc.addTransceiver('video', {direction: 'recvonly'});
   pc.addTransceiver('audio', {direction: 'recvonly'});
   const media = new MediaStream();
-  pc.ontrack = (event) => { media.addTrack(event.track); film.srcObject = media; };
-  try {
-    await pc.setLocalDescription(await pc.createOffer());
-    if (pc.iceGatheringState !== 'complete') await new Promise((resolve, reject) => {
-      const timer = setTimeout(() => reject(new Error('Connection timed out.')), 8000);
-      pc.addEventListener('icegatheringstatechange', () => {
-        if (pc.iceGatheringState === 'complete') { clearTimeout(timer); resolve(); }
+  pc.ontrack = (event) => { media.addTrack(event.track); if (peer === pc) film.srcObject = media; };
+  const promise = (async () => {
+    try {
+      await pc.setLocalDescription(await pc.createOffer());
+      if (pc.iceGatheringState !== 'complete') await new Promise((resolve, reject) => {
+        const timer = setTimeout(() => reject(new Error('Connection timed out.')), 8000);
+        pc.addEventListener('icegatheringstatechange', () => {
+          if (pc.iceGatheringState === 'complete') { clearTimeout(timer); resolve(); }
+        });
       });
-    });
-    if (signal.aborted || peer !== pc) { pc.close(); throw new DOMException('Stopped', 'AbortError'); }
-    const response = await fetch(`/oddity/offer?session=${encodeURIComponent(session)}`, {
-      method: 'POST',
-      headers: {'Content-Type': 'application/json'},
-      body: JSON.stringify({revision: generation, sdp: pc.localDescription.sdp}),
-    });
-    if (!response.ok) throw new Error('Could not receive the film.');
-    const answer = await response.json();
-    if (signal.aborted || peer !== pc) { pc.close(); throw new DOMException('Stopped', 'AbortError'); }
-    await pc.setRemoteDescription(answer);
-    film.muted = muted;
-    await startMedia(film, signal);
-  } catch (error) {
-    if (peer === pc) detachFilm();
-    pc.close();
-    throw error;
-  }
+      if (peer !== pc) throw new DOMException('Stopped', 'AbortError');
+      const response = await fetch(`/oddity/offer?session=${encodeURIComponent(session)}`, {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({revision: generation, sdp: pc.localDescription.sdp}),
+      });
+      if (!response.ok) throw new Error('Could not receive the film.');
+      const answer = await response.json();
+      if (peer !== pc) throw new DOMException('Stopped', 'AbortError');
+      await pc.setRemoteDescription(answer);
+    } catch (error) {
+      if (peer === pc) { peer = null; film.srcObject = null; }
+      if (pendingFilm?.pc === pc) pendingFilm = null;
+      pc.close();
+      throw error;
+    }
+  })();
+  promise.catch(() => {});
+  pendingFilm = {revision: generation, pc, promise};
+  return promise;
+}
+async function attachFilm(beat, signal) {
+  const generation = beat.film?.revision;
+  await connectFilm(generation);
+  if (signal.aborted) throw new DOMException('Stopped', 'AbortError');
+  film.muted = muted;
+  // The peer is connected; now Director starts painting for this revision.
+  send({type: 'film_play', turn, revision: generation});
+  let timer;
+  const timeout = new Promise((_, reject) => { timer = setTimeout(() => reject(new Error('The film did not arrive.')), 45000); });
+  timeout.catch(() => {});
+  try { await Promise.race([startMedia(film, signal), timeout]); }
+  finally { clearTimeout(timer); }
 }
 function waitFilm(beat, signal) {
   const duration = Number(beat.film?.duration) || 0;
@@ -641,12 +669,14 @@ async function showScene(beat, signal) {
       await attachFilm(beat, signal);
     } catch (error) {
       // A dead film (late offer, expired session) must not take the turn down
-      // with it: fall back to the face and let the narration play as captions.
+      // with it: fall back to the face, and speak Cinema's own recording of
+      // the script (beat.audio) so the answer is still heard, not just read.
       if (signal.aborted) throw error;
+      detachFilm();
       beat.film = null; beat.visual = 'face';
       film.hidden = true; film.removeAttribute('src'); film.load();
       stage.classList.remove('has-scene'); $('home').hidden = true;
-      beat.warnings = [...(beat.warnings || []), 'The film could not be received.'];
+      beat.warnings = [...(beat.warnings || []), 'The moving picture could not be received.'];
     }
     return;
   }
@@ -695,12 +725,7 @@ async function playQueue() {
         await breathingRoom(beat.pause_seconds, signal);
         film.pause(); clearInterval(progressTimer); ack('finished');
         history.push({role:'assistant', text:beat.narration}); renderNotes();
-        if (beat.interaction) {
-          invite(beat);
-          // The film's own voice is over; a trailing question is spoken by Gizmo.
-          if (beat.audio) { voice.src = beat.audio; voice.muted = muted; voice.play().catch(() => {}); }
-          return;
-        }
+        if (beat.interaction) { invite(beat); return; }
         continue;
       }
       if (beat.video) {
@@ -846,7 +871,7 @@ function stopRecording() {
   else { microphoneAttempt++; status('Hold again after allowing the microphone.', 'idle'); }
   $('talk').classList.remove('recording'); $('listening').hidden = true; $('talk-label').textContent = 'Hold the pink side to talk';
   stream?.getTracks().forEach(t => t.stop()); stream = null;
-  status('Listening back…', 'thinking');
+  status('Listening back…');
 }
 $('power').onclick = () => (awake || glass.booting) ? sleep() : wake();
 $('reconnect').onclick = () => { notice(); connect(); };

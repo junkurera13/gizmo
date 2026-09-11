@@ -195,8 +195,10 @@ def router(root: Path, static: Path) -> APIRouter:
                 local=not os.environ.get("RAILWAY_ENVIRONMENT_ID")
                 and request.client.host in {"127.0.0.1", "::1"},
             )
-        except (ValueError, RuntimeError):
-            raise HTTPException(409, "That film has already ended.") from None
+        except (ValueError, RuntimeError, TimeoutError):
+            # Stale revision, closed stream, or an early viewer that outwaited
+            # Director's connect: the glass reconnects when the beat plays.
+            raise HTTPException(409, "That film is not receivable yet.") from None
 
     @api.websocket("/oddity/ws")
     async def websocket(socket: WebSocket):
@@ -236,6 +238,10 @@ def router(root: Path, static: Path) -> APIRouter:
                         await socket.send_json({"type": "interrupted"})
                     elif kind == "playback":
                         await friend.playback(message)
+                    elif kind == "film_play":
+                        # A stale revision is simply ignored; the glass times out
+                        # waiting for frames and falls back to the recorded voice.
+                        friend.watch(message)
                     elif kind == "experiment":
                         await friend.experiment(message)
                     elif kind == "interact":

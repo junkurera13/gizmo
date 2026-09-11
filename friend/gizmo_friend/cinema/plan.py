@@ -67,6 +67,21 @@ The thread field is one short sentence describing where this curiosity can go ne
 )
 
 
+DIRECTED_INSTRUCTIONS = """
+DIRECTED FILM — this film is the whole answer on a screen that shows nothing else.
+A director has already decided the turn deserves a film and supplies a brief below.
+Follow the brief's angle, arc and exclusions; the question is still what you answer.
+Choose four or five connected beats, 30–45 seconds of speech in total, in the
+explanatory spirit of Kurzgesagt or Crash Course: a hook in the first sentence,
+then cause and effect made visible, then one idea to leave with. The film must
+reach the end of its arc: a story or history shows the event itself and what it
+left behind, a mechanism shows the effect, never only the setup. Each beat is one
+spoken sentence of 10–18 words with a concrete visible action. Every shot is
+gentle, colorful and kid-friendly; pictures never include people, faces or
+children — crowds and figures belong in narration only.
+"""
+
+
 class FilmBeat(BaseModel):
     narration: str = Field(min_length=1, max_length=220)
     action: str = Field(min_length=1, max_length=500)
@@ -93,6 +108,12 @@ class FilmPlan(BaseModel):
         )
 
 
+class DirectedFilmPlan(FilmPlan):
+    """A directed film carries a longer arc than a `/cinema` reply."""
+
+    beats: list[FilmBeat] = Field(min_length=1, max_length=5)
+
+
 @dataclass
 class PreparedFilm:
     plan: FilmPlan
@@ -115,15 +136,25 @@ class FilmMaker:
             key=os.environ["FAL_KEY"], default_timeout=20
         )
 
-    async def plan(self, question: str, context: list[dict]) -> FilmPlan:
+    async def plan(self, question: str, context: list[dict], *, direction: str = "") -> FilmPlan:
+        direction = direction.strip()
+        if not direction:
+            raw = await self.text.complete(
+                INSTRUCTIONS,
+                json.dumps({"question": question, "context": context[-8:]}),
+                schema=FilmPlan.model_json_schema(),
+                timeout=12,
+                max_tokens=1100,
+            )
+            return FilmPlan.model_validate_json(raw)
         raw = await self.text.complete(
-            INSTRUCTIONS,
-            json.dumps({"question": question, "context": context[-8:]}),
-            schema=FilmPlan.model_json_schema(),
-            timeout=12,
-            max_tokens=1100,
+            INSTRUCTIONS + DIRECTED_INSTRUCTIONS,
+            json.dumps({"question": question, "brief": direction[:2000], "context": context[-8:]}),
+            schema=DirectedFilmPlan.model_json_schema(),
+            timeout=15,
+            max_tokens=1600,
         )
-        return FilmPlan.model_validate_json(raw)
+        return DirectedFilmPlan.model_validate_json(raw)
 
     async def synthesize(self, plan: FilmPlan) -> PreparedFilm:
         # Short sentences synthesize concurrently. Their actual PCM lengths,
@@ -131,6 +162,11 @@ class FilmMaker:
         voices = await asyncio.gather(
             *(self.voice.narrate(beat.narration) for beat in plan.beats)
         )
+        # One flaky narration call must not sink the whole film: retry the
+        # misses once, serially this time.
+        for i, voice in enumerate(voices):
+            if voice is None:
+                voices[i] = await self.voice.narrate(plan.beats[i].narration)
         if any(voice is None for voice in voices):
             raise RuntimeError("The narration did not arrive. Please try again.")
         pcm = bytearray()

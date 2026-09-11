@@ -3,6 +3,9 @@
 This is additive. Browser `/cinema` still uses `cinema/routes.py` unchanged.
 Oddity keeps its device chrome and beat queue, and starts or stops a film
 through this wrapper instead of Fal still→short-clip.
+
+The planner's medium decision is authoritative here: there is no utterance
+heuristic between the director and Cinema.
 """
 
 from __future__ import annotations
@@ -10,12 +13,11 @@ from __future__ import annotations
 import asyncio
 import logging
 import os
+from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
 from pathlib import Path
 
-from gizmo_friend.brain.visual_director import is_easy_talk, is_moving_explanation_ask
 from gizmo_friend.cinema.runtime import CinemaSession
-from gizmo_friend.oddity.director import Beat, Experience
 
 logger = logging.getLogger(__name__)
 
@@ -27,34 +29,7 @@ class FilmReady:
     title: str
     narration: str
     timings: tuple = ()
-
-
-def route_moving_picture(plan: Experience, utterance: str) -> Experience:
-    """At most one Cinema film. The planner's own film choice is honored.
-
-    Director `video` is an alias for film; extra film asks become stills.
-    Easy talk vetoes film outright; otherwise the only utterance heuristic left
-    is upgrading a still to film for a moving ask the planner under-served.
-    """
-    wants_film = is_moving_explanation_ask(utterance)
-    may_film = not is_easy_talk(utterance)
-    used = False
-    beats: list[Beat] = []
-    for beat in plan.beats:
-        if beat.visual in {"video", "film"}:
-            if may_film and not used:
-                beats.append(beat.model_copy(update={"visual": "film"}))
-                used = True
-            elif beat.subject.strip():
-                beats.append(beat.model_copy(update={"visual": "image", "motion": ""}))
-            else:
-                beats.append(beat.model_copy(update={"visual": "keep", "motion": ""}))
-        elif beat.visual == "image" and wants_film and not used:
-            beats.append(beat.model_copy(update={"visual": "film"}))
-            used = True
-        else:
-            beats.append(beat)
-    return plan.model_copy(update={"beats": beats})
+    soundtrack: bytes = b""
 
 
 class OddityCinema:
@@ -83,7 +58,18 @@ class OddityCinema:
             return True
         return bool(self.fal_key and os.environ.get("GEMINI_API_KEY", "").strip())
 
-    async def start(self, text: str) -> FilmReady | None:
+    async def start(
+        self,
+        text: str,
+        *,
+        direction: str = "",
+        on_pending: Callable[[int], Awaitable[None]] | None = None,
+    ) -> FilmReady | None:
+        """Plan, voice and host the film; return once Director can be started.
+
+        `on_pending` receives the revision as soon as it exists so a viewer can
+        connect its peer while the score is still being written.
+        """
         text = " ".join(text.split())[:1200]
         if not text or not self.available():
             return None
@@ -93,7 +79,9 @@ class OddityCinema:
         self._failed = None
         try:
             await self._ensure_session()
-            await self.session.ask(text)
+            await self.session.ask(text, direction=direction)
+            if on_pending is not None:
+                await on_pending(self.session.revision)
             async with asyncio.timeout(90):
                 await self._ready.wait()
         except asyncio.CancelledError:
@@ -108,18 +96,32 @@ class OddityCinema:
         if self._failed or not self._payload:
             return None
         event = self._payload
+        revision = int(event.get("revision") or 0)
+        soundtrack = b""
+        try:
+            soundtrack = (self.directory / "cinema" / f"{revision}.wav").read_bytes()
+        except OSError:
+            pass
         return FilmReady(
-            revision=int(event.get("revision") or 0),
+            revision=revision,
             duration=float(event.get("duration") or 0),
             title=str(event.get("title") or ""),
             narration=str(event.get("narration") or ""),
             timings=tuple(event.get("timings") or ()),
+            soundtrack=soundtrack,
         )
 
     async def offer(self, sdp, revision, *, local: bool = False):
+        # The viewer connects early; generation starts on `watch`, when the
+        # glass actually reaches the film beat.
         if self.session is None:
             raise ValueError("Stale film")
-        return await self.session.offer(sdp, revision, local=local)
+        return await self.session.offer(sdp, revision, local=local, start=False)
+
+    def watch(self, revision) -> bool:
+        if self.session is None:
+            return False
+        return self.session.watch(revision)
 
     async def finish(self, revision) -> None:
         if self.session is None:

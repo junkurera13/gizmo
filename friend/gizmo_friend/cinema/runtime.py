@@ -42,6 +42,7 @@ class CinemaSession:
         except (OSError, ValueError, TypeError):
             self.context = []
         self.prepared = None
+        self.pending: str | None = None
         self.viewer = asyncio.Event()
         self.closed = False
         self.turns = 0
@@ -66,7 +67,7 @@ class CinemaSession:
             log.write(json.dumps(record) + "\n")
         await self._deliver(event)
 
-    async def ask(self, text, *, request_id=None):
+    async def ask(self, text, *, request_id=None, direction=""):
         text = " ".join(text.split())[:1200]
         if not text or self.closed:
             return
@@ -85,9 +86,10 @@ class CinemaSession:
         self.started = time.monotonic()
         self.marks = {}
         self.context.append({"user": text})
-        self.work = asyncio.create_task(self.run(text, revision))
+        self.pending = text
+        self.work = asyncio.create_task(self.run(text, revision, direction))
 
-    async def run(self, text, revision):
+    async def run(self, text, revision, direction=""):
         stream = self.stream_factory(
             self.key, lambda event: self.provider_event(event, revision)
         )
@@ -104,7 +106,10 @@ class CinemaSession:
                     "revision": revision,
                 }
             )
-            plan = await self.maker.plan(text, self.context)
+            if direction:
+                plan = await self.maker.plan(text, self.context, direction=direction)
+            else:
+                plan = await self.maker.plan(text, self.context)
             self.mark("plan")
             if not self.current(revision):
                 return
@@ -207,6 +212,7 @@ class CinemaSession:
             logger.warning(
                 "Cinema failed: revision=%s error=%s", revision, type(error).__name__
             )
+            self._mark_undelivered()
             if self.current(revision):
                 await self.emit(
                     {
@@ -294,14 +300,24 @@ class CinemaSession:
                 }
             )
 
-    async def offer(self, sdp, revision, *, local=False):
+    async def offer(self, sdp, revision, *, local=False, start=True):
+        """Attach a viewer. With start=False the peer is connected early and
+        generation waits for `watch`, so a screen can finish an opener first
+        without losing the live film's opening seconds."""
         if revision != self.revision or self.stream is None:
             raise ValueError("Stale film")
         result = await self.stream.answer(sdp, "offer", local=local)
         if revision != self.revision or self.stream is None or self.stream.closed:
             raise ValueError("Stale film")
-        self.viewer.set()
+        if start:
+            self.viewer.set()
         return result
+
+    def watch(self, revision) -> bool:
+        if revision != self.revision or self.stream is None or self.stream.closed:
+            return False
+        self.viewer.set()
+        return True
 
     async def interrupt(self):
         self.revision += 1
@@ -329,6 +345,8 @@ class CinemaSession:
                     "heard": "Unknown; do not assume it was completed.",
                 }
             )
+        else:
+            self._mark_undelivered()
         self.prepared = None
         self.context = self.context[-8:]
         from gizmo_friend.brain.shows import _atomic_write
@@ -338,9 +356,21 @@ class CinemaSession:
         )
         self.viewer = asyncio.Event()
 
+    def _mark_undelivered(self):
+        """A pending ask that never produced a film must not look answerable
+        to the next plan — otherwise Cinema re-answers an old question."""
+        text, self.pending = self.pending, None
+        if not text:
+            return
+        for entry in reversed(self.context):
+            if entry.get("user") == text:
+                entry["undelivered"] = "No film was made or played for this ask."
+                return
+
     async def finish(self, revision):
         if revision != self.revision:
             return
+        self.pending = None
         if self.prepared:
             self.context.append(
                 {

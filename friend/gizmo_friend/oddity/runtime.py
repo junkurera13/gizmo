@@ -13,7 +13,7 @@ from gizmo_friend.brain.memory import memory_provider_from_env
 from gizmo_friend.brain.show_budget import OddityMotionBudget, OddityShowBudget
 from gizmo_friend.brain.shows import _atomic_write
 from gizmo_friend.oddity.director import Beat, Director
-from gizmo_friend.oddity.film import OddityCinema, route_moving_picture
+from gizmo_friend.oddity.film import OddityCinema
 from gizmo_friend.oddity.interactions import interaction_answer, orbit_result
 
 logger = logging.getLogger(__name__)
@@ -144,18 +144,59 @@ class ExperienceSession:
                 logger.warning("Oddity voice attempt failed: %s", type(error).__name__)
         return None
 
+    def film_brief(self, beat: Beat) -> str:
+        """The director's brief rides to Cinema: angle, motion, and any moment contract."""
+        parts = [beat.subject.strip()]
+        if beat.motion.strip():
+            parts.append("Key motion: " + beat.motion.strip())
+        if self.director_addendum.strip():
+            parts.append("Moment contract: " + self.director_addendum.strip())
+        return "\n".join(part for part in parts if part)
+
+    async def film(self, beat: Beat, index: int, turn: str, result: dict) -> bool:
+        """Start Cinema for a film beat. False means the beat must fall back."""
+        await self.event("preparing", turn, index=index, stage="film")
+        if not self.cinema.available():
+            result["warnings"].append("Film is not configured on this server.")
+            return False
+        if self.bounded and not await asyncio.to_thread(self.video_budget.reserve, "oddity-" + self.identity):
+            result["warnings"].append("Today's film allowance is used up.")
+            return False
+
+        async def pending(revision: int) -> None:
+            # The glass can connect its peer now, while the score is written.
+            await self.event("film", turn, phase="pending", index=index, revision=revision)
+
+        film = await self.cinema.start(self.utterance, direction=self.film_brief(beat), on_pending=pending)
+        if not film:
+            result["warnings"].append("The film couldn't start, so here it is as a picture.")
+            return False
+        result["film"] = {
+            "revision": film.revision,
+            "duration": film.duration,
+            "title": film.title,
+            "timings": list(film.timings),
+        }
+        if film.narration:
+            result["narration"] = film.narration
+        if film.soundtrack:
+            # Cinema's own recording doubles as the voice if the glass cannot
+            # receive the stream: the answer is never reduced to a caption.
+            result["audio"] = self.asset(film.soundtrack, ".wav")
+        return True
+
     async def prepare(self, beat: Beat, index: int, turn: str, character: str) -> dict:
         result = {**beat.model_dump(), "id": f"{turn}-{index}", "index": index,
                   "image": None, "video": None, "film": None, "audio": None, "warnings": []}
+        if beat.visual == "film":
+            if await self.film(beat, index, turn, result):
+                return result
+            # A film that cannot be made becomes a voiced still of the same
+            # brief — the answer still arrives, with a picture and a voice.
+            beat = beat.model_copy(update={"visual": "image" if beat.subject.strip() else "keep"})
+            result["visual"] = beat.visual
 
         async def voice():
-            if beat.visual == "film":
-                # The film has its own voice; a trailing question is spoken by Gizmo.
-                if beat.interaction and beat.interaction.kind == "reply":
-                    audio = await self.say(beat.interaction.prompt)
-                    if audio:
-                        result["audio"] = self.asset(audio, ".wav")
-                return
             audio = await self.say(beat.narration)
             if audio:
                 result["audio"] = self.asset(audio, ".wav")
@@ -163,36 +204,6 @@ class ExperienceSession:
                 result["warnings"].append("Voice is unavailable. This part has captions only.")
 
         async def visual():
-            if beat.visual == "film":
-                await self.event("preparing", turn, index=index, stage="film")
-                if not self.cinema.available():
-                    result["warnings"].append("Film is not configured on this server.")
-                    result["visual"] = "keep"
-                    return
-                if self.bounded and not await asyncio.to_thread(self.video_budget.reserve, "oddity-" + self.identity):
-                    result["warnings"].append("Today's film allowance is used up.")
-                    result["visual"] = "keep"
-                    return
-                # The director's intended shot rides with the ask so the film
-                # covers what this beat was for, not just the raw question.
-                ask = self.utterance
-                direction = " ".join(part for part in (beat.subject, beat.motion) if part.strip())
-                if direction:
-                    ask = f"{self.utterance}\n\nShow: {direction}"
-                film = await self.cinema.start(ask)
-                if not film:
-                    result["warnings"].append("The film couldn't start. You can try that thought again.")
-                    result["visual"] = "keep"
-                    return
-                result["film"] = {
-                    "revision": film.revision,
-                    "duration": film.duration,
-                    "title": film.title,
-                    "timings": list(film.timings),
-                }
-                if film.narration:
-                    result["narration"] = film.narration
-                return
             if beat.visual not in {"image", "diagram"}:
                 return
             async with self.media_slots:
@@ -243,10 +254,15 @@ class ExperienceSession:
             self.save()
             await self.event("transcript", turn, role="user", text=text)
             await self.event("status", turn, stage="thinking")
-            context = {**self.current, "journey": self.journey}
+            # The planner never reads back its own thread summaries: a stale
+            # goal outranks the kid's actual words and pulls the plan back to
+            # an older topic. Continuity comes from history, the live screen,
+            # and what was actually heard and observed.
+            journey = {key: self.journey[key] for key in ("last_presented", "observations")
+                       if self.journey.get(key)}
+            context = {**self.current, "journey": journey}
             plan = await self.director.plan(text, self.history[:-1], context, self.memory_context,
                                            contract=self.director_addendum)
-            plan = route_moving_picture(plan, text)
             if plan.thread == "new":
                 self.journey = {"goal": plan.goal or text[:240], "observations": []}
             elif plan.thread == "detour":
@@ -258,11 +274,12 @@ class ExperienceSession:
                 self.journey.pop("return_to", None)
             if plan.character != self.character:
                 self.character, self.reference = plan.character, None
-            await self.event("plan", turn, title=plan.title, beats=[{
+            await self.event("plan", turn, title=plan.title, medium=plan.medium, beats=[{
                 "visual": b.visual, "purpose": b.purpose, "delivery": b.delivery,
             } for b in plan.beats])
-            # Two beats ahead at most. Canceling this task cancels every child,
-            # including an in-flight Cinema session, before a new turn starts.
+            # Two beats ahead at most, which for a film turn means the opener
+            # and the film start together. Canceling this task cancels every
+            # child, including an in-flight Cinema session, before a new turn.
             async with asyncio.TaskGroup() as group:
                 jobs = {}
                 for i in range(min(2, len(plan.beats))):
@@ -296,6 +313,8 @@ class ExperienceSession:
             if self.current.get("id") == beat["id"]:
                 return
             previous_visual = self.current.get("screen")
+            if not self.current.get("playing") and (previous_visual or {}).get("kind") == "film":
+                previous_visual = None
             screen = self._screen_for(beat, previous_visual)
             self.current = {"id": beat["id"], "narration": beat["narration"], "screen": screen,
                             "playing": True, "title": beat["title"], "elapsed": 0,
@@ -309,6 +328,9 @@ class ExperienceSession:
             self.current["elapsed"] = max(0, min(180, float(message.get("elapsed", 0))))
         elif phase == "finished" and self.current.get("id") == beat["id"]:
             self.current["playing"] = False
+            if (self.current.get("screen") or {}).get("kind") == "film":
+                # The live film dissolves to the face; current must not claim it stays.
+                self.current["screen"] = None
             self.journey["last_presented"] = beat["narration"]
             if beat.get("film"):
                 await self.cinema.finish(beat["film"]["revision"])
@@ -322,6 +344,16 @@ class ExperienceSession:
                 self.memory_task.cancel()
             self.memory_task = asyncio.create_task(self.remember())
         self.save()
+
+    def watch(self, message: dict) -> bool:
+        """The glass is showing the film beat now: let Director start painting."""
+        if message.get("turn") != self.turn or not self.cinema:
+            return False
+        try:
+            revision = int(message.get("revision"))
+        except (TypeError, ValueError):
+            return False
+        return self.cinema.watch(revision)
 
     async def experiment(self, message: dict):
         if (message.get("turn") != self.turn or message.get("id") != self.current.get("id")
