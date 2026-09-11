@@ -81,6 +81,17 @@ def router(root: Path, static: Path) -> APIRouter:
             return False
         return True
 
+    def refresh_session(session_id: str, mode: str, moment_id: str) -> None:
+        """Keep persisted conversations while applying the latest moment contract."""
+        path = root / "oddity" / session_id / "session.json"
+        saved = json.loads(path.read_text() or "{}")
+        current = session_payload(mode, moment_id)
+        saved.update({
+            "seed_memory": current["seed_memory"],
+            "director_addendum": current["director_addendum"],
+        })
+        path.write_text(json.dumps(saved))
+
     def authenticate(request: Request, *, lab: bool) -> None:
         preview_token = os.environ.get("ODDITY_PREVIEW_TOKEN", "").strip()
         lab_token = os.environ.get("ODDITY_LAB_TOKEN", "").strip()
@@ -137,6 +148,7 @@ def router(root: Path, static: Path) -> APIRouter:
         existing = identity(request)
         if existing and session_matches(existing, mode, moment_id):
             session_id = existing
+            refresh_session(session_id, mode, moment_id)
         else:
             session_id = create_session(mode, moment_id)
         body = {"session": session_id, "mode": mode, "moment": moment_id,

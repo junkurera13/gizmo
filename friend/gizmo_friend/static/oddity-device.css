@@ -84,7 +84,7 @@ main{padding:0 16px}.simulator{width:min(650px,100%,calc((100svh - 180px)*1145/1
 .preview-form .preview-error:empty{display:none;margin:0}
 .embedded .masthead,.embedded footer,.embedded .below-screen,.embedded .device-hints,.embedded .composer,.embedded .starters,.embedded .notice{display:none}.embedded,.embedded body,.embedded main{background:#000}.embedded main{padding-top:12px}.embedded .simulator{width:min(650px,100%,calc((100svh - 92px)*1145/1373))}.embedded .power-bar{margin:10px 0 0}
 html.embedded:not(.oddity-lab) .simulator{width:min(650px,100%,calc((100svh - 168px)*1145/1373))}
-.moments{display:none;align-items:center;gap:12px;width:min(100%,22rem);margin:14px auto 0;color:#c8c2c6}
+.moments{display:none;align-items:center;gap:12px;width:min(100%,22rem);margin:14px auto 0;color:#c8c2c6;touch-action:pan-y}
 html.embedded:not(.oddity-lab) .moments:not([hidden]){display:flex}
 .moments button{margin:0;padding:0;border:0;background:transparent;color:#d7d2d7;font:inherit}
 #moment-prev,#moment-next{width:28px;height:28px;flex-shrink:0;font-size:22px;line-height:1;color:#9c959a}
@@ -92,4 +92,5 @@ html.embedded:not(.oddity-lab) .moments:not([hidden]){display:flex}
 .moment-copy{min-width:0;flex:1;text-align:center}
 #moment-line{margin:0 0 6px;font-size:12px;line-height:1.35;letter-spacing:.01em;color:#e6e0e4}
 #moment-say{border-bottom:1px solid #5c555a;padding:0 0 1px;font-size:10px;letter-spacing:.12em;text-transform:uppercase;color:#a898a0}
+.moments.is-playing #moment-prev,.moments.is-playing #moment-next{opacity:.3;pointer-events:none}#moment-say.is-playing{border-bottom-color:transparent;color:#fff}
 @media(max-width:600px){.embedded main{padding-top:6px}.embedded .simulator{width:min(100%,520px)}html.embedded:not(.oddity-lab) .simulator{width:min(100%,520px)}#moment-line{font-size:11px}}

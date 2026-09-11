@@ -7,7 +7,7 @@
   <link rel="icon" href="data:,">
   <link rel="stylesheet" href="/static/oddity-boot.css?v=gate14">
   <link rel="stylesheet" href="/static/oddity.css">
-  <link rel="stylesheet" href="/static/oddity-device.css?v=gate31">
+  <link rel="stylesheet" href="/static/oddity-device.css?v=gate38">
   <link rel="stylesheet" href="/static/oddity-experience.css">
   <link rel="preload" as="image" href="/static/device-reference-ptt-pressed.png">
   <link rel="preload" as="image" href="/static/oddity-boot-00.jpg">
@@ -37,7 +37,7 @@
       document.documentElement.classList.add('oddity-locked');
     }
   </script>
-  <script type="module" src="/static/oddity.js?v=gate32"></script>
+  <script type="module" src="/static/oddity.js?v=gate38"></script>
 </head>
 <body>
   <header class="masthead">
@@ -137,7 +137,7 @@
         <button id="moment-prev" type="button" aria-label="Previous moment">‹</button>
         <div class="moment-copy">
           <p id="moment-line"></p>
-          <button id="moment-say" type="button">Say this</button>
+          <button id="moment-say" type="button">Play demo</button>
         </div>
         <button id="moment-next" type="button" aria-label="Next moment">›</button>
       </div>
@@ -152,6 +152,7 @@
   <dialog id="help-dialog"><button class="dialog-close" data-close aria-label="Close help">×</button><h2>Follow your curiosity.</h2><p>Power on. Hold the pink button or Space to speak. Let go when you're done.</p><p>Up opens Settings. Down opens Camera. Select confirms, or double-press Select for Camera. Down past Volume returns Home.</p><p class="fine">Your conversation and generated scenes stay in this browser's session on the server. Microphone recording runs only while you hold the button, for up to 45 seconds.</p></dialog>
   <dialog id="notes-dialog"><button class="dialog-close" data-close aria-label="Close session notes">×</button><h2>This conversation</h2><div id="notes"></div><details><summary>Experience direction</summary><ol id="direction"></ol></details></dialog>
   <audio id="voice" preload="auto"></audio>
+  <audio id="demo-audio" preload="auto"></audio>
   <audio id="glass-boot-audio" src="/static/oddity-boot.wav" preload="auto"></audio>
 </body>
 </html>

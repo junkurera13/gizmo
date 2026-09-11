@@ -4,7 +4,7 @@ import {createOrbit} from './oddity-orbit.mjs';
 import {createInteraction} from './oddity-interaction.mjs';
 import {createGlass} from './oddity-glass.mjs?v=gate30';
 const $ = (id) => document.getElementById(id);
-const stage = $('stage'), voice = $('voice'), film = $('film');
+const stage = $('stage'), voice = $('voice'), film = $('film'), demoAudio = $('demo-audio');
 let socket, awake = false, turn = '', queue = [], ready = false, playing = false;
 let controller, currentBeat, paused = false, muted = false, archive = [];
 let history = [], plan = [], recorder, stream, held = false, talkHeld = false, recordingTimer, progressTimer;
@@ -54,9 +54,15 @@ let session = stored(SESSION_KEY);
 let moments = [];
 let momentIndex = 0;
 let momentId = stored(MOMENT_KEY);
-let pendingSay = '';
+let demoController, demoRunning = false, demoPlayedMoment = '', demoOwnsScene = false;
+let demoCaptions = [];
 voice.addEventListener('timeupdate', () => {
   if (playing && currentBeat?.audio && !voice.paused) setCaption(captionAt(captions, voice.currentTime, voice.duration));
+});
+demoAudio.addEventListener('timeupdate', () => {
+  if (demoRunning && demoCaptions.length && !demoAudio.paused) {
+    setCaption(captionAt(demoCaptions, demoAudio.currentTime, demoAudio.duration));
+  }
 });
 
 function setCaption(text = '') {
@@ -124,6 +130,14 @@ function renderRail() {
   }
   rail.hidden = false;
   $('moment-line').textContent = item.line;
+  $('moment-prev').hidden = moments.length < 2;
+  $('moment-next').hidden = moments.length < 2;
+  const button = $('moment-say');
+  const playable = Boolean(item.demo?.prompt_audio && (item.demo.reply_audio || item.demo.beats?.length));
+  button.disabled = demoRunning || !playable;
+  button.textContent = demoRunning ? 'Playing…' : playable ? (demoPlayedMoment === item.id ? 'Replay demo' : 'Play demo') : 'Coming soon';
+  button.classList.toggle('is-playing', demoRunning);
+  rail.classList.toggle('is-playing', demoRunning);
 }
 function syncMoment(id) {
   if (id) momentId = id;
@@ -146,14 +160,15 @@ async function ensureMoments() {
 }
 function resetConversation() {
   interrupt();
-  history = []; archive = []; plan = []; turn = '';
-  restoredInvitation = null; pendingSay = '';
+  history = []; archive = []; archiveIndex = -1; plan = []; turn = '';
+  restoredInvitation = null;
   renderNotes();
   $('direction').replaceChildren();
   if (awake) goHome();
 }
 async function selectMoment(index) {
   if (!playMoments || !moments.length) return;
+  stopDemo();
   const next = (index + moments.length) % moments.length;
   const nextId = moments[next].id;
   if (nextId === momentId && socket && socket.readyState === WebSocket.OPEN) {
@@ -169,15 +184,81 @@ async function selectMoment(index) {
   resetConversation();
   await connect(undefined, {fresh: true});
 }
-function sayMoment() {
-  const item = currentMoment();
-  if (!item) return;
-  if (!awake) {
-    pendingSay = item.line;
-    wake();
-    return;
+async function playDemoRecording(src, signal, text = '') {
+  demoCaptions = captionChunks(text);
+  if (text) setCaption(demoCaptions[0] || text);
+  demoAudio.src = src; demoAudio.muted = muted; demoAudio.load();
+  const ended = mediaEnded(demoAudio, signal); ended.catch(() => {});
+  await startMedia(demoAudio, signal);
+  await ended;
+}
+function waitForAwake(signal) {
+  return new Promise((resolve, reject) => {
+    const started = Date.now();
+    function check() {
+      if (signal.aborted) return reject(new DOMException('Stopped', 'AbortError'));
+      if (awake) return resolve();
+      if (Date.now() - started > 8000) return reject(new Error('Gizmo took too long to wake up. Try again.'));
+      setTimeout(check, 50);
+    }
+    check();
+  });
+}
+function stopDemo() {
+  demoController?.abort(); demoController = null;
+  demoAudio.pause(); demoAudio.removeAttribute('src'); demoAudio.load();
+  demoCaptions = [];
+  if (demoOwnsScene) {
+    film.pause(); film.removeAttribute('src'); film.load();
+    stage.classList.remove('has-scene'); $('home').hidden = true;
+    demoOwnsScene = false;
   }
-  submitThought(item.line);
+  demoRunning = false; setTalkPressed(false);
+  setCaption();
+  renderRail();
+}
+async function showDemoVideo(src, signal) {
+  orbitView?.hide(); screenOrbit = false; $('still').hidden = true;
+  film.pause(); film.src = src; film.muted = true; film.loop = false; film.hidden = false; film.load();
+  stage.classList.add('has-scene'); $('home').hidden = false; demoOwnsScene = true;
+  await startMedia(film, signal);
+}
+async function sayMoment() {
+  const item = currentMoment();
+  if (!item?.demo?.prompt_audio || demoRunning) return;
+  await unlockAudio();
+  interrupt();
+  const ownController = new AbortController();
+  demoController = ownController; demoRunning = true; renderRail();
+  const signal = ownController.signal;
+  try {
+    if (!awake) { wake(); await waitForAwake(signal); }
+    status('Listen to the question…', 'listening');
+    setTalkPressed(true); $('talk').classList.add('recording');
+    await delay(260, signal);
+    await playDemoRecording(item.demo.prompt_audio, signal, item.demo.prompt);
+    setTalkPressed(false); $('talk').classList.remove('recording');
+    setCaption(); status('Gizmo is thinking…', 'thinking');
+    await delay(650, signal);
+    history.push({role:'user', text:item.demo.prompt});
+    const beats = item.demo.beats?.length ? item.demo.beats : [item.demo];
+    for (let index = 0; index < beats.length; index += 1) {
+      const beat = beats[index];
+      if (beat.video) await showDemoVideo(beat.video, signal);
+      status('Gizmo is answering…', 'playing');
+      await playDemoRecording(beat.reply_audio, signal, beat.reply);
+      history.push({role:'assistant', text:beat.reply}); renderNotes();
+      if (index < beats.length - 1) await delay(180, signal);
+    }
+    if (demoOwnsScene) film.pause();
+    demoPlayedMoment = item.id;
+    status('Demo finished. Press replay to watch it again.', 'idle');
+  } catch (error) {
+    if (error.name !== 'AbortError') notice(error.message || 'The demo could not be played. Try again.');
+  } finally {
+    if (demoController === ownController) demoController = null;
+    demoRunning = false; setTalkPressed(false); $('talk').classList.remove('recording'); renderRail();
+  }
 }
 async function connect(previewCode, options = {}) {
   if (socket && socket.readyState < WebSocket.CLOSING) return;
@@ -285,6 +366,7 @@ function syncPower() {
   $('power-state').textContent = on ? 'On' : 'Off';
 }
 function sleep() {
+  stopDemo();
   glass.powerOff();
 }
 function onGlassOff() {
@@ -315,11 +397,6 @@ function onGlassReady() {
   inputEnabled(socket?.readyState === WebSocket.OPEN);
   $('starters').hidden = history.length > 0 || playMoments;
   syncPower();
-  if (pendingSay) {
-    const text = pendingSay;
-    pendingSay = '';
-    submitThought(text);
-  }
   if (restoredInvitation) {
     const beat = archive.find(b => b.id === restoredInvitation.id);
     if (beat?.interaction) {
@@ -451,7 +528,7 @@ async function startMedia(media, signal) {
     if (signal.aborted) throw new DOMException('Stopped', 'AbortError');
     if (error.name !== 'NotAllowedError') throw error;
     $('play-blocked').hidden = false;
-    $('play-blocked').textContent = media === voice ? 'Tap to play narration' : 'Tap to play the scene';
+    $('play-blocked').textContent = media === film ? 'Tap to play the scene' : 'Tap to play narration';
     await new Promise((resolve) => {
       mediaWaitResolve = resolve;
       $('play-blocked').onclick = async () => {
@@ -651,7 +728,7 @@ $('preview-form').onsubmit = (event) => {
   remember(CODE_KEY, code); $('preview-error').textContent = ''; connect(code);
 };
 $('composer').onsubmit = (event) => { event.preventDefault(); submitThought($('thought').value); };
-$('talk').onpointerdown = pressTalk;
+$('talk').onpointerdown = (event) => { if (demoRunning) stopDemo(); pressTalk(event); };
 $('talk').onpointerup = releaseTalk;
 $('talk').onpointercancel = () => { setTalkPressed(false); cancelRecording(); };
 $('talk').onlostpointercapture = () => { if (held) releaseTalk(); };
@@ -671,7 +748,7 @@ $('select').onclick = onSelect;
 $('previous').onclick = () => glass.navigate('up');
 $('next').onclick = () => glass.navigate('down');
 $('home').onclick = goHome;
-$('sound').onclick = () => { muted = !muted; voice.muted = muted; film.muted = muted; $('sound').textContent = muted ? 'Sound off' : 'Sound on'; $('sound').setAttribute('aria-pressed', String(muted)); $('sound').setAttribute('aria-label', muted ? 'Unmute narration' : 'Mute narration'); };
+$('sound').onclick = () => { muted = !muted; voice.muted = muted; film.muted = muted; demoAudio.muted = muted; $('sound').textContent = muted ? 'Sound off' : 'Sound on'; $('sound').setAttribute('aria-pressed', String(muted)); $('sound').setAttribute('aria-label', muted ? 'Unmute narration' : 'Mute narration'); };
 $('expand').onclick = async () => { try { if (document.fullscreenElement) await document.exitFullscreen(); else await document.documentElement.requestFullscreen(); } catch { notice('Fullscreen is unavailable in this browser.'); } };
 document.addEventListener('fullscreenchange', () => $('expand').setAttribute('aria-label', document.fullscreenElement ? 'Exit fullscreen' : 'Enter fullscreen'));
 $('help').onclick = () => $('help-dialog').showModal(); $('open-notes').onclick = () => $('notes-dialog').showModal();
@@ -679,7 +756,15 @@ document.querySelectorAll('[data-close]').forEach(button => button.onclick = () 
 document.querySelectorAll('.starters button').forEach(button => button.onclick = () => submitThought(button.textContent));
 $('moment-prev').onclick = () => selectMoment(momentIndex - 1);
 $('moment-next').onclick = () => selectMoment(momentIndex + 1);
-$('moment-say').onclick = sayMoment;
+$('moment-say').onclick = () => sayMoment();
+let momentSwipeX = null;
+$('moments').addEventListener('pointerdown', (event) => { momentSwipeX = event.clientX; });
+$('moments').addEventListener('pointerup', (event) => {
+  if (momentSwipeX === null || demoRunning) return;
+  const distance = event.clientX - momentSwipeX; momentSwipeX = null;
+  if (Math.abs(distance) >= 44) selectMoment(momentIndex + (distance < 0 ? 1 : -1));
+});
+$('moments').addEventListener('pointercancel', () => { momentSwipeX = null; });
 const typing = () => (document.activeElement?.id !== 'talk' && ['INPUT','TEXTAREA','BUTTON','SUMMARY'].includes(document.activeElement?.tagName)) || document.querySelector('dialog[open]');
 window.addEventListener('keydown', (event) => {
   if (!$('preview-gate').hidden) return;
@@ -693,7 +778,7 @@ window.addEventListener('keydown', (event) => {
 window.addEventListener('keyup', (event) => { if (event.code === 'Space') { event.preventDefault(); releaseTalk(); } });
 window.addEventListener('blur', () => { setTalkPressed(false); if (held) cancelRecording(); });
 document.addEventListener('visibilitychange', () => { if (document.hidden) { setTalkPressed(false); cancelRecording(); if (playing && !paused) togglePause(); } });
-window.addEventListener('pagehide', () => { expectedClose = true; setTalkPressed(false); cancelRecording(); stopPlayer(); socket?.close(); });
+window.addEventListener('pagehide', () => { expectedClose = true; stopDemo(); setTalkPressed(false); cancelRecording(); stopPlayer(); socket?.close(); });
 syncPower();
 glass = createGlass(stage, {
   ready: onGlassReady,

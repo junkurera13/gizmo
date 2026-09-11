@@ -17,10 +17,18 @@ from test_oddity import FakeCinema, FakeDirector, FakeImages, beat
 class MomentCatalogTests(unittest.TestCase):
     def test_public_catalog_hides_seed_and_contract(self):
         public = catalog()
-        self.assertEqual([item["id"] for item in public], list(ORDER))
-        self.assertEqual(len(public), 6)
+        self.assertEqual([item["id"] for item in public], ["birthday", "pompeii"])
+        self.assertEqual(len(public), 2)
         self.assertNotIn("seed", public[0])
         self.assertNotIn("contract", public[0])
+        self.assertEqual(public[0]["demo"]["prompt_audio"], "/static/demo-birthday-kid.mp3")
+        self.assertEqual(public[0]["demo"]["reply"], "Eleven sleeps.")
+        self.assertEqual(public[0]["demo"]["reply_audio"], "/static/demo-birthday-gizmo.wav")
+        self.assertNotIn("sleeps", public[0]["demo"])
+        self.assertEqual(public[1]["demo"]["prompt_audio"], "/static/demo-pompeii-kid.mp3")
+        self.assertEqual(len(public[1]["demo"]["beats"]), 3)
+        self.assertTrue(all(beat["video"].endswith(".mp4") for beat in public[1]["demo"]["beats"]))
+        self.assertIsNone(lookup("draw").demo)
         self.assertTrue(lookup("trex").contract)
         self.assertIsNone(lookup("missing"))
 
