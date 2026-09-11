@@ -73,6 +73,8 @@ uint32_t state_since = 0;
 uint32_t last_redraw = 0;
 uint32_t record_started = 0;
 char caption_line[160] = "";
+char caption_drawn[160] = "";   // caption text last pushed to the panel
+bool show_band_painted = false; // caption-zone rows hold this show's pixels
 int boot_slot_drawn = -1;
 bool boot_chimed = false;
 bool dirty = true;
@@ -191,6 +193,7 @@ void paint_camera(bool viewfinder_ready, const char* status) {
   ensure_home_base();
   gizmo::render_camera_world(canvas, home_base, viewfinder_ready, status);
   display.blit_rgb565(framebuffer, canvas.width, canvas.height);
+  show_band_painted = false;
   last_redraw = millis();
   dirty = false;
 }
@@ -356,6 +359,7 @@ void render() {
       return;
   }
   display.blit_rgb565(framebuffer, canvas.width, canvas.height);
+  show_band_painted = false;
   last_redraw = now;
   dirty = false;
 }
@@ -942,7 +946,21 @@ void loop() {
   if ((state == State::kIdle || state == State::kRecording) && show_player.available() && ensure_framebuffer()) {
     if (show_player.render(framebuffer, dirty)) {
       gizmo::render_caption(canvas, caption_line);
-      display.blit_rgb565(framebuffer, canvas.width, canvas.height);
+      const bool motion = show_player.motion_playing();
+      const bool caption_changed = strncmp(caption_drawn, caption_line, sizeof(caption_drawn)) != 0;
+      if (motion && show_band_painted) {
+        // A film's bottom band is baked dark; only repaint it when the
+        // caption text changes, so each frame's write stays under one scan.
+        const int band_top = canvas.height - gizmo::kCaptionBandHeight;
+        display.blit_rgb565_rows(framebuffer, canvas.width, 0, band_top);
+        if (caption_changed) {
+          display.blit_rgb565_rows(framebuffer, canvas.width, band_top, gizmo::kCaptionBandHeight);
+        }
+      } else {
+        display.blit_rgb565(framebuffer, canvas.width, canvas.height);
+        show_band_painted = motion;
+      }
+      strlcpy(caption_drawn, caption_line, sizeof(caption_drawn));
       last_redraw = now;
     }
     dirty = !show_player.available();

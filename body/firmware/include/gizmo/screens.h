@@ -49,6 +49,7 @@ void render_wifi_setup(const draw::Canvas& canvas, const char* title, const char
 
 // Brain-sent caption line (the kid's own words, or film subtitles), drawn as a
 // strip at the bottom over whatever is on screen. Empty line draws nothing.
+constexpr int kCaptionBandHeight = 24;
 void render_caption(const draw::Canvas& canvas, const char* line);
 
 }  // namespace gizmo

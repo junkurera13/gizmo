@@ -34,6 +34,7 @@ _TRANSITIONS: dict[tuple[State, str], State] = {
     (State.TALKING, "think"): State.THINKING,
     (State.THINKING, "done"): State.LISTENING,
     (State.THINKING, "select"): State.LISTENING,
+    (State.THINKING, "speech_out"): State.TALKING,
 }
 
 for active_state in (State.LISTENING, State.TALKING, State.THINKING):

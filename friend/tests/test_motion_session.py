@@ -321,6 +321,7 @@ class MotionSessionTests(ShowSessionFixture):
 class StubCinema:
     def __init__(self):
         self.started = []
+        self.directions = []
         self.stopped = 0
         self.active = False
         self.session = None
@@ -328,8 +329,9 @@ class StubCinema:
     def available(self):
         return True
 
-    async def start(self, text):
+    async def start(self, text, *, direction=""):
         self.started.append(text)
+        self.directions.append(direction)
         self.active = True
         return {"ok": True, "status": "preparing"}
 
@@ -480,3 +482,37 @@ class FilmCapabilityTests(ShowSessionFixture):
         self.assertEqual(cinema.started, ["Why is the sky blue?"])
         self.assertEqual(director.calls, [])
         self.assertEqual(self.images.calls, [])
+
+    async def test_device_film_carries_a_directed_brief(self):
+        cinema = StubCinema()
+        self.friend._cinema = cinema
+        self.friend.visual_director = FixedDirector(
+            VisualDecision(route="film", subject="rocket exhaust")
+        )
+        await self.friend.handle(TextLine(text="How does a rocket actually take off?"))
+        await asyncio.wait_for(asyncio.shield(self.friend._director_task), 1)
+        self.assertEqual(cinema.directions, ["How does a rocket actually take off?"])
+
+    async def test_film_preparing_thinks_and_clears_the_glass(self):
+        await self.ask_show("jellyfish")
+        await self.finish_show()
+        self.assertIsNotNone(self.friend.current_show)
+        self.events()
+        await self.friend._on_film_preparing()
+        self.assertIsNone(self.friend.current_show)
+        self.assertEqual(self.friend.machine.state, State.THINKING)
+        self.assertIn(
+            {"type": "glass", "viewing": False, "reason": "film", "text": "",
+             "state": "thinking", "power": True, "screen": True,
+             "transport": self.friend.transport_name},
+            self.events(),
+        )
+
+    async def test_film_audio_moves_from_thinking_to_talking(self):
+        await self.friend._on_film_preparing()
+        self.assertEqual(self.friend.machine.state, State.THINKING)
+        await self.friend._start_talking()
+        self.assertEqual(self.friend.machine.state, State.TALKING)
+        await self.friend._on_film_idle()
+        self.assertEqual(self.friend.machine.state, State.LISTENING)
+        self.assertFalse(self.friend._suppress_live_output)

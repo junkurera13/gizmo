@@ -1212,7 +1212,7 @@ class GizmoSession:
                         chapter = (self._visual_narration or narration or "").strip()
                         if chapter:
                             utterance = chapter
-                    await self._start_film(utterance)
+                    await self._start_film(utterance, direction=cleaned)
                 elif decision.route == "still":
                     arguments: dict[str, Any] = {"subject": decision.subject}
                     arguments["story_setting"] = decision.story_setting
@@ -1230,7 +1230,7 @@ class GizmoSession:
         task.add_done_callback(self._director_tasks.discard)
 
     async def _start_talking(self, announce: bool = True) -> None:
-        if self.machine.state is State.LISTENING and self.machine.can("speech_out"):
+        if self.machine.can("speech_out"):
             self.machine.apply("speech_out")
             self.mouth.mark_playing()
             if announce:
@@ -1253,17 +1253,20 @@ class GizmoSession:
                 next_cue=self._issue_story_cue,
                 on_segment=self._on_film_segment,
                 on_talking=self._start_talking,
+                on_preparing=self._on_film_preparing,
                 on_idle=self._on_film_idle,
                 on_failed=self._on_film_failed,
             )
         return self._cinema
 
-    async def _start_film(self, text: str) -> dict[str, Any]:
+    async def _start_film(self, text: str, *, direction: str = "") -> dict[str, Any]:
         if self._cinema is None and not self._cue_listeners:
             logger.info("Friend cinema skipped: no held-cue body")
             return {"ok": False, "reason": "no glass cues"}
         cinema = self._cinema_capability()
-        result = await cinema.start(text)
+        # On the body the film is the whole answer, so it always gets the
+        # directed arc; the ask itself is the brief unless a caller has better.
+        result = await cinema.start(text, direction=direction or text)
         if not result.get("ok"):
             logger.info("Friend cinema skipped: %s", result.get("reason"))
             return result
@@ -1277,11 +1280,40 @@ class GizmoSession:
         if cinema is None or not cinema.active:
             return False
         await cinema.stop()
-        if announce and self.machine.powered():
-            if self.machine.state is State.TALKING and self.machine.can("select"):
-                self.machine.apply("select")
+        if not cinema.active:
+            # Cinema's interrupt() emits nothing; without this the next answer
+            # would stay voice-muted on the body.
+            self._suppress_live_output = False
+        if not self.machine.powered():
+            return True
+        transitioned = False
+        if self.machine.state in {State.TALKING, State.THINKING} and self.machine.can("select"):
+            self.machine.apply("select")
+            transitioned = True
+        if announce:
             await self.emit({"type": "interrupted", "reason": reason})
+        elif transitioned:
+            await self.emit({"type": "state"})
         return True
+
+    async def _on_film_preparing(self) -> None:
+        # A film in flight owns the glass once segments land; until then the
+        # body plays its built-in working animation on home, not a still card.
+        self._cancel_pending_show()
+        was_visible = self.current_show is not None
+        self.current_show = None
+        self.current_show_subject = ""
+        self._device_line = False
+        if was_visible and self._transport is not None:
+            clear_pending_image = getattr(self._transport, "clear_pending_image", None)
+            if clear_pending_image:
+                await clear_pending_image()
+        if self.machine.state is not State.THINKING and self.machine.can("think"):
+            self.machine.apply("think")
+        await self.emit(
+            {"type": "glass", "viewing": False, "reason": "film", "text": ""}
+        )
+        await self.emit({"type": "state"})
 
     async def _on_film_segment(self, segment) -> None:
         self.current_show = segment.show
@@ -1292,7 +1324,7 @@ class GizmoSession:
         self._show_visible_at = asyncio.get_running_loop().time()
 
     async def _on_film_failed(self) -> None:
-        if self.machine.state is State.TALKING and self.machine.can("select"):
+        if self.machine.state in {State.TALKING, State.THINKING} and self.machine.can("select"):
             self.machine.apply("select")
         await self.emit({"type": "interrupted"})
         await self.emit(
@@ -1303,7 +1335,7 @@ class GizmoSession:
         )
 
     async def _on_film_idle(self) -> None:
-        if self.machine.state is State.TALKING and self.machine.can("done"):
+        if self.machine.state in {State.TALKING, State.THINKING} and self.machine.can("done"):
             self.machine.apply("done")
         if not self.film_active():
             self._suppress_live_output = False

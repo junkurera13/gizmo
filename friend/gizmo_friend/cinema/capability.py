@@ -36,6 +36,7 @@ class FriendCinema:
         next_cue=None,
         on_segment=None,
         on_talking=None,
+        on_preparing=None,
         on_idle=None,
         on_failed=None,
         session=None,
@@ -51,6 +52,7 @@ class FriendCinema:
         self.next_cue = next_cue
         self.on_segment = on_segment
         self.on_talking = on_talking
+        self.on_preparing = on_preparing
         self.on_idle = on_idle
         self.on_failed = on_failed
         self.session = session
@@ -73,7 +75,7 @@ class FriendCinema:
         if future and not future.done():
             future.set_result(ok is True)
 
-    async def start(self, text: str) -> dict:
+    async def start(self, text: str, *, direction: str = "") -> dict:
         text = " ".join(text.split())[:1200]
         if not text:
             return {"ok": False, "reason": "empty"}
@@ -85,7 +87,7 @@ class FriendCinema:
         await self.player.cancel_playback()
         self._active = True
         try:
-            await self.session.ask(text)
+            await self.session.ask(text, direction=direction)
         except Exception:
             self._active = False
             raise
@@ -148,8 +150,8 @@ class FriendCinema:
     async def _on_cinema_event(self, event) -> None:
         kind = event.get("type")
         if kind == "status" and event.get("phase") in {"thinking", "preparing"}:
-            if self.player is not None:
-                await self.player.show_conjuring()
+            if self.on_preparing is not None:
+                await self.on_preparing()
             return
         if kind == "ready":
             if self.player is None or self.session is None:

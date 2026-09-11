@@ -19,7 +19,10 @@ constexpr uint8_t kMadctlMy = 0x80;
 constexpr uint8_t kMadctlMx = 0x40;
 constexpr uint8_t kMadctlMv = 0x20;
 constexpr uint8_t kMadctlBgr = 0x08;
-constexpr uint32_t kSpiHz = 40000000;
+// ILI9341 has no wired TE pin, so writes race the panel's ~14ms scan; the
+// faster a frame lands, the smaller the tear. 80MHz is the standard ESP32
+// clock for this panel (TFT_eSPI's default) — a full frame arrives in ~15ms.
+constexpr uint32_t kSpiHz = 80000000;
 }  // namespace
 
 void Display::command(uint8_t value) {
@@ -173,24 +176,30 @@ void Display::fill(uint16_t color) {
 }
 
 void Display::blit_rgb565(const uint16_t* pixels, int width, int height) {
-  if (!ready_ || pixels == nullptr || width <= 0 || height <= 0) return;
+  blit_rgb565_rows(pixels, width, 0, height);
+}
+
+void Display::blit_rgb565_rows(const uint16_t* pixels, int width, int y0, int rows) {
+  if (!ready_ || pixels == nullptr || width <= 0 || rows <= 0 || y0 < 0 || y0 >= height_) return;
   const int cols = width < width_ ? width : width_;
-  const int rows = height < height_ ? height : height_;
+  const int count = y0 + rows > height_ ? height_ - y0 : rows;
+  if (cols <= 0 || count <= 0) return;
   SPI.beginTransaction(SPISettings(kSpiHz, MSBFIRST, SPI_MODE0));
-  window(0, 0, cols - 1, rows - 1);
+  window(0, y0, cols - 1, y0 + count - 1);
   digitalWrite(board::display_dc, HIGH);
   digitalWrite(board::display_cs, LOW);
   const uint32_t row_bytes = static_cast<uint32_t>(cols) * 2;
+  const uint16_t* base = pixels + static_cast<size_t>(y0) * width;
   if (pixel_gain_ >= 255 && width == cols) {
-    SPI.writePixels(pixels, static_cast<uint32_t>(cols) * rows * 2);
+    SPI.writePixels(base, static_cast<uint32_t>(cols) * count * 2);
   } else if (pixel_gain_ >= 255) {
-    for (int y = 0; y < rows; ++y) {
-      SPI.writePixels(pixels + y * width, row_bytes);
+    for (int y = 0; y < count; ++y) {
+      SPI.writePixels(base + y * width, row_bytes);
     }
   } else {
     uint16_t line[320];
-    for (int y = 0; y < rows; ++y) {
-      apply_pixel_gain(line, pixels + y * width, static_cast<size_t>(cols), pixel_gain_);
+    for (int y = 0; y < count; ++y) {
+      apply_pixel_gain(line, base + y * width, static_cast<size_t>(cols), pixel_gain_);
       SPI.writePixels(line, row_bytes);
     }
   }

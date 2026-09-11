@@ -223,9 +223,8 @@ void render_wifi_setup(const draw::Canvas& canvas, const char* title, const char
 
 void render_caption(const draw::Canvas& canvas, const char* line) {
   if (!canvas.valid() || !line || !line[0]) return;
-  constexpr int kCaptionHeight = 24;
-  const int y = canvas.height - kCaptionHeight;
-  draw::fill_rect(canvas, 0, y, canvas.width, kCaptionHeight, draw::kBlack);
+  const int y = canvas.height - kCaptionBandHeight;
+  draw::fill_rect(canvas, 0, y, canvas.width, kCaptionBandHeight, draw::kBlack);
   draw::fill_rect(canvas, 0, y, canvas.width, 1, draw::kFaint);
   char shown[160];
   strlcpy(shown, line, sizeof(shown));
