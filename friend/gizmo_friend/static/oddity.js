@@ -31,7 +31,9 @@ function invite(beat) {
 }
 const embedded = /(?:^|[?&])embedded=1(?:&|$)/.test(globalThis.location?.search || '');
 const lab = /(?:^|[?&])lab=1(?:&|$)/.test(globalThis.location?.search || '');
-if (embedded) document.documentElement.classList.add('embedded');
+// The lab is the internal surface — it should look exactly like the public
+// emulator, so lab mode always renders the embedded device chrome.
+if (embedded || lab) document.documentElement.classList.add('embedded');
 if (lab) document.documentElement.classList.add('oddity-lab');
 let playMoments = embedded && !lab;
 const CODE_KEY = lab ? 'oddity-lab-code-v1' : 'oddity-preview-v1';
