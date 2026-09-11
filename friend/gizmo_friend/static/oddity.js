@@ -103,7 +103,6 @@ function blinkFriend(step = 0) {
     setTimeout(() => blinkFriend(step < 3 ? step + 1 : 0), 110);
   }
 }
-blinkFriend();
 let blinkTimer = 0;
 let blinkSlot = 0;
 function playBlink() {
@@ -819,6 +818,7 @@ window.addEventListener('blur', () => { setTalkPressed(false); if (held) cancelR
 document.addEventListener('visibilitychange', () => { if (document.hidden) { setTalkPressed(false); cancelRecording(); if (playing && !paused) togglePause(); } });
 window.addEventListener('pagehide', () => { expectedClose = true; stopDemo(); setTalkPressed(false); cancelRecording(); stopPlayer(); socket?.close(); });
 syncPower();
+blinkFriend();
 glass = createGlass(stage, {
   ready: onGlassReady,
   off: onGlassOff,
