@@ -54,6 +54,7 @@ export default defineRailway(() => {
       FAL_KEY: preserve(),
       GIZMO_DEVICE_TOKEN: preserve(),
       ODDITY_PREVIEW_TOKEN: preserve(),
+      ODDITY_LAB_TOKEN: preserve(),
       GIZMO_USER_ID: "gizmo-owner",
       GIZMO_DATA_DIR: "/data",
       MEMOBASE_URL: memobase.env.MEMOBASE_INTERNAL_URL,
