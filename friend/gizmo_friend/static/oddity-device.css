@@ -18,7 +18,7 @@ main{padding:0 16px}.simulator{width:min(650px,100%,calc((100svh - 180px)*1145/1
 .device-talk:active{cursor:grabbing}.device-talk:focus-visible{outline:2px solid #ffb5da;outline-offset:4px}
 .device-talk:before{content:'';position:absolute;inset:-10% -55% -10% -90%}
 .device-up:before,.device-down:before,.device-select:before{content:'';position:absolute;inset:0 -12px 0 -3px}
-.device .friend{position:absolute;left:31.5%;top:26%;width:34%;height:50%;display:grid;place-items:center;pointer-events:none}.device .friend img{height:100%;width:auto;object-fit:contain}
+.device .friend{position:absolute;left:29%;top:22%;width:41%;height:60%;display:grid;place-items:center;pointer-events:none}.device .friend img{height:100%;width:auto;object-fit:contain}
 .device .caption,.device .stage:not(.has-scene) .caption{font-size:3.6cqw;bottom:10%;left:8%;right:8%;line-height:1.25;max-height:34%}
 .device .listening,.device .stage-top,.device .stage-bottom{display:none}
 .device .play-blocked{font-size:3.2cqw;padding:2cqw 2.8cqw}
