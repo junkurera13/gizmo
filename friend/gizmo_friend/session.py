@@ -965,6 +965,11 @@ class GizmoSession:
             await self.emit({"type": "transcript", "role": "gizmo", "text": event.text})
             return
         if kind == "user_transcript_preview":
+            partial = event.text.strip()
+            if partial:
+                await self.emit(
+                    {"type": "user_partial", "text": partial[:MAX_CONTEXT_TEXT]}
+                )
             if self._hold is not None:
                 self._hold_utterance = event.text.strip()[:MAX_CONTEXT_TEXT]
                 await self._consider_scout(self._hold_utterance, final=False, voice_started=self._hold_has_audio())

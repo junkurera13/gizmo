@@ -340,8 +340,12 @@ function handle(event) {
   switch (event.type) {
     case 'status':
       status(event.stage === 'hearing' ? 'Listening back…' : 'Thinking it through…', 'thinking'); break;
+    case 'user_partial':
+      if (!playing && !demoRunning) setCaption(event.text); break;
     case 'transcript':
-      history.push({role:event.role, text:event.text}); renderNotes(); break;
+      history.push({role:event.role, text:event.text}); renderNotes();
+      if (event.role === 'user' && !playing && !demoRunning) setCaption(event.text);
+      break;
     case 'plan':
       plan = event.beats; $('chapter-title').textContent = event.title;
       $('beat-dots').replaceChildren(...plan.map(() => document.createElement('i')));
