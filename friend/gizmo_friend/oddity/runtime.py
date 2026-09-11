@@ -133,21 +133,30 @@ class ExperienceSession:
             return None
         return previous_visual
 
+    async def say(self, text: str) -> bytes | None:
+        # One retry: a transient timeout shouldn't mute the beat.
+        for _ in range(2):
+            try:
+                audio = await self.director.speech(text)
+                if audio:
+                    return audio
+            except Exception as error:  # noqa: BLE001 - voice failures become captions
+                logger.warning("Oddity voice attempt failed: %s", type(error).__name__)
+        return None
+
     async def prepare(self, beat: Beat, index: int, turn: str, character: str) -> dict:
         result = {**beat.model_dump(), "id": f"{turn}-{index}", "index": index,
                   "image": None, "video": None, "film": None, "audio": None, "warnings": []}
 
         async def voice():
             if beat.visual == "film":
+                # The film has its own voice; a trailing question is spoken by Gizmo.
+                if beat.interaction and beat.interaction.kind == "reply":
+                    audio = await self.say(beat.interaction.prompt)
+                    if audio:
+                        result["audio"] = self.asset(audio, ".wav")
                 return
-            audio = None
-            for _ in range(2):  # one retry: a transient timeout shouldn't mute the beat
-                try:
-                    audio = await self.director.speech(beat.narration)
-                except Exception as error:  # noqa: BLE001 - voice failures become captions
-                    logger.warning("Oddity voice attempt failed: %s", type(error).__name__)
-                if audio:
-                    break
+            audio = await self.say(beat.narration)
             if audio:
                 result["audio"] = self.asset(audio, ".wav")
             elif beat.narration:
@@ -164,7 +173,13 @@ class ExperienceSession:
                     result["warnings"].append("Today's film allowance is used up.")
                     result["visual"] = "keep"
                     return
-                film = await self.cinema.start(self.utterance)
+                # The director's intended shot rides with the ask so the film
+                # covers what this beat was for, not just the raw question.
+                ask = self.utterance
+                direction = " ".join(part for part in (beat.subject, beat.motion) if part.strip())
+                if direction:
+                    ask = f"{self.utterance}\n\nShow: {direction}"
+                film = await self.cinema.start(ask)
                 if not film:
                     result["warnings"].append("The film couldn't start. You can try that thought again.")
                     result["visual"] = "keep"
@@ -173,6 +188,7 @@ class ExperienceSession:
                     "revision": film.revision,
                     "duration": film.duration,
                     "title": film.title,
+                    "timings": list(film.timings),
                 }
                 if film.narration:
                     result["narration"] = film.narration

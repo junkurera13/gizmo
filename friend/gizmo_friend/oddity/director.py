@@ -157,7 +157,9 @@ advancing. No correctness badges, scores, forced quizzes, or compulsory question
 Leave interaction null when a stopping point or simple answer is enough.
 
 Interaction kinds:
-- reply: a short question and no options. Leave room for an observation or thought.
+- reply: a short question and no options. The beat's narration should speak the
+  question out loud; prompt is only its on-screen echo. Leave room for an
+  observation or thought.
 - orbit: visual MUST be orbit. This is Newton's cannon above a spherical Earth:
   launch radius 1.4 Earth radii, horizontal speed relative to circular speed,
   central inverse-square gravity, no atmosphere, no other bodies, time accelerated.

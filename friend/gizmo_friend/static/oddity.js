@@ -581,6 +581,7 @@ async function attachFilm(beat, signal) {
 }
 function waitFilm(beat, signal) {
   const duration = Number(beat.film?.duration) || 0;
+  const cues = (beat.film?.timings || []).map((t) => [Number(t.start) || 0, t.narration || '']);
   if (!duration) return delay(800, signal);
   return new Promise((resolve, reject) => {
     let startTime = null, ending = false;
@@ -595,6 +596,7 @@ function waitFilm(beat, signal) {
         return;
       }
       if (startTime === null) startTime = metadata.mediaTime;
+      if (cues.length) setCaption(timedCaptionAt(cues, metadata.mediaTime - startTime));
       if (metadata.mediaTime - startTime >= duration) {
         ending = true; clean(); resolve();
         return;
@@ -693,7 +695,12 @@ async function playQueue() {
         await breathingRoom(beat.pause_seconds, signal);
         film.pause(); clearInterval(progressTimer); ack('finished');
         history.push({role:'assistant', text:beat.narration}); renderNotes();
-        if (beat.interaction) { invite(beat); return; }
+        if (beat.interaction) {
+          invite(beat);
+          // The film's own voice is over; a trailing question is spoken by Gizmo.
+          if (beat.audio) { voice.src = beat.audio; voice.muted = muted; voice.play().catch(() => {}); }
+          return;
+        }
         continue;
       }
       if (beat.video) {

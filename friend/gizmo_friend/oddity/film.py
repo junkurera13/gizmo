@@ -26,6 +26,7 @@ class FilmReady:
     duration: float
     title: str
     narration: str
+    timings: tuple = ()
 
 
 def route_moving_picture(plan: Experience, utterance: str) -> Experience:
@@ -112,6 +113,7 @@ class OddityCinema:
             duration=float(event.get("duration") or 0),
             title=str(event.get("title") or ""),
             narration=str(event.get("narration") or ""),
+            timings=tuple(event.get("timings") or ()),
         )
 
     async def offer(self, sdp, revision, *, local: bool = False):

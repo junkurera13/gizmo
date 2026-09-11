@@ -108,7 +108,7 @@ class OddityTests(unittest.IsolatedAsyncioTestCase):
         self.assertIsNone(beats[1]["video"])
         self.assertIsNone(beats[1]["audio"])
         self.assertTrue(urlsplit(beats[0]["audio"]).path.endswith(".wav"))
-        self.assertEqual(self.cinema.asked, ["What if I fell into Jupiter?"])
+        self.assertTrue(self.cinema.asked[0].startswith("What if I fell into Jupiter?"))
         self.assertEqual([m["role"] for m in self.session.history], ["user"])
         self.assertFalse(any(path.suffix == ".mp4" for path in self.session.directory.glob("*")))
 
@@ -176,7 +176,8 @@ class OddityTests(unittest.IsolatedAsyncioTestCase):
         await self.session.begin("How does a rocket actually take off?"); await self.session.task
         beats = [e["beat"] for e in self.events if e["type"] == "beat"]
         self.assertEqual([b["visual"] for b in beats], ["film", "image"])
-        self.assertEqual(self.cinema.asked, ["How does a rocket actually take off?"])
+        self.assertTrue(self.cinema.asked[0].startswith("How does a rocket actually take off?"))
+        self.assertIn("Jupiter's atmosphere", self.cinema.asked[0])  # the beat's direction rides with the ask
 
     async def test_film_finish_acks_cinema(self):
         await self.session.begin("What if I fell into Jupiter?"); await self.session.task

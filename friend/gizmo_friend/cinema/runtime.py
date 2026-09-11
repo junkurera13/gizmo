@@ -155,6 +155,7 @@ class CinemaSession:
                     "title": plan.title,
                     "duration": prepared.duration,
                     "narration": plan.narration,
+                    "timings": prepared.timings,
                 }
             )
             async with asyncio.timeout(30):
