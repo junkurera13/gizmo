@@ -266,32 +266,28 @@ def export(args: argparse.Namespace) -> dict[str, object]:
                 write_bytes(temporary, relative, encoded)
             sequence.append(relative)
 
-        idle_dir = glass / "sprites/idle"
-        idle_sources = sorted(idle_dir.glob("*.png"))
-        idle_source = idle_sources[0]
-        idle_config = sprite_config.get("idle", {})
-        idle_frames: list[str] = []
+        sprite_sets: dict[str, dict] = {}
         home: Image.Image | None = None
-        for frame_index, idle_frame_source in enumerate(idle_sources):
-            home_frame = home_base(idle_frame_source, size)
-            if home is None:
-                home = home_frame
-            relative = f"home/idle/{frame_index:02d}.jpg"
-            write_bytes(temporary, relative, encode_jpeg(home_frame, args.jpeg_quality))
-            idle_frames.append(relative)
+        for set_name in ("idle", "listening", "thinking"):
+            set_sources = sorted((glass / "sprites" / set_name).glob("*.png"))
+            set_config = sprite_config.get(set_name, {})
+            set_frames: list[str] = []
+            for frame_index, set_source in enumerate(set_sources):
+                set_frame = home_base(set_source, size)
+                if set_name == "idle" and home is None:
+                    home = set_frame
+                relative = f"home/{set_name}/{frame_index:02d}.jpg"
+                write_bytes(temporary, relative, encode_jpeg(set_frame, args.jpeg_quality))
+                set_frames.append(relative)
+            sprite_sets[set_name] = {
+                "frames": set_frames,
+                "period_ms": int(set_config.get("period_ms", 130)),
+                "slots": set_config.get("slots") or [0],
+            }
+        idle_frames = sprite_sets["idle"]["frames"]
         # home/base.jpg stays the open pose; the camera backdrop and any consumer
         # that does not animate still reads it.
         write_bytes(temporary, "home/base.jpg", (temporary / idle_frames[0]).read_bytes())
-
-        listening_dir = glass / "sprites/listening"
-        listening_sources = sorted(listening_dir.glob("*.png"))
-        listening_config = sprite_config.get("listening", {})
-        listening_frames: list[str] = []
-        for frame_index, listening_source in enumerate(listening_sources):
-            listening_frame = home_base(listening_source, size)
-            relative = f"home/listening/{frame_index:02d}.jpg"
-            write_bytes(temporary, relative, encode_jpeg(listening_frame, args.jpeg_quality))
-            listening_frames.append(relative)
 
         font_path = glass / "fonts/Outfit[wght].ttf"
         atlas, clock_metadata, clock_font = export_clock_atlas(font_path, args.width)
@@ -363,16 +359,7 @@ def export(args: argparse.Namespace) -> dict[str, object]:
             },
             "home": {
                 "base": "home/base.jpg",
-                "idle": {
-                    "frames": idle_frames,
-                    "period_ms": int(idle_config.get("period_ms", 110)),
-                    "slots": idle_config.get("slots") or [0],
-                },
-                "listening": {
-                    "frames": listening_frames,
-                    "period_ms": int(listening_config.get("period_ms", 130)),
-                    "slots": listening_config.get("slots") or [0],
-                },
+                **sprite_sets,
                 "status_scope": "home_only",
                 "status_top_fraction": 0.065,
                 "clock": clock_metadata,
@@ -388,7 +375,9 @@ def export(args: argparse.Namespace) -> dict[str, object]:
             "total_asset_bytes": sum(int(record["bytes"]) for record in files.values()),
             "sources": {
                 "boot": sources,
-                "home": source_record(repository, idle_source),
+                "home": source_record(
+                    repository, sorted((glass / "sprites/idle").glob("*.png"))[0]
+                ),
                 "hearts": {
                     state: source_record(repository, source)
                     for state, source in heart_sources.items()

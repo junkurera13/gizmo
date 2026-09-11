@@ -122,10 +122,18 @@ int current_listening_slot() {
   return static_cast<int>((millis() / gizmo::assets::kListeningFramePeriodMs) % gizmo::assets::kListeningSlots);
 }
 
+int current_thinking_slot() {
+  return static_cast<int>((millis() / gizmo::assets::kThinkingFramePeriodMs) % gizmo::assets::kThinkingSlots);
+}
+
 bool ensure_home_base() {
-  int set = state == State::kRecording ? 1 : 0;
+  int set;
+  if (state == State::kRecording) set = 1;
+  else if (friend_link.session_thinking()) set = 2;
+  else set = 0;
   int slot;
-  if (set) { slot = current_listening_slot(); settle_left = 0; }
+  if (set == 1) { slot = current_listening_slot(); settle_left = 0; }
+  else if (set == 2) slot = current_thinking_slot();
   else if (settle_left > 0) { set = 1; slot = settle_left; }
   else slot = current_idle_slot();
   if (home_base != nullptr && home_set_drawn == set && home_slot_drawn == slot) return true;
@@ -136,8 +144,9 @@ bool ensure_home_base() {
     if (home_base == nullptr) return false;
   }
   const gizmo::draw::Canvas target{home_base, canvas.width, canvas.height};
-  const bool ok = set ? gizmo::assets::decode_listening_slot(slot, target)
-                      : gizmo::assets::decode_idle_slot(slot, target);
+  const bool ok = set == 1 ? gizmo::assets::decode_listening_slot(slot, target)
+                  : set == 2 ? gizmo::assets::decode_thinking_slot(slot, target)
+                             : gizmo::assets::decode_idle_slot(slot, target);
   if (!ok) {
     Serial.println("home base: jpeg decode failed");
     gizmo::draw::clear(target, gizmo::draw::kBlack);
@@ -901,22 +910,26 @@ void loop() {
       } else if (now - last_redraw >= kIdleRedrawMs && hud_changed(current_hud(), last_hud)) {
         dirty = true;
       }
-      if (home_set_drawn == 1) {
-        // Settle: walk the lean back down one slot per period before the
-        // idle blink takes the face back.
-        if (settle_left == 0 && home_slot_drawn > 0) {
-          settle_left = home_slot_drawn;
-          settle_next = now + gizmo::assets::kListeningFramePeriodMs;
-        }
-        if (settle_left > 0) {
-          if (now >= settle_next) {
-            --settle_left;
-            settle_next += gizmo::assets::kListeningFramePeriodMs;
-            dirty = true;
+      {
+        const int active = friend_link.session_thinking() ? 2 : 0;
+        if (home_set_drawn == 1 && active == 0) {
+          // Settle: walk the lean back down one slot per period before the
+          // idle blink takes the face back.
+          if (settle_left == 0 && home_slot_drawn > 0) {
+            settle_left = home_slot_drawn;
+            settle_next = now + gizmo::assets::kListeningFramePeriodMs;
           }
-        } else dirty = true;
-      } else if (current_idle_slot() != home_slot_drawn) {
-        dirty = true;
+          if (settle_left > 0) {
+            if (now >= settle_next) {
+              --settle_left;
+              settle_next += gizmo::assets::kListeningFramePeriodMs;
+              dirty = true;
+            }
+          } else dirty = true;
+        } else {
+          const int slot = active == 2 ? current_thinking_slot() : current_idle_slot();
+          if (home_set_drawn != active || slot != home_slot_drawn) dirty = true;
+        }
       }
       break;
     case State::kCamera:

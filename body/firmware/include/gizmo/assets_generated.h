@@ -25,6 +25,11 @@ constexpr int kListeningUniqueFrames = 7;
 constexpr uint32_t kListeningFramePeriodMs = 130;
 constexpr uint8_t kListeningSlotFrame[kListeningSlots] = {0, 0, 0, 0, 0, 0, 1, 2, 3, 4, 5, 6, 6, 6, 6, 6, 6, 6, 6, 6, 6, 6, 6, 5, 4, 3, 2, 1};
 
+constexpr int kThinkingSlots = 19;
+constexpr int kThinkingUniqueFrames = 15;
+constexpr uint32_t kThinkingFramePeriodMs = 130;
+constexpr uint8_t kThinkingSlotFrame[kThinkingSlots] = {6, 7, 8, 9, 10, 11, 12, 13, 14, 14, 14, 13, 12, 11, 10, 9, 8, 7, 6};
+
 constexpr uint32_t kChimeSampleRate = 16000;
 constexpr size_t kChimeSamples = 10720;
 
@@ -94,6 +99,36 @@ extern "C" const uint8_t _binary_assets_listening_05_jpg_start[] asm("_binary_as
 extern "C" const uint8_t _binary_assets_listening_05_jpg_end[] asm("_binary_assets_listening_05_jpg_end");
 extern "C" const uint8_t _binary_assets_listening_06_jpg_start[] asm("_binary_assets_listening_06_jpg_start");
 extern "C" const uint8_t _binary_assets_listening_06_jpg_end[] asm("_binary_assets_listening_06_jpg_end");
+extern "C" const uint8_t _binary_assets_thinking_00_jpg_start[] asm("_binary_assets_thinking_00_jpg_start");
+extern "C" const uint8_t _binary_assets_thinking_00_jpg_end[] asm("_binary_assets_thinking_00_jpg_end");
+extern "C" const uint8_t _binary_assets_thinking_01_jpg_start[] asm("_binary_assets_thinking_01_jpg_start");
+extern "C" const uint8_t _binary_assets_thinking_01_jpg_end[] asm("_binary_assets_thinking_01_jpg_end");
+extern "C" const uint8_t _binary_assets_thinking_02_jpg_start[] asm("_binary_assets_thinking_02_jpg_start");
+extern "C" const uint8_t _binary_assets_thinking_02_jpg_end[] asm("_binary_assets_thinking_02_jpg_end");
+extern "C" const uint8_t _binary_assets_thinking_03_jpg_start[] asm("_binary_assets_thinking_03_jpg_start");
+extern "C" const uint8_t _binary_assets_thinking_03_jpg_end[] asm("_binary_assets_thinking_03_jpg_end");
+extern "C" const uint8_t _binary_assets_thinking_04_jpg_start[] asm("_binary_assets_thinking_04_jpg_start");
+extern "C" const uint8_t _binary_assets_thinking_04_jpg_end[] asm("_binary_assets_thinking_04_jpg_end");
+extern "C" const uint8_t _binary_assets_thinking_05_jpg_start[] asm("_binary_assets_thinking_05_jpg_start");
+extern "C" const uint8_t _binary_assets_thinking_05_jpg_end[] asm("_binary_assets_thinking_05_jpg_end");
+extern "C" const uint8_t _binary_assets_thinking_06_jpg_start[] asm("_binary_assets_thinking_06_jpg_start");
+extern "C" const uint8_t _binary_assets_thinking_06_jpg_end[] asm("_binary_assets_thinking_06_jpg_end");
+extern "C" const uint8_t _binary_assets_thinking_07_jpg_start[] asm("_binary_assets_thinking_07_jpg_start");
+extern "C" const uint8_t _binary_assets_thinking_07_jpg_end[] asm("_binary_assets_thinking_07_jpg_end");
+extern "C" const uint8_t _binary_assets_thinking_08_jpg_start[] asm("_binary_assets_thinking_08_jpg_start");
+extern "C" const uint8_t _binary_assets_thinking_08_jpg_end[] asm("_binary_assets_thinking_08_jpg_end");
+extern "C" const uint8_t _binary_assets_thinking_09_jpg_start[] asm("_binary_assets_thinking_09_jpg_start");
+extern "C" const uint8_t _binary_assets_thinking_09_jpg_end[] asm("_binary_assets_thinking_09_jpg_end");
+extern "C" const uint8_t _binary_assets_thinking_10_jpg_start[] asm("_binary_assets_thinking_10_jpg_start");
+extern "C" const uint8_t _binary_assets_thinking_10_jpg_end[] asm("_binary_assets_thinking_10_jpg_end");
+extern "C" const uint8_t _binary_assets_thinking_11_jpg_start[] asm("_binary_assets_thinking_11_jpg_start");
+extern "C" const uint8_t _binary_assets_thinking_11_jpg_end[] asm("_binary_assets_thinking_11_jpg_end");
+extern "C" const uint8_t _binary_assets_thinking_12_jpg_start[] asm("_binary_assets_thinking_12_jpg_start");
+extern "C" const uint8_t _binary_assets_thinking_12_jpg_end[] asm("_binary_assets_thinking_12_jpg_end");
+extern "C" const uint8_t _binary_assets_thinking_13_jpg_start[] asm("_binary_assets_thinking_13_jpg_start");
+extern "C" const uint8_t _binary_assets_thinking_13_jpg_end[] asm("_binary_assets_thinking_13_jpg_end");
+extern "C" const uint8_t _binary_assets_thinking_14_jpg_start[] asm("_binary_assets_thinking_14_jpg_start");
+extern "C" const uint8_t _binary_assets_thinking_14_jpg_end[] asm("_binary_assets_thinking_14_jpg_end");
 extern "C" const uint8_t _binary_assets_heart_empty_rgb565a_start[] asm("_binary_assets_heart_empty_rgb565a_start");
 extern "C" const uint8_t _binary_assets_heart_empty_rgb565a_end[] asm("_binary_assets_heart_empty_rgb565a_end");
 extern "C" const uint8_t _binary_assets_heart_half_rgb565a_start[] asm("_binary_assets_heart_half_rgb565a_start");
@@ -182,6 +217,46 @@ inline const uint8_t* listening_frame_end(int unique) {
     case 4: return _binary_assets_listening_04_jpg_end;
     case 5: return _binary_assets_listening_05_jpg_end;
     case 6: return _binary_assets_listening_06_jpg_end;
+    default: return nullptr;
+  }
+}
+inline const uint8_t* thinking_frame_start(int unique) {
+  switch (unique) {
+    case 0: return _binary_assets_thinking_00_jpg_start;
+    case 1: return _binary_assets_thinking_01_jpg_start;
+    case 2: return _binary_assets_thinking_02_jpg_start;
+    case 3: return _binary_assets_thinking_03_jpg_start;
+    case 4: return _binary_assets_thinking_04_jpg_start;
+    case 5: return _binary_assets_thinking_05_jpg_start;
+    case 6: return _binary_assets_thinking_06_jpg_start;
+    case 7: return _binary_assets_thinking_07_jpg_start;
+    case 8: return _binary_assets_thinking_08_jpg_start;
+    case 9: return _binary_assets_thinking_09_jpg_start;
+    case 10: return _binary_assets_thinking_10_jpg_start;
+    case 11: return _binary_assets_thinking_11_jpg_start;
+    case 12: return _binary_assets_thinking_12_jpg_start;
+    case 13: return _binary_assets_thinking_13_jpg_start;
+    case 14: return _binary_assets_thinking_14_jpg_start;
+    default: return nullptr;
+  }
+}
+inline const uint8_t* thinking_frame_end(int unique) {
+  switch (unique) {
+    case 0: return _binary_assets_thinking_00_jpg_end;
+    case 1: return _binary_assets_thinking_01_jpg_end;
+    case 2: return _binary_assets_thinking_02_jpg_end;
+    case 3: return _binary_assets_thinking_03_jpg_end;
+    case 4: return _binary_assets_thinking_04_jpg_end;
+    case 5: return _binary_assets_thinking_05_jpg_end;
+    case 6: return _binary_assets_thinking_06_jpg_end;
+    case 7: return _binary_assets_thinking_07_jpg_end;
+    case 8: return _binary_assets_thinking_08_jpg_end;
+    case 9: return _binary_assets_thinking_09_jpg_end;
+    case 10: return _binary_assets_thinking_10_jpg_end;
+    case 11: return _binary_assets_thinking_11_jpg_end;
+    case 12: return _binary_assets_thinking_12_jpg_end;
+    case 13: return _binary_assets_thinking_13_jpg_end;
+    case 14: return _binary_assets_thinking_14_jpg_end;
     default: return nullptr;
   }
 }

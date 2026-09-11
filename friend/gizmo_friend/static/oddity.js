@@ -95,7 +95,9 @@ const blinkFrames = Object.fromEntries([10, 11, 12, 13].map((id) => {
 const IDLE_FRAMES = ['/static/oddity-character.png?v=char3', '/static/oddity-character-half.png?v=char3', '/static/oddity-character-closed.png?v=char3'];
 const LISTEN_FRAMES = Array.from({ length: 7 }, (_, i) => `/static/oddity-listening-0${i + 1}.png?v=listen1`);
 const LISTEN_SLOTS = [0, 0, 0, 0, 0, 0, 1, 2, 3, 4, 5, 6, 6, 6, 6, 6, 6, 6, 6, 6, 6, 6, 6, 5, 4, 3, 2, 1];
-let listenSlot = 0, listenFrame = -1, faceNextAt = 0, listenNextAt = 0, blinkStep = 0;
+const THINK_FRAMES = Array.from({ length: 15 }, (_, i) => `/static/oddity-thinking-${String(i + 1).padStart(2, '0')}.png?v=think1`);
+const THINK_SLOTS = [6, 7, 8, 9, 10, 11, 12, 13, 14, 14, 14, 13, 12, 11, 10, 9, 8, 7, 6];
+let listenSlot = 0, listenFrame = -1, thinkSlot = 0, faceNextAt = 0, listenNextAt = 0, thinkNextAt = 0, blinkStep = 0;
 function faceImgs() {
   return document.querySelectorAll('img[src*="oddity-character"], img[src*="oddity-listening"]');
 }
@@ -124,6 +126,16 @@ function faceTick() {
   }
   listenFrame = -1;
   listenSlot = 0;
+  const thinking = stage.dataset.state === 'thinking' || stage.dataset.state === 'preparing';
+  if (thinking) {
+    if (now < thinkNextAt) return;
+    thinkSlot = (thinkSlot + 1) % THINK_SLOTS.length;
+    imgs.forEach((img) => (img.src = THINK_FRAMES[THINK_SLOTS[thinkSlot]]));
+    thinkNextAt = now + 130;
+    blinkStep = 0;
+    return;
+  }
+  thinkSlot = 0;
   if (now < faceNextAt) return;
   if (blinkStep === 0) {
     imgs.forEach((img) => (img.src = IDLE_FRAMES[0]));

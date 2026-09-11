@@ -23,6 +23,7 @@ class FriendConnection {
   const char* device_id() const { return device_id_; }
   bool has_token() const { return token_[0] != '\0'; }
   bool hello_ok() const { return hello_ok_; }
+  bool session_thinking() const { return session_thinking_; }
 
   bool set_url(const char* url);
   bool set_token(const char* token);
@@ -70,6 +71,7 @@ class FriendConnection {
   uint32_t last_try_ = 0;
   bool hello_ok_ = false;
   bool session_ready_ = false;
+  bool session_thinking_ = false;
   bool glass_seen_ = false;
   bool tls_ = false;
   uint16_t port_ = 80;

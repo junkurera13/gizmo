@@ -107,21 +107,19 @@ def main() -> None:
     write(ASSETS / "home_base.jpg", (bundle / home["base"]).read_bytes())
     embedded.append("home_base.jpg")
 
-    idle = home.get("idle") or {}
-    idle_frames: list[str] = idle.get("frames") or []
-    for index, relative in enumerate(idle_frames):
-        name = f"idle_{index:02d}.jpg"
-        write(ASSETS / name, (bundle / relative).read_bytes())
-        embedded.append(name)
-    idle_slots: list[int] = idle.get("slots") or [0]
-
-    listening = home.get("listening") or {}
-    listening_frames: list[str] = listening.get("frames") or []
-    for index, relative in enumerate(listening_frames):
-        name = f"listening_{index:02d}.jpg"
-        write(ASSETS / name, (bundle / relative).read_bytes())
-        embedded.append(name)
-    listening_slots: list[int] = listening.get("slots") or [0]
+    sprite_sets: dict[str, dict] = {}
+    for set_name in ("idle", "listening", "thinking"):
+        entry = home.get(set_name) or {}
+        frames: list[str] = entry.get("frames") or []
+        for index, relative in enumerate(frames):
+            name = f"{set_name}_{index:02d}.jpg"
+            write(ASSETS / name, (bundle / relative).read_bytes())
+            embedded.append(name)
+        sprite_sets[set_name] = {
+            "frames": frames,
+            "period_ms": entry.get("period_ms", 130),
+            "slots": entry.get("slots") or [0],
+        }
 
     heart_side = None
     for state in ("empty", "half", "full"):
@@ -164,16 +162,17 @@ def main() -> None:
         f"constexpr uint32_t kBootDropMs = {int(entrance.get('duration_ms', 0))};",
         f"constexpr uint8_t kBootSlotFrame[kBootSlots] = {{{', '.join(str(s) for s in slots)}}};",
         "",
-        f"constexpr int kIdleSlots = {len(idle_slots)};",
-        f"constexpr int kIdleUniqueFrames = {len(idle_frames)};",
-        f"constexpr uint32_t kIdleFramePeriodMs = {idle.get('period_ms', 110)};",
-        f"constexpr uint8_t kIdleSlotFrame[kIdleSlots] = {{{', '.join(str(s) for s in idle_slots)}}};",
-        "",
-        f"constexpr int kListeningSlots = {len(listening_slots)};",
-        f"constexpr int kListeningUniqueFrames = {len(listening_frames)};",
-        f"constexpr uint32_t kListeningFramePeriodMs = {listening.get('period_ms', 130)};",
-        f"constexpr uint8_t kListeningSlotFrame[kListeningSlots] = {{{', '.join(str(s) for s in listening_slots)}}};",
-        "",
+        *[
+            line
+            for set_name, entry in sprite_sets.items()
+            for line in (
+                f"constexpr int k{set_name.capitalize()}Slots = {len(entry['slots'])};",
+                f"constexpr int k{set_name.capitalize()}UniqueFrames = {len(entry['frames'])};",
+                f"constexpr uint32_t k{set_name.capitalize()}FramePeriodMs = {entry['period_ms']};",
+                f"constexpr uint8_t k{set_name.capitalize()}SlotFrame[k{set_name.capitalize()}Slots] = {{{', '.join(str(s) for s in entry['slots'])}}};",
+                "",
+            )
+        ],
         f"constexpr uint32_t kChimeSampleRate = {DEVICE_SAMPLE_RATE};",
         f"constexpr size_t kChimeSamples = {chime_samples};",
         "",
@@ -211,34 +210,15 @@ def main() -> None:
     lines.append("    default: return nullptr;")
     lines.append("  }")
     lines.append("}")
-    lines.append("inline const uint8_t* idle_frame_start(int unique) {")
-    lines.append("  switch (unique) {")
-    for index in range(len(idle_frames)):
-        lines.append(f"    case {index}: return {symbol(f'idle_{index:02d}.jpg')}_start;")
-    lines.append("    default: return nullptr;")
-    lines.append("  }")
-    lines.append("}")
-    lines.append("inline const uint8_t* idle_frame_end(int unique) {")
-    lines.append("  switch (unique) {")
-    for index in range(len(idle_frames)):
-        lines.append(f"    case {index}: return {symbol(f'idle_{index:02d}.jpg')}_end;")
-    lines.append("    default: return nullptr;")
-    lines.append("  }")
-    lines.append("}")
-    lines.append("inline const uint8_t* listening_frame_start(int unique) {")
-    lines.append("  switch (unique) {")
-    for index in range(len(listening_frames)):
-        lines.append(f"    case {index}: return {symbol(f'listening_{index:02d}.jpg')}_start;")
-    lines.append("    default: return nullptr;")
-    lines.append("  }")
-    lines.append("}")
-    lines.append("inline const uint8_t* listening_frame_end(int unique) {")
-    lines.append("  switch (unique) {")
-    for index in range(len(listening_frames)):
-        lines.append(f"    case {index}: return {symbol(f'listening_{index:02d}.jpg')}_end;")
-    lines.append("    default: return nullptr;")
-    lines.append("  }")
-    lines.append("}")
+    for set_name, entry in sprite_sets.items():
+        for edge in ("start", "end"):
+            lines.append(f"inline const uint8_t* {set_name}_frame_{edge}(int unique) {{")
+            lines.append("  switch (unique) {")
+            for index in range(len(entry["frames"])):
+                lines.append(f"    case {index}: return {symbol(f'{set_name}_{index:02d}.jpg')}_{edge};")
+            lines.append("    default: return nullptr;")
+            lines.append("  }")
+            lines.append("}")
     lines.append("}  // namespace gizmo::assets::generated")
     lines.append("")
     HEADER.write_text("\n".join(lines))
