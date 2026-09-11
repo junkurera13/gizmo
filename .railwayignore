@@ -1,0 +1,10 @@
+# railway up only needs Dockerfile + pyproject.toml + README.md + friend/.
+# The rest makes the upload payload too large for the CLI's upload window.
+body/
+simulator/
+glass/
+web/
+docs/
+dist/
+.vercel/
+gizmo.egg-info/

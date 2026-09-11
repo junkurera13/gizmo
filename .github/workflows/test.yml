@@ -42,15 +42,26 @@ jobs:
           fetch-depth: 0
       - name: Deploy gizmo-brain
         if: ${{ env.RAILWAY_TOKEN != '' }}
-        run: npx --yes @railway/cli@5.52.1 up --service gizmo-brain -y
+        run: |
+          for attempt in 1 2 3; do
+            npx --yes @railway/cli@5.52.1 up --service gizmo-brain -y && exit 0
+            echo "deploy attempt $attempt failed; retrying"
+            sleep 10
+          done
+          exit 1
       - name: Deploy memobase when its source changes
         if: ${{ env.RAILWAY_TOKEN != '' }}
         run: |
-          if git diff --name-only "${{ github.event.before }}" "${{ github.sha }}" | grep -q '^deploy/memobase/'; then
-            npx --yes @railway/cli@5.52.1 up --service memobase -y
-          else
+          if ! git diff --name-only "${{ github.event.before }}" "${{ github.sha }}" | grep -q '^deploy/memobase/'; then
             echo "deploy/memobase unchanged; skipping"
+            exit 0
           fi
+          for attempt in 1 2 3; do
+            npx --yes @railway/cli@5.52.1 up --service memobase -y && exit 0
+            echo "deploy attempt $attempt failed; retrying"
+            sleep 10
+          done
+          exit 1
       - name: Report a missing deploy token
         if: ${{ env.RAILWAY_TOKEN == '' }}
         run: echo "::warning::RAILWAY_TOKEN secret is not set; Railway deploy skipped. See docs/DEPLOYMENT.md."
