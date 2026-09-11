@@ -121,7 +121,7 @@ int current_listening_slot() {
 }
 
 bool ensure_home_base() {
-  const int set = friend_link.session_listening() ? 1 : 0;
+  const int set = state == State::kRecording ? 1 : 0;
   const int slot = set ? current_listening_slot() : current_idle_slot();
   if (home_base != nullptr && home_set_drawn == set && home_slot_drawn == slot) return true;
   if (!ensure_framebuffer()) return false;
@@ -897,9 +897,8 @@ void loop() {
         dirty = true;
       }
       {
-        const int set = friend_link.session_listening() ? 1 : 0;
-        const int slot = set ? current_listening_slot() : current_idle_slot();
-        if (set != home_set_drawn || slot != home_slot_drawn) dirty = true;
+        const int slot = current_idle_slot();
+        if (0 != home_set_drawn || slot != home_slot_drawn) dirty = true;
       }
       break;
     case State::kCamera:

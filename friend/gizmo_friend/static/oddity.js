@@ -101,7 +101,7 @@ function faceImgs() {
 }
 function faceTick(step = 0) {
   const imgs = faceImgs();
-  if (awake && !playing && !demoRunning && !stage.classList.contains('has-scene')) {
+  if (talkHeld || held || recorder?.state === 'recording') {
     const src = LISTEN_FRAMES[LISTEN_SLOTS[listenSlot]];
     listenSlot = (listenSlot + 1) % LISTEN_SLOTS.length;
     imgs.forEach((img) => (img.src = src));
