@@ -23,17 +23,17 @@ constexpr uint8_t kIdleSlotFrame[kIdleSlots] = {0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
 constexpr uint32_t kChimeSampleRate = 16000;
 constexpr size_t kChimeSamples = 10720;
 
-constexpr float kStatusTopFraction = 0.045f;
+constexpr float kStatusTopFraction = 0.065f;
 constexpr int kHearts = 5;
 constexpr int kHalfSteps = 10;
 constexpr int kHeartLayoutSide = 11;
 constexpr int kHeartAssetSide = 14;
-constexpr int kClockCellWidth = 11;
-constexpr int kClockCellHeight = 21;
-constexpr int kClockBaseline = 16;
+constexpr int kClockCellWidth = 10;
+constexpr int kClockCellHeight = 18;
+constexpr int kClockBaseline = 14;
 constexpr int kClockWeight = 500;
-constexpr int kClockAtlasWidth = 121;
-constexpr int kClockAtlasHeight = 21;
+constexpr int kClockAtlasWidth = 110;
+constexpr int kClockAtlasHeight = 18;
 constexpr char kClockCharacters[] = "0123456789:";
 
 // Linker symbols for the embedded blobs (platformio.ini board_build.embed_files).

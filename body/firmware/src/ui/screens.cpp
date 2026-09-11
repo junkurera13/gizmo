@@ -70,12 +70,12 @@ void render_hud(const draw::Canvas& canvas, const Hud& hud) {
     snprintf(clock, sizeof(clock), "%d:%02d", hud.hour, hud.minute);
     clockW = clock_width(clock);
   }
-  const float groupWidth = hud.has_time ? heartsWidth + groupSpacing + clockW : heartsWidth;
-  const float margin = canvas.width * assets::kStatusTopFraction;
-  const float x = canvas.width - margin - groupWidth;
-  const float heartX = x;
+  const float groupWidth = hud.has_time ? clockW + groupSpacing + heartsWidth : heartsWidth;
+  const float x = (canvas.width - groupWidth) / 2.0f;
+  float heartX = x;
   if (hud.has_time) {
-    draw_clock(canvas, static_cast<int>(x + heartsWidth + groupSpacing + 0.5f), top, clock);
+    draw_clock(canvas, static_cast<int>(x + 0.5f), top, clock);
+    heartX = x + clockW + groupSpacing;
   }
   int halfSteps = hud.half_steps;
   if (halfSteps < 0) halfSteps = 0;

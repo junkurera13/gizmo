@@ -120,7 +120,7 @@ def draw_clock_glyph(
 def export_clock_atlas(font_path: Path, panel_width: int) -> tuple[bytes, dict[str, object], ImageFont.FreeTypeFont]:
     import io
 
-    font_size = max(8, round(panel_width * 0.05))
+    font_size = max(8, round(panel_width * 0.044))
     font, variation = load_outfit_medium(font_path, font_size)
     ascent, descent = font.getmetrics()
     advances = [font.getlength(character, **({"features": ["tnum"]} if features.check("raqm") else {}))
@@ -173,8 +173,7 @@ def render_home_preview(
     width, height = base.size
     preview = base.copy()
     draw = ImageDraw.Draw(preview)
-    cap_box = font.getbbox("H")
-    cap_height = max(1, cap_box[3] - cap_box[1])
+    cap_height = max(1, round(height * 0.045))
     clock = "12:34"
     clock_width = math.ceil(draw.textlength(clock, font=font))
     heart_layout_side = cap_height
@@ -182,11 +181,11 @@ def render_home_preview(
     heart_spacing = heart_layout_side * 0.2
     group_spacing = cap_height * 0.7
     hearts_width = 5 * heart_layout_side + 4 * heart_spacing
-    group_width = hearts_width + group_spacing + clock_width
-    top = height * 0.045
-    x = width - width * 0.045 - group_width
-    heart_x = x
-    draw.text((x + hearts_width + group_spacing, top), clock, font=font, fill="white", anchor="lt")
+    group_width = clock_width + group_spacing + hearts_width
+    top = height * 0.065
+    x = (width - group_width) / 2
+    heart_x = x + clock_width + group_spacing
+    draw.text((x, top), clock, font=font, fill="white", anchor="lt")
     for index in range(5):
         filled = half_steps - index * 2
         state = "full" if filled >= 2 else "half" if filled == 1 else "empty"
@@ -288,8 +287,9 @@ def export(args: argparse.Namespace) -> dict[str, object]:
         atlas, clock_metadata, clock_font = export_clock_atlas(font_path, args.width)
         write_bytes(temporary, str(clock_metadata["path"]), atlas)
 
-        cap_box = clock_font.getbbox("H")
-        cap_height = max(1, cap_box[3] - cap_box[1])
+        # Heart size tracks the panel, not the clock face, so the time can be
+        # tuned without dragging the battery glyphs with it.
+        cap_height = max(1, round(args.height * 0.045))
         heart_asset_side = max(1, round(cap_height * 96 / 78))
         heart_sources = {
             state: glass / f"sprites/hearts/{state}.png"
@@ -359,7 +359,7 @@ def export(args: argparse.Namespace) -> dict[str, object]:
                     "slots": idle_config.get("slots") or [0],
                 },
                 "status_scope": "home_only",
-                "status_top_fraction": 0.045,
+                "status_top_fraction": 0.065,
                 "clock": clock_metadata,
                 "battery": {
                     "half_steps": 10,
