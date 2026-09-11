@@ -16,6 +16,7 @@ from aiortc import (
     RTCConfiguration,
     RTCIceServer,
     RTCPeerConnection,
+    RTCRtpSender,
     RTCSessionDescription,
 )
 from aiortc.contrib.media import MediaRelay
@@ -72,7 +73,14 @@ class DirectorStream:
         ]
         self.ice_servers = servers
         self.pc = pc = RTCPeerConnection(RTCConfiguration(iceServers=servers))
-        pc.addTransceiver("video", direction="recvonly")
+        video = pc.addTransceiver("video", direction="recvonly")
+        # Prefer H.264: the device path decodes server-side, where PyAV's VP8
+        # decoder has failed on provider packets in some deploys, and H.264's
+        # FU-A fragmentation survives relayed media paths better.
+        video.setCodecPreferences(
+            [c for c in RTCRtpSender.getCapabilities("video").codecs
+             if c.mimeType.lower() == "video/h264"]
+        )
         pc.addTransceiver("audio", direction="recvonly")
         self.channel = channel = pc.createDataChannel("control")
 
