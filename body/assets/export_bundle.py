@@ -183,7 +183,7 @@ def render_home_preview(
     hearts_width = 5 * heart_layout_side + 4 * heart_spacing
     group_width = clock_width + group_spacing + hearts_width
     top = height * 0.065
-    x = width * 0.46 - group_width / 2
+    x = (width - group_width) / 2
     heart_x = x + clock_width + group_spacing
     draw.text((x, top), clock, font=font, fill="white", anchor="lt")
     for index in range(5):
