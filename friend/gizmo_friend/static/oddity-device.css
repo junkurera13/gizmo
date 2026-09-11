@@ -102,3 +102,10 @@ html.embedded:not(.oddity-lab) .moments:not([hidden]){display:flex}
 #moment-say{border-bottom:1px solid #5c555a;padding:0 0 1px;font-size:10px;letter-spacing:.12em;text-transform:uppercase;color:#a898a0}
 .moments.is-playing #moment-prev,.moments.is-playing #moment-next{opacity:.3;pointer-events:none}#moment-say.is-playing{border-bottom-color:transparent;color:#fff}
 @media(max-width:600px){.embedded main{padding-top:6px}.embedded .simulator{width:min(100%,520px)}html.embedded:not(.oddity-lab) .simulator{width:min(100%,520px)}#moment-line{font-size:11px}}
+
+/* The lab is the bare device: no site chrome, hints, or starter prompts. */
+html.oddity-lab .masthead,
+html.oddity-lab .device-hints,
+html.oddity-lab .starters,
+html.oddity-lab footer span{display:none}
+html.oddity-lab footer{padding:10px 0}
