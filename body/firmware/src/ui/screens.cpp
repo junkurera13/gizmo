@@ -71,7 +71,7 @@ void render_hud(const draw::Canvas& canvas, const Hud& hud) {
     clockW = clock_width(clock);
   }
   const float groupWidth = hud.has_time ? clockW + groupSpacing + heartsWidth : heartsWidth;
-  const float x = (canvas.width - groupWidth) / 2.0f;
+  const float x = canvas.width * 0.46f - groupWidth / 2.0f;
   float heartX = x;
   if (hud.has_time) {
     draw_clock(canvas, static_cast<int>(x + 0.5f), top, clock);

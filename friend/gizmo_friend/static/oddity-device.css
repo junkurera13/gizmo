@@ -27,7 +27,7 @@ main{padding:0 16px}.simulator{width:min(650px,100%,calc((100svh - 180px)*1145/1
 .glass-boot{z-index:7;background:#000;display:grid;place-items:center}
 .glass-boot img{width:100%;height:100%;object-fit:contain}
 .glass-home{z-index:1}
-.glass-hud{position:absolute;z-index:4;top:6%;left:0;right:0;display:flex;align-items:center;justify-content:center;gap:0.5em;color:#fff;pointer-events:none;font-size:4.8cqw}
+.glass-hud{position:absolute;z-index:4;top:6%;left:0;right:8%;display:flex;align-items:center;justify-content:center;gap:0.5em;color:#fff;pointer-events:none;font-size:4.8cqw}
 .glass-clock{font-family:Outfit,system-ui,sans-serif;font-weight:500;font-size:1em;font-variant-numeric:tabular-nums;letter-spacing:0.02em;line-height:1}
 .glass-battery{display:flex;align-items:center;height:0.72em;gap:0.07em}
 .glass-battery-body{box-sizing:border-box;width:1.42em;height:0.72em;border:0.09em solid #fff;border-radius:0.18em;padding:0.11em}
