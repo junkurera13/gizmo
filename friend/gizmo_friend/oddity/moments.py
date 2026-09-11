@@ -141,23 +141,18 @@ _register(
         demo={
             "prompt": "Gizmo, what happened to Pompeii a long time ago?",
             "prompt_audio": "/static/demo-pompeii-kid.mp3",
-            "beats": [
-                {
-                    "reply": "Almost two thousand years ago, the city of Pompeii sat at the foot of a mountain called Vesuvius, and one day it erupted without warning.",
-                    "reply_audio": "/static/demo-pompeii-1.wav",
-                    "video": "/static/demo-pompeii-1.mp4",
-                },
-                {
-                    "reply": "The mountain blasted ash and rock high into the sky, and a giant grey cloud raced down its sides faster than anyone could run.",
-                    "reply_audio": "/static/demo-pompeii-2.wav",
-                    "video": "/static/demo-pompeii-2.mp4",
-                },
-                {
-                    "reply": "The ash buried Pompeii so completely that it stayed hidden for centuries, and when diggers uncovered it, the houses, streets and paintings were still there.",
-                    "reply_audio": "/static/demo-pompeii-3.wav",
-                    "video": "/static/demo-pompeii-3.mp4",
-                },
-            ],
+            "reply": (
+                "Almost two thousand years ago, the city of Pompeii sat at the "
+                "foot of a mountain called Vesuvius, and one day it erupted "
+                "without warning. The mountain blasted ash and rock high into "
+                "the sky, and a giant grey cloud raced down its sides faster "
+                "than anyone could run. The ash buried Pompeii so completely "
+                "that it stayed hidden for centuries, and when diggers "
+                "uncovered it, the houses, streets and paintings were still "
+                "there."
+            ),
+            "reply_audio": "/static/demo-pompeii.wav",
+            "video": "/static/demo-pompeii.mp4",
         },
     ),
 )

@@ -39,7 +39,7 @@ SEGMENT_SECONDS = 5
 def frame_image(frame) -> Image.Image:
     """Fit the film above a bottom caption bar, matching the emulator layout."""
     canvas = Image.new("RGB", (320, 240), (5, 17, 31))
-    canvas.paste(ImageOps.contain(frame.to_image(), (320, 180)), (0, 0))
+    canvas.paste(ImageOps.fit(frame.to_image(), (320, 192)), (0, 0))
     return canvas
 
 

@@ -217,9 +217,14 @@ function stopDemo() {
   setCaption();
   renderRail();
 }
+function swapFilm(src) {
+  film.classList.add('swap');
+  film.addEventListener('playing', () => film.classList.remove('swap'), {once: true});
+  film.src = src; film.hidden = false; film.load();
+}
 async function showDemoVideo(src, signal) {
   orbitView?.hide(); screenOrbit = false; $('still').hidden = true;
-  film.pause(); film.src = src; film.muted = true; film.loop = false; film.hidden = false; film.load();
+  film.pause(); swapFilm(src); film.muted = true; film.loop = false;
   stage.classList.add('has-scene'); $('home').hidden = false; demoOwnsScene = true;
   await startMedia(film, signal);
 }
@@ -559,7 +564,7 @@ async function showScene(beat, signal) {
     $('still').src = beat.image; $('still').alt = beat.subject; $('still').hidden = false;
     film.hidden = true; film.removeAttribute('src'); film.load();
     stage.classList.add('has-scene'); $('home').hidden = false;
-    if (beat.video) { film.src = beat.video; film.hidden = false; film.load(); }
+    if (beat.video) swapFilm(beat.video);
     $('scene').classList.remove('scene-enter'); void $('scene').offsetWidth; $('scene').classList.add('scene-enter');
   } else if (beat.visual === 'face') {
     stage.classList.remove('has-scene'); $('still').hidden = true; film.hidden = true;
