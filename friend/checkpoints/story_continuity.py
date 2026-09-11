@@ -20,8 +20,8 @@ import wave
 from dotenv import load_dotenv
 
 from gizmo_friend.body_protocol import TextLine
-from gizmo_friend.brain.clips import ClipProvider, ConjuredClip
 from gizmo_friend.brain.images import ConjuredStill, ImageProvider
+from gizmo_friend.brain.shows import ConjuredClip
 from gizmo_friend.brain.memory import NullMemoryProvider
 from gizmo_friend.brain.reasoning import NullReasoningProvider
 from gizmo_friend.brain.visual_director import GeminiVisualDirector
@@ -58,7 +58,7 @@ class ReplayImages(ImageProvider):
         )
 
 
-class ReplayClips(ClipProvider):
+class ReplayClips:
     def __init__(self):
         self.calls = []
 

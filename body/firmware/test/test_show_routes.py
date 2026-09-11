@@ -15,9 +15,8 @@ from fastapi.testclient import TestClient
 from PIL import Image
 import imageio_ffmpeg
 
-from gizmo_friend.brain.clips import ConjuredClip
 from gizmo_friend.brain.images import ConjuredStill
-from gizmo_friend.brain.shows import ShowStore
+from gizmo_friend.brain.shows import ConjuredClip, ShowStore
 from gizmo_friend.server import app_factory
 
 root = Path(__file__).resolve().parents[3]

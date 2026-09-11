@@ -11,7 +11,7 @@ import re
 import tempfile
 import uuid
 from contextlib import contextmanager
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from pathlib import Path
 from urllib.parse import quote
@@ -19,11 +19,29 @@ from urllib.parse import quote
 from PIL import Image, ImageOps
 
 from gizmo_friend.brain.images import ConjuredStill
-from gizmo_friend.brain.clips import ConjuredClip
 from gizmo_friend.brain.show_media import MAX_FRAME_DIMENSION, MAX_FRAME_FPS, MJPEG_ENCODING_VERSION, encode_mjpeg, strip_audio
 
 MAX_IMAGE_DIMENSION = 2048
 _SHOW_ID = re.compile(r"[0-9a-f]{32}")
+
+
+@dataclass(frozen=True)
+class ConjuredClip:
+    """A saved moving picture attached to its source still.
+
+    Cinema is the only producer: device playback encodes Director frames into
+    these records. There is no still→clip provider.
+    """
+
+    motion: str
+    mp4: bytes = field(repr=False)
+    prompt: str
+    model: str
+    request_id: str
+    source_image_sha256: str
+    latency_seconds: float
+    expanded_prompt: str | None
+    timings: dict[str, float]
 
 
 def valid_device_id(value: str) -> bool:

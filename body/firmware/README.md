@@ -14,8 +14,8 @@ it too. PTT can continue while the picture is visible.
 
 The device requests media from the configured brain using its existing bearer
 token and `X-Gizmo-Device` identity. It never downloads provider URLs or MP4s.
-The backend generates stills using Gemini, generates motion using fal's
-MiniMax image-to-video model, and serves its saved JPEG/MJPEG versions.
+The backend generates stills using FLUX on fal; moving pictures are Cinema
+(H3 Max Director), served as saved JPEG/MJPEG segments.
 
 Media HTTP/TLS has a separate task from the voice WebSocket. Encoded clips are
 bounded to 4 MiB / 240 frames in PSRAM (stills to 256 KiB); every frame must be
