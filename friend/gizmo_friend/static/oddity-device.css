@@ -58,7 +58,9 @@ main{padding:0 16px}.simulator{width:min(650px,100%,calc((100svh - 180px)*1145/1
 .camera-finder video{position:absolute;inset:0;width:100%;height:100%;object-fit:cover}
 .stage[data-glass=camera] .caption{opacity:0}
 .stage[data-glass=off] .glass-home,.stage[data-glass=off] .caption,.stage[data-glass=off] .scene,.stage[data-glass=boot] .caption{opacity:0}
+.scene{transition:opacity .55s ease}
 .stage:not(.has-scene) .scene{opacity:0}
+.stage.scene-ending .scene{opacity:0}
 .stage.has-scene .glass-home .friend,.stage.has-scene .glass-hud{opacity:0}
 .stage.has-scene .scene{inset:0 0 20% 0}
 .stage.has-scene .scene img,.stage.has-scene .scene video{object-fit:cover}

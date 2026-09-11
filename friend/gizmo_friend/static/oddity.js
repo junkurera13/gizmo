@@ -222,9 +222,18 @@ function swapFilm(src) {
   film.addEventListener('playing', () => film.classList.remove('swap'), {once: true});
   film.src = src; film.hidden = false; film.load();
 }
+function dissolveScene() {
+  stage.classList.add('scene-ending');
+  setTimeout(() => {
+    stage.classList.remove('scene-ending');
+    if (playing || queue.length || demoRunning || invitation?.active) return;
+    stage.classList.remove('has-scene'); $('home').hidden = true; setCaption();
+  }, 800);
+}
 async function showDemoVideo(src, signal) {
   orbitView?.hide(); screenOrbit = false; $('still').hidden = true;
   film.pause(); swapFilm(src); film.muted = true; film.loop = false;
+  stage.classList.remove('scene-ending');
   stage.classList.add('has-scene'); $('home').hidden = false; demoOwnsScene = true;
   await startMedia(film, signal);
 }
@@ -258,6 +267,7 @@ async function sayMoment() {
     if (demoOwnsScene) film.pause();
     demoPlayedMoment = item.id;
     status('Demo finished. Press replay to watch it again.', 'idle');
+    dissolveScene();
   } catch (error) {
     if (error.name !== 'AbortError') notice(error.message || 'The demo could not be played. Try again.');
   } finally {
@@ -435,6 +445,7 @@ function interrupt() {
 function finish() {
   if (invitation?.active) return;
   $('pause').hidden = true; status('Your turn. Follow that thought.', 'idle');
+  if (!film.hidden) dissolveScene();
 }
 function delay(ms, signal) {
   return new Promise((resolve, reject) => {
@@ -547,13 +558,13 @@ async function startMedia(media, signal) {
 async function showScene(beat, signal) {
   if (beat.visual === 'orbit' || beat.kind === 'orbit') {
     $('still').hidden = true; film.hidden = true; film.removeAttribute('src'); film.load();
-    screenOrbit = true; stage.classList.add('has-scene'); $('home').hidden = false;
+    screenOrbit = true; stage.classList.remove('scene-ending'); stage.classList.add('has-scene'); $('home').hidden = false;
     orbit().show(); orbit().reset(); return;
   }
   if (beat.visual !== 'keep') { orbitView?.hide(); screenOrbit = false; }
   if (beat.visual === 'film' || beat.film) {
     $('still').hidden = true; film.removeAttribute('src');
-    film.hidden = false; stage.classList.add('has-scene'); $('home').hidden = false;
+    film.hidden = false; stage.classList.remove('scene-ending'); stage.classList.add('has-scene'); $('home').hidden = false;
     $('scene').classList.remove('scene-enter'); void $('scene').offsetWidth; $('scene').classList.add('scene-enter');
     await attachFilm(beat, signal);
     return;
@@ -563,7 +574,7 @@ async function showScene(beat, signal) {
     if (signal.aborted) throw new DOMException('Stopped', 'AbortError');
     $('still').src = beat.image; $('still').alt = beat.subject; $('still').hidden = false;
     film.hidden = true; film.removeAttribute('src'); film.load();
-    stage.classList.add('has-scene'); $('home').hidden = false;
+    stage.classList.remove('scene-ending'); stage.classList.add('has-scene'); $('home').hidden = false;
     if (beat.video) swapFilm(beat.video);
     $('scene').classList.remove('scene-enter'); void $('scene').offsetWidth; $('scene').classList.add('scene-enter');
   } else if (beat.visual === 'face') {

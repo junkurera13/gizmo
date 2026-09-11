@@ -353,6 +353,7 @@ class DeviceFilm:
             )
         elif event["type"] == "ended":
             self.state = "listening"
+            await self.send({"type": "glass", "viewing": False})
             await self.send({"type": "state"})
 
     async def stop(self):
