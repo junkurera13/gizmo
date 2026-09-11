@@ -15,6 +15,7 @@ import asyncio
 import base64
 import hashlib
 import io
+import logging
 import math
 import os
 import tempfile
@@ -34,6 +35,11 @@ from gizmo_friend.settings import DeviceSettings
 
 FPS = 12
 SEGMENT_SECONDS = 5
+CONJURING_STILL = (
+    Path(__file__).resolve().parent.parent / "static" / "gizmo-conjuring.jpg"
+)
+
+logger = logging.getLogger(__name__)
 
 
 def frame_image(frame) -> Image.Image:
@@ -121,6 +127,39 @@ class DeviceFilmPlayer:
         self.on_talking = on_talking
         self.on_failed = on_failed
         self.playback = None
+        self._conjured = False
+
+    async def show_conjuring(self) -> None:
+        """Put a conjuring still on the glass while the film is being made."""
+        if self._conjured or not CONJURING_STILL.is_file():
+            return
+        self._conjured = True
+        try:
+            jpeg = await asyncio.to_thread(CONJURING_STILL.read_bytes)
+            still = ConjuredStill(
+                subject="A film is forming",
+                jpeg=jpeg,
+                prompt="bundled",
+                model="bundled",
+                width=512,
+                height=384,
+                source_width=512,
+                source_height=384,
+                latency_seconds=0.0,
+            )
+            show = await asyncio.to_thread(
+                lambda: self.store.save(still, session_id="cinema")
+            )
+            await self.send(
+                {
+                    "type": "glass",
+                    "viewing": True,
+                    "still": show.still_url,
+                    "subject": still.subject,
+                }
+            )
+        except Exception:
+            logger.warning("conjuring still unavailable", exc_info=True)
 
     def cue_for(self, revision, index):
         if self.next_cue is not None:
@@ -128,6 +167,7 @@ class DeviceFilmPlayer:
         return revision * 100 + index + 1
 
     async def cancel_playback(self):
+        self._conjured = False
         playback, self.playback = self.playback, None
         if playback and playback is not asyncio.current_task():
             playback.cancel()
@@ -351,6 +391,9 @@ class DeviceFilm:
                     ),
                 }
             )
+        elif event["type"] == "status":
+            if event.get("phase") in {"thinking", "preparing"} and self.player:
+                await self.player.show_conjuring()
         elif event["type"] == "ended":
             self.state = "listening"
             await self.send({"type": "glass", "viewing": False})

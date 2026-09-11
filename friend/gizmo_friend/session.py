@@ -1289,6 +1289,7 @@ class GizmoSession:
             self.machine.apply("done")
         if not self.film_active():
             self._suppress_live_output = False
+        await self.emit({"type": "glass", "viewing": False, "reason": "film"})
         await self.emit({"type": "state", "reason": "film"})
 
     async def _dismiss_show(self, reason: str, *, cancel_pending: bool = True) -> None:

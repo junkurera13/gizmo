@@ -147,6 +147,10 @@ class FriendCinema:
 
     async def _on_cinema_event(self, event) -> None:
         kind = event.get("type")
+        if kind == "status" and event.get("phase") in {"thinking", "preparing"}:
+            if self.player is not None:
+                await self.player.show_conjuring()
+            return
         if kind == "ready":
             if self.player is None or self.session is None:
                 return
