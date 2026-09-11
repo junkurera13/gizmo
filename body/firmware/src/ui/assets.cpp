@@ -46,14 +46,6 @@ bool decode_thinking_slot(int slot, const draw::Canvas& canvas) {
   return decode(thinking_frame_start(unique), thinking_frame_end(unique), canvas);
 }
 
-const uint8_t* heart(Heart state) {
-  switch (state) {
-    case Heart::kFull: return _binary_assets_heart_full_rgb565a_start;
-    case Heart::kHalf: return _binary_assets_heart_half_rgb565a_start;
-    default: return _binary_assets_heart_empty_rgb565a_start;
-  }
-}
-
 const uint8_t* clock_atlas() { return _binary_assets_clock_atlas_a8_start; }
 
 const int16_t* chime() {

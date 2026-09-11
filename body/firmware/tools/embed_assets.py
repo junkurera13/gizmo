@@ -121,17 +121,6 @@ def main() -> None:
             "slots": entry.get("slots") or [0],
         }
 
-    heart_side = None
-    for state in ("empty", "half", "full"):
-        with Image.open(bundle / home["battery"]["paths"][state]) as opened:
-            heart = opened.convert("RGBA")
-            if heart_side is None:
-                heart_side = heart.width
-            assert heart.size == (heart_side, heart_side), "hearts must be square and equal"
-            name = f"heart_{state}.rgb565a"
-            write(ASSETS / name, rgb565a(heart))
-            embedded.append(name)
-
     clock = home["clock"]
     with Image.open(bundle / clock["path"]) as opened:
         atlas = opened.convert("L")
@@ -177,10 +166,8 @@ def main() -> None:
         f"constexpr size_t kChimeSamples = {chime_samples};",
         "",
         f"constexpr float kStatusTopFraction = {home['status_top_fraction']}f;",
-        f"constexpr int kHearts = {home['battery']['hearts']};",
         f"constexpr int kHalfSteps = {home['battery']['half_steps']};",
-        f"constexpr int kHeartLayoutSide = {home['battery']['layout_side']};",
-        f"constexpr int kHeartAssetSide = {heart_side};",
+        f"constexpr int kStatusCapHeight = {home['battery']['cap_height']};",
         f"constexpr int kClockCellWidth = {clock['cell_width']};",
         f"constexpr int kClockCellHeight = {clock['cell_height']};",
         f"constexpr int kClockBaseline = {clock['baseline']};",
@@ -236,7 +223,6 @@ def main() -> None:
         "boot_unique_frames": len(unique),
         "boot_slots": len(slots),
         "chime_samples_16k": chime_samples,
-        "heart_side": heart_side,
         "total_bytes": total,
         "header": HEADER.relative_to(FIRMWARE).as_posix(),
     }, indent=2))

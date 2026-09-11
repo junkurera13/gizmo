@@ -166,8 +166,8 @@ gizmo::Hud current_hud() {
     hud.hour = local.tm_hour;
     hud.minute = local.tm_min;
   }
-  // Hearts follow the LiPo reading. Without a divider wired the device is on
-  // USB, shown as full like the simulator's default battery level.
+  // The battery icon follows the LiPo reading. Without a divider wired the
+  // device is on USB, shown as full like the simulator's default battery level.
   hud.half_steps = battery.present() ? (battery.percent() + 5) / 10 : gizmo::assets::kHalfSteps;
   return hud;
 }
@@ -784,11 +784,11 @@ void setup() {
                 gizmo::board::display_sck, gizmo::board::display_mosi,
                 gizmo::board::display_cs, gizmo::board::display_dc, backlight_wiring(),
                 display.pixel_gain());
-  Serial.printf("assets: boot %d slots/%d frames @%ums, chime at %ums (%u samples @%uHz), splash %ums, hearts %dpx, "
+  Serial.printf("assets: boot %d slots/%d frames @%ums, chime at %ums (%u samples @%uHz), splash %ums, "
                 "clock atlas %dx%d wght=%d\n",
                 gizmo::assets::kBootSlots, gizmo::assets::kBootUniqueFrames, gizmo::assets::kBootFramePeriodMs,
                 gizmo::assets::kBootChimeAtMs, static_cast<unsigned>(gizmo::assets::kChimeSamples),
-                gizmo::assets::kChimeSampleRate, gizmo::assets::kBootMinimumMs, gizmo::assets::kHeartAssetSide,
+                gizmo::assets::kChimeSampleRate, gizmo::assets::kBootMinimumMs,
                 gizmo::assets::kClockAtlasWidth, gizmo::assets::kClockAtlasHeight, gizmo::assets::kClockWeight);
 
   input.begin();

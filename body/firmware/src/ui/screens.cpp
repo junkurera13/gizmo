@@ -57,12 +57,21 @@ void band(const draw::Canvas& canvas) {
 
 void render_hud(const draw::Canvas& canvas, const Hud& hud) {
   if (!canvas.valid()) return;
-  // Mirrors export_bundle.render_home_preview / HomeClusterView.
-  const int capHeight = assets::kHeartLayoutSide;
-  const float heartSpacing = assets::kHeartLayoutSide * 0.2f;
+  // Mirrors export_bundle.render_home_preview / the emulator glass HUD:
+  // the clock, then a battery outline with a charge fill and nub.
+  const int capHeight = assets::kStatusCapHeight;
   const float groupSpacing = capHeight * 0.7f;
-  const float heartsWidth = assets::kHearts * assets::kHeartLayoutSide + (assets::kHearts - 1) * heartSpacing;
   const int top = static_cast<int>(canvas.height * assets::kStatusTopFraction + 0.5f);
+
+  // Battery proportions follow the emulator's glass icon: a ~2:1 body one cap
+  // height tall, a 1px wall, 2px padding, then the nub.
+  const int bodyW = capHeight * 2;
+  const int bodyH = capHeight;
+  const int pad = 2;
+  const int nubGap = 1;
+  const int nubW = 2;
+  const int nubH = capHeight * 2 / 5;
+  const float batteryWidth = bodyW + nubGap + nubW;
 
   char clock[8] = "";
   int clockW = 0;
@@ -70,27 +79,33 @@ void render_hud(const draw::Canvas& canvas, const Hud& hud) {
     snprintf(clock, sizeof(clock), "%d:%02d", hud.hour, hud.minute);
     clockW = clock_width(clock);
   }
-  const float groupWidth = hud.has_time ? clockW + groupSpacing + heartsWidth : heartsWidth;
+  const float groupWidth = hud.has_time ? clockW + groupSpacing + batteryWidth : batteryWidth;
   const float x = (canvas.width - groupWidth) / 2.0f;
-  float heartX = x;
+  float batteryX = x;
   if (hud.has_time) {
     draw_clock(canvas, static_cast<int>(x + 0.5f), top, clock);
-    heartX = x + clockW + groupSpacing;
+    batteryX = x + clockW + groupSpacing;
   }
-  int halfSteps = hud.half_steps;
-  if (halfSteps < 0) halfSteps = 0;
-  if (halfSteps > assets::kHalfSteps) halfSteps = assets::kHalfSteps;
-  for (int index = 0; index < assets::kHearts; ++index) {
-    const int filled = halfSteps - index * 2;
-    const assets::Heart state = filled >= 2 ? assets::Heart::kFull
-                                : filled == 1 ? assets::Heart::kHalf
-                                              : assets::Heart::kEmpty;
-    const float assetX = heartX + index * (assets::kHeartLayoutSide + heartSpacing) -
-                         (assets::kHeartAssetSide - assets::kHeartLayoutSide) / 2.0f;
-    const int assetY = top + capHeight - assets::kHeartAssetSide;
-    draw::blit_rgb565a(canvas, static_cast<int>(assetX + 0.5f), assetY, assets::heart(state),
-                       assets::kHeartAssetSide, assets::kHeartAssetSide);
+  const int bx = static_cast<int>(batteryX + 0.5f);
+  const int by = top + capHeight / 5;
+  // 1px outline with a single-pixel diagonal step at each corner.
+  draw::fill_rect(canvas, bx + 2, by, bodyW - 4, 1, draw::kWhite);
+  draw::fill_rect(canvas, bx + 2, by + bodyH - 1, bodyW - 4, 1, draw::kWhite);
+  draw::fill_rect(canvas, bx, by + 2, 1, bodyH - 4, draw::kWhite);
+  draw::fill_rect(canvas, bx + bodyW - 1, by + 2, 1, bodyH - 4, draw::kWhite);
+  draw::fill_rect(canvas, bx + 1, by + 1, 1, 1, draw::kWhite);
+  draw::fill_rect(canvas, bx + bodyW - 2, by + 1, 1, 1, draw::kWhite);
+  draw::fill_rect(canvas, bx + 1, by + bodyH - 2, 1, 1, draw::kWhite);
+  draw::fill_rect(canvas, bx + bodyW - 2, by + bodyH - 2, 1, 1, draw::kWhite);
+  int level = hud.half_steps;
+  if (level < 0) level = 0;
+  if (level > assets::kHalfSteps) level = assets::kHalfSteps;
+  if (level) {
+    const int innerW = bodyW - 2 * (1 + pad);
+    draw::fill_rect(canvas, bx + 1 + pad, by + 1 + pad, innerW * level / assets::kHalfSteps,
+                    bodyH - 2 * (1 + pad), draw::kWhite);
   }
+  draw::fill_rect(canvas, bx + bodyW + nubGap, by + (bodyH - nubH) / 2, nubW, nubH, draw::kWhite);
 }
 
 void render_recording_overlay(const draw::Canvas& canvas, uint8_t vu, uint32_t elapsed_ms, uint32_t capacity_ms) {

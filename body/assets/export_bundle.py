@@ -167,7 +167,6 @@ def home_base(source: Path, size: tuple[int, int]) -> Image.Image:
 def render_home_preview(
     base: Image.Image,
     font: ImageFont.FreeTypeFont,
-    heart_sources: dict[str, Path],
     half_steps: int = 10,
 ) -> Image.Image:
     width, height = base.size
@@ -176,26 +175,34 @@ def render_home_preview(
     cap_height = max(1, round(height * 0.045))
     clock = "12:34"
     clock_width = math.ceil(draw.textlength(clock, font=font))
-    heart_layout_side = cap_height
-    heart_asset_side = max(1, round(cap_height * 96 / 78))
-    heart_spacing = heart_layout_side * 0.2
     group_spacing = cap_height * 0.7
-    hearts_width = 5 * heart_layout_side + 4 * heart_spacing
-    group_width = clock_width + group_spacing + hearts_width
+    # Battery geometry mirrors render_hud in the firmware: a ~2:1 body one cap
+    # height tall, a 1px wall, 2px padding, the charge as a fill, then the nub.
+    body_w, body_h = cap_height * 2, cap_height
+    pad, nub_gap, nub_w = 2, 1, 2
+    nub_h = cap_height * 2 // 5
+    battery_width = body_w + nub_gap + nub_w
+    group_width = clock_width + group_spacing + battery_width
     top = height * 0.065
     x = (width - group_width) / 2
-    heart_x = x + clock_width + group_spacing
+    bx, by = round(x + clock_width + group_spacing), round(top + cap_height / 5)
     draw.text((x, top), clock, font=font, fill="white", anchor="lt")
-    for index in range(5):
-        filled = half_steps - index * 2
-        state = "full" if filled >= 2 else "half" if filled == 1 else "empty"
-        with Image.open(heart_sources[state]) as opened:
-            heart = opened.convert("RGBA").resize(
-                (heart_asset_side, heart_asset_side), Image.Resampling.LANCZOS
-            )
-        asset_x = round(heart_x + index * (heart_layout_side + heart_spacing) - (heart_asset_side - heart_layout_side) / 2)
-        asset_y = round(top + cap_height - heart_asset_side)
-        preview.alpha_composite(heart, (asset_x, asset_y))
+    draw.rounded_rectangle(
+        [bx, by, bx + body_w - 1, by + body_h - 1], radius=2, outline="white", width=1
+    )
+    level = min(max(half_steps, 0), 10) / 10
+    if level:
+        inner_w = body_w - 2 * (1 + pad)
+        draw.rectangle(
+            [bx + 1 + pad, by + 1 + pad,
+             bx + pad + round(inner_w * level), by + body_h - 2 - pad],
+            fill="white",
+        )
+    draw.rounded_rectangle(
+        [bx + body_w + nub_gap, by + (body_h - nub_h) / 2,
+         bx + body_w + nub_gap + nub_w - 1, by + (body_h + nub_h) / 2 - 1],
+        radius=1, fill="white",
+    )
     return preview
 
 
@@ -293,23 +300,9 @@ def export(args: argparse.Namespace) -> dict[str, object]:
         atlas, clock_metadata, clock_font = export_clock_atlas(font_path, args.width)
         write_bytes(temporary, str(clock_metadata["path"]), atlas)
 
-        # Heart size tracks the panel, not the clock face, so the time can be
-        # tuned without dragging the battery glyphs with it.
+        # The status cap height tracks the panel, not the clock face, so the
+        # time can be tuned without dragging the battery icon with it.
         cap_height = max(1, round(args.height * 0.045))
-        heart_asset_side = max(1, round(cap_height * 96 / 78))
-        heart_sources = {
-            state: glass / f"sprites/hearts/{state}.png"
-            for state in ("empty", "half", "full")
-        }
-        heart_paths: dict[str, str] = {}
-        for state, source in heart_sources.items():
-            with Image.open(source) as opened:
-                heart = opened.convert("RGBA").resize(
-                    (heart_asset_side, heart_asset_side), Image.Resampling.LANCZOS
-                )
-            relative = f"home/status/heart-{state}.png"
-            heart.save(temporary / relative, format="PNG", optimize=True)
-            heart_paths[state] = relative
 
         chime_source = glass / "sounds/boot.wav"
         with wave.open(str(chime_source), "rb") as audio:
@@ -365,10 +358,7 @@ def export(args: argparse.Namespace) -> dict[str, object]:
                 "clock": clock_metadata,
                 "battery": {
                     "half_steps": 10,
-                    "hearts": 5,
-                    "layout_side": cap_height,
-                    "asset_side": heart_asset_side,
-                    "paths": heart_paths,
+                    "cap_height": cap_height,
                 },
             },
             "files": files,
@@ -378,10 +368,6 @@ def export(args: argparse.Namespace) -> dict[str, object]:
                 "home": source_record(
                     repository, sorted((glass / "sprites/idle").glob("*.png"))[0]
                 ),
-                "hearts": {
-                    state: source_record(repository, source)
-                    for state, source in heart_sources.items()
-                },
                 "clock_font": source_record(repository, font_path),
                 "chime": source_record(repository, chime_source),
             },
@@ -393,7 +379,7 @@ def export(args: argparse.Namespace) -> dict[str, object]:
             shutil.rmtree(output)
         os.replace(temporary, output)
         if args.preview:
-            preview_home = render_home_preview(home, clock_font, heart_sources)
+            preview_home = render_home_preview(home, clock_font)
             write_preview(args.preview.expanduser().resolve(), boot_images, preview_home)
         return manifest
     except BaseException:

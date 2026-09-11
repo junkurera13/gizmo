@@ -11,8 +11,6 @@ namespace gizmo::assets {
 
 using namespace generated;
 
-enum class Heart : uint8_t { kEmpty, kHalf, kFull };
-
 // Decode the boot frame for `slot` (0..kBootSlots-1) into the canvas.
 bool decode_boot_slot(int slot, const draw::Canvas& canvas);
 // Decode the home base (character on black) into the canvas.
@@ -24,8 +22,6 @@ bool decode_listening_slot(int slot, const draw::Canvas& canvas);
 // Decode the thinking animation frame for `slot` (0..kThinkingSlots-1).
 bool decode_thinking_slot(int slot, const draw::Canvas& canvas);
 
-// RGB565+A8 heart sprite, kHeartAssetSide square.
-const uint8_t* heart(Heart state);
 // L8 clock atlas, kClockAtlasWidth x kClockAtlasHeight.
 const uint8_t* clock_atlas();
 // Boot chime as 16 kHz mono PCM16.

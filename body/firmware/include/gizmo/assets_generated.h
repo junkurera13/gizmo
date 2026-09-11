@@ -34,10 +34,8 @@ constexpr uint32_t kChimeSampleRate = 16000;
 constexpr size_t kChimeSamples = 10720;
 
 constexpr float kStatusTopFraction = 0.065f;
-constexpr int kHearts = 5;
 constexpr int kHalfSteps = 10;
-constexpr int kHeartLayoutSide = 11;
-constexpr int kHeartAssetSide = 14;
+constexpr int kStatusCapHeight = 11;
 constexpr int kClockCellWidth = 10;
 constexpr int kClockCellHeight = 18;
 constexpr int kClockBaseline = 14;
@@ -129,12 +127,6 @@ extern "C" const uint8_t _binary_assets_thinking_13_jpg_start[] asm("_binary_ass
 extern "C" const uint8_t _binary_assets_thinking_13_jpg_end[] asm("_binary_assets_thinking_13_jpg_end");
 extern "C" const uint8_t _binary_assets_thinking_14_jpg_start[] asm("_binary_assets_thinking_14_jpg_start");
 extern "C" const uint8_t _binary_assets_thinking_14_jpg_end[] asm("_binary_assets_thinking_14_jpg_end");
-extern "C" const uint8_t _binary_assets_heart_empty_rgb565a_start[] asm("_binary_assets_heart_empty_rgb565a_start");
-extern "C" const uint8_t _binary_assets_heart_empty_rgb565a_end[] asm("_binary_assets_heart_empty_rgb565a_end");
-extern "C" const uint8_t _binary_assets_heart_half_rgb565a_start[] asm("_binary_assets_heart_half_rgb565a_start");
-extern "C" const uint8_t _binary_assets_heart_half_rgb565a_end[] asm("_binary_assets_heart_half_rgb565a_end");
-extern "C" const uint8_t _binary_assets_heart_full_rgb565a_start[] asm("_binary_assets_heart_full_rgb565a_start");
-extern "C" const uint8_t _binary_assets_heart_full_rgb565a_end[] asm("_binary_assets_heart_full_rgb565a_end");
 extern "C" const uint8_t _binary_assets_clock_atlas_a8_start[] asm("_binary_assets_clock_atlas_a8_start");
 extern "C" const uint8_t _binary_assets_clock_atlas_a8_end[] asm("_binary_assets_clock_atlas_a8_end");
 extern "C" const uint8_t _binary_assets_boot_chime_pcm16_start[] asm("_binary_assets_boot_chime_pcm16_start");
