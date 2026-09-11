@@ -1,4 +1,4 @@
-import {captionChunks, captionAt} from './oddity-timing.mjs';
+import {captionChunks, captionAt} from './oddity-timing.mjs?v=gate41';
 import {mountDevice} from './oddity-device.mjs';
 import {createOrbit} from './oddity-orbit.mjs';
 import {createInteraction} from './oddity-interaction.mjs';

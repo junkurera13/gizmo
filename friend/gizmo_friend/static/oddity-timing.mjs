@@ -17,5 +17,16 @@ export function captionAt(chunks, time, duration) {
   const total = chunks.reduce((sum, chunk) => sum + chunk.length, 0);
   const position = Math.max(0, Math.min(1, Number.isFinite(duration) && duration > 0 ? time / duration : 0)) * total;
   let end = 0;
-  return chunks.find((chunk) => { end += chunk.length; return position < end; }) || chunks.at(-1);
+  for (const chunk of chunks) {
+    const start = end;
+    end += chunk.length;
+    if (position < end) {
+      const words = chunk.split(' ');
+      const fraction = chunk.length
+        ? Math.min(1, Math.max(0, (position - start) / chunk.length))
+        : 1;
+      return words.slice(0, Math.max(1, Math.ceil(fraction * words.length))).join(' ');
+    }
+  }
+  return chunks.at(-1);
 }
