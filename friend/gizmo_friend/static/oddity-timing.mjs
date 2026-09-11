@@ -12,10 +12,12 @@ export function captionChunks(text, limit = 95) {
   if (line) chunks.push(line);
   return chunks;
 }
+const CAPTION_LAG = 0.3;  // captions trail the voice slightly; early reads worse
 export function captionAt(chunks, time, duration) {
   if (!chunks.length) return '';
   const total = chunks.reduce((sum, chunk) => sum + chunk.length, 0);
-  const position = Math.max(0, Math.min(1, Number.isFinite(duration) && duration > 0 ? time / duration : 0)) * total;
+  const elapsed = Math.max(0, time - CAPTION_LAG);
+  const position = Math.max(0, Math.min(1, Number.isFinite(duration) && duration > 0 ? elapsed / duration : 0)) * total;
   let end = 0;
   for (const chunk of chunks) {
     const start = end;

@@ -1,4 +1,4 @@
-import {captionChunks, captionAt} from './oddity-timing.mjs?v=gate41';
+import {captionChunks, captionAt} from './oddity-timing.mjs?v=gate42';
 import {mountDevice} from './oddity-device.mjs';
 import {createOrbit} from './oddity-orbit.mjs';
 import {createInteraction} from './oddity-interaction.mjs';
@@ -186,7 +186,7 @@ async function selectMoment(index) {
 }
 async function playDemoRecording(src, signal, text = '') {
   demoCaptions = captionChunks(text);
-  if (text) setCaption(demoCaptions[0] || text);
+  if (text) setCaption(captionAt(demoCaptions, 0, 1));
   demoAudio.src = src; demoAudio.muted = muted; demoAudio.load();
   const ended = mediaEnded(demoAudio, signal); ended.catch(() => {});
   await startMedia(demoAudio, signal);
@@ -626,7 +626,7 @@ async function playQueue() {
       }
       await waitUntilUnpaused(signal);
       captions = captionChunks(beat.narration);
-      setCaption(beat.audio ? captions[0] || '' : beat.narration);
+      setCaption(beat.audio ? captionAt(captions, 0, 1) : beat.narration);
       if (beat.audio) {
         voice.src = beat.audio; voice.muted = muted; voice.load();
         const ended = mediaEnded(voice, signal); ended.catch(() => {});
