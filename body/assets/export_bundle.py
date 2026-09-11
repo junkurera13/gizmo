@@ -159,7 +159,7 @@ def home_base(source: Path, size: tuple[int, int]) -> Image.Image:
     character.thumbnail(box, Image.Resampling.LANCZOS)
     canvas = Image.new("RGBA", size, (0, 0, 0, 255))
     x = (width - character.width) // 2 - round(width * 0.04)
-    y = round((height - character.height) / 2 + height * 0.05)
+    y = round((height - character.height) / 2 + height * 0.015)
     canvas.alpha_composite(character, (x, y))
     return canvas
 
