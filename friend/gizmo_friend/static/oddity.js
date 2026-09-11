@@ -761,7 +761,14 @@ function cancelRecording() {
   if (wasHeld) status('Microphone stopped. Hold to try again.', 'idle');
 }
 async function startRecording() {
-  if (held || !awake || (glass && !glass.canTalk()) || socket?.readyState !== WebSocket.OPEN) return;
+  if (held || !awake || (glass && !glass.canTalk())) return;
+  if (socket?.readyState !== WebSocket.OPEN) {
+    setTalkPressed(false);
+    if ($('preview-gate') && !$('preview-gate').hidden) return;
+    notice('Connect first — the brain needs a session before it can hear you.');
+    connect();
+    return;
+  }
   held = true; const attempt = ++microphoneAttempt;
   $('device').dataset.ptt = 'true';
   interrupt(); unlockAudio(); status('Opening the microphone…', 'listening');
