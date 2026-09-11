@@ -87,7 +87,7 @@ class FakeCinema:
 
 class OddityTests(unittest.IsolatedAsyncioTestCase):
     async def asyncSetUp(self):
-        self.tmp = tempfile.TemporaryDirectory(); self.root = Path(self.tmp.name)
+        self.tmp = tempfile.TemporaryDirectory(ignore_cleanup_errors=True); self.root = Path(self.tmp.name)
         self.events = []
         self.director = FakeDirector([beat(), beat("video")])
         self.cinema = FakeCinema()
@@ -337,7 +337,7 @@ class OddityRouteTests(unittest.TestCase):
 
     def test_offer_requires_same_origin_live_session(self):
         with (
-            tempfile.TemporaryDirectory() as directory,
+            tempfile.TemporaryDirectory(ignore_cleanup_errors=True) as directory,
             patch.dict("os.environ", {"GIZMO_DEVICE_TOKEN": "", "RAILWAY_ENVIRONMENT_ID": ""}),
             TestClient(app_factory(Path(directory))) as client,
         ):
@@ -360,7 +360,7 @@ class OddityCinemaTests(unittest.IsolatedAsyncioTestCase):
         from gizmo_friend.cinema.plan import FilmBeat, FilmPlan, PreparedFilm
         from test_cinema import FakeStream
 
-        root = tempfile.TemporaryDirectory()
+        root = tempfile.TemporaryDirectory(ignore_cleanup_errors=True)
         self.addCleanup(root.cleanup)
         plan = FilmPlan(
             title="Rocket",

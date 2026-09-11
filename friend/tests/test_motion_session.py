@@ -61,7 +61,7 @@ class ControlledImages(ImageProvider):
 
 class ShowSessionFixture(unittest.IsolatedAsyncioTestCase):
     async def asyncSetUp(self):
-        self.temporary = tempfile.TemporaryDirectory()
+        self.temporary = tempfile.TemporaryDirectory(ignore_cleanup_errors=True)
         self.addCleanup(self.temporary.cleanup)
         self.root = Path(self.temporary.name)
         self.images = ControlledImages()

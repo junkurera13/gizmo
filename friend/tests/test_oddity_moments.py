@@ -36,7 +36,7 @@ class MomentCatalogTests(unittest.TestCase):
 
 class MomentRuntimeTests(unittest.IsolatedAsyncioTestCase):
     async def asyncSetUp(self):
-        self.tmp = tempfile.TemporaryDirectory()
+        self.tmp = tempfile.TemporaryDirectory(ignore_cleanup_errors=True)
         self.root = Path(self.tmp.name)
         self.director = FakeDirector([beat(), beat("video")])
 

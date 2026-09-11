@@ -53,7 +53,7 @@ class FakeStream:
 
 class RuntimeTests(unittest.IsolatedAsyncioTestCase):
     async def asyncSetUp(self):
-        self.root = tempfile.TemporaryDirectory()
+        self.root = tempfile.TemporaryDirectory(ignore_cleanup_errors=True)
         self.addCleanup(self.root.cleanup)
         self.plan = FilmPlan(
             title="Rocket",
@@ -318,7 +318,7 @@ class RuntimeTests(unittest.IsolatedAsyncioTestCase):
 class RouteTests(unittest.TestCase):
     def test_cloud_preview_cannot_start_without_explicit_enablement(self):
         with (
-            tempfile.TemporaryDirectory() as root,
+            tempfile.TemporaryDirectory(ignore_cleanup_errors=True) as root,
             patch.dict(
                 "os.environ",
                 {
@@ -344,7 +344,7 @@ class RouteTests(unittest.TestCase):
 
     def test_cross_origin_provisioning_is_rejected(self):
         with (
-            tempfile.TemporaryDirectory() as root,
+            tempfile.TemporaryDirectory(ignore_cleanup_errors=True) as root,
             TestClient(app_factory(Path(root))) as client,
         ):
             self.assertEqual(
@@ -454,7 +454,7 @@ class FriendCinemaTests(unittest.IsolatedAsyncioTestCase):
         from gizmo_friend.cinema.capability import FriendCinema
         from gizmo_friend.cinema.routes import FilmBudget
 
-        root = tempfile.TemporaryDirectory()
+        root = tempfile.TemporaryDirectory(ignore_cleanup_errors=True)
         self.addCleanup(root.cleanup)
         path = Path(root.name)
         session = FakeFilmSession()
@@ -481,7 +481,7 @@ class FriendCinemaTests(unittest.IsolatedAsyncioTestCase):
 class FriendSocketTests(unittest.TestCase):
     def test_director_device_env_does_not_hijack_ws(self):
         with (
-            tempfile.TemporaryDirectory() as root,
+            tempfile.TemporaryDirectory(ignore_cleanup_errors=True) as root,
             patch.dict(
                 "os.environ",
                 {
@@ -507,7 +507,7 @@ class FriendSocketTests(unittest.TestCase):
 
     def test_cinema_page_and_static_still_load(self):
         with (
-            tempfile.TemporaryDirectory() as root,
+            tempfile.TemporaryDirectory(ignore_cleanup_errors=True) as root,
             TestClient(app_factory(Path(root))) as client,
         ):
             self.assertEqual(client.get("/cinema").status_code, 200)

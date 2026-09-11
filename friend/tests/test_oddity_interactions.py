@@ -13,7 +13,7 @@ from test_oddity import FakeDirector, FakeImages, FakeCinema
 
 class InteractionTests(unittest.IsolatedAsyncioTestCase):
     async def asyncSetUp(self):
-        self.temp = tempfile.TemporaryDirectory()
+        self.temp = tempfile.TemporaryDirectory(ignore_cleanup_errors=True)
         self.events = []
         async def send(event): self.events.append(event)
         self.director = FakeDirector([Beat(narration='Try a different speed.', visual='orbit', purpose='Explore falling',

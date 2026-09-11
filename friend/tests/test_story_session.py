@@ -71,7 +71,9 @@ class InstantNarration(NarrationProvider):
 
 class StorySessionFixture(unittest.IsolatedAsyncioTestCase):
     async def asyncSetUp(self):
-        self.temporary = tempfile.TemporaryDirectory()
+        # Budget writes run via to_thread; a cancelled task's thread can finish
+        # its write after close() returns, racing this cleanup's rmtree.
+        self.temporary = tempfile.TemporaryDirectory(ignore_cleanup_errors=True)
         self.addCleanup(self.temporary.cleanup)
         self.root = Path(self.temporary.name)
         self.planner = ScriptedPlanner(board("one", "two"))
