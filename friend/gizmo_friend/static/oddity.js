@@ -96,18 +96,26 @@ const IDLE_FRAMES = ['/static/oddity-character.png?v=char3', '/static/oddity-cha
 const LISTEN_FRAMES = Array.from({ length: 7 }, (_, i) => `/static/oddity-listening-0${i + 1}.png?v=listen1`);
 const LISTEN_SLOTS = [0, 0, 1, 2, 3, 4, 5, 6, 6, 5, 4, 3, 2, 1];
 let listenSlot = 0;
+let listenFrame = -1;  // drawn listening frame; settles back to 0 on release
 function faceImgs() {
   return document.querySelectorAll('img[src*="oddity-character"], img[src*="oddity-listening"]');
 }
 function faceTick(step = 0) {
   const imgs = faceImgs();
   if (talkHeld || held || recorder?.state === 'recording') {
-    const src = LISTEN_FRAMES[LISTEN_SLOTS[listenSlot]];
     listenSlot = (listenSlot + 1) % LISTEN_SLOTS.length;
-    imgs.forEach((img) => (img.src = src));
+    listenFrame = LISTEN_SLOTS[listenSlot];
+    imgs.forEach((img) => (img.src = LISTEN_FRAMES[listenFrame]));
     setTimeout(() => faceTick(0), 130);
     return;
   }
+  if (listenFrame > 0) {
+    listenFrame -= 1;
+    imgs.forEach((img) => (img.src = LISTEN_FRAMES[listenFrame]));
+    setTimeout(() => faceTick(0), 130);
+    return;
+  }
+  listenFrame = -1;
   listenSlot = 0;
   if (step === 0) {
     imgs.forEach((img) => (img.src = IDLE_FRAMES[0]));

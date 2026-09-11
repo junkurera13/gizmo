@@ -63,6 +63,8 @@ uint16_t* framebuffer = nullptr;
 uint16_t* home_base = nullptr;  // decoded once, copied under every home screen
 int home_slot_drawn = -1;
 int home_set_drawn = -1;  // 0 = idle flipbook, 1 = listening lean
+int settle_left = 0;      // lean slots still to unwind after the mic lets go
+uint32_t settle_next = 0;
 gizmo::draw::Canvas canvas;
 gizmo::SettingsSnapshot settings;
 
@@ -121,8 +123,11 @@ int current_listening_slot() {
 }
 
 bool ensure_home_base() {
-  const int set = state == State::kRecording ? 1 : 0;
-  const int slot = set ? current_listening_slot() : current_idle_slot();
+  int set = state == State::kRecording ? 1 : 0;
+  int slot;
+  if (set) { slot = current_listening_slot(); settle_left = 0; }
+  else if (settle_left > 0) { set = 1; slot = settle_left; }
+  else slot = current_idle_slot();
   if (home_base != nullptr && home_set_drawn == set && home_slot_drawn == slot) return true;
   if (!ensure_framebuffer()) return false;
   const size_t bytes = static_cast<size_t>(canvas.width) * canvas.height * sizeof(uint16_t);
@@ -896,9 +901,22 @@ void loop() {
       } else if (now - last_redraw >= kIdleRedrawMs && hud_changed(current_hud(), last_hud)) {
         dirty = true;
       }
-      {
-        const int slot = current_idle_slot();
-        if (0 != home_set_drawn || slot != home_slot_drawn) dirty = true;
+      if (home_set_drawn == 1) {
+        // Settle: walk the lean back down one slot per period before the
+        // idle blink takes the face back.
+        if (settle_left == 0 && home_slot_drawn > 0) {
+          settle_left = home_slot_drawn;
+          settle_next = now + gizmo::assets::kListeningFramePeriodMs;
+        }
+        if (settle_left > 0) {
+          if (now >= settle_next) {
+            --settle_left;
+            settle_next += gizmo::assets::kListeningFramePeriodMs;
+            dirty = true;
+          }
+        } else dirty = true;
+      } else if (current_idle_slot() != home_slot_drawn) {
+        dirty = true;
       }
       break;
     case State::kCamera:
