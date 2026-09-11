@@ -133,7 +133,7 @@ _register(
         seed="",
         contract=(
             "This is a living encyclopedia, not an article. Set the scene, reconstruct "
-            "what happened in three short beats totaling about 30 seconds, and change the "
+            "what happened in three short beats totaling 35 to 40 seconds, and change the "
             "picture as the story moves. Every visual must be gentle, colorful, kid-friendly, "
             "and free of injury, bodies, remains, or frightening close-ups. If they interrupt, "
             "answer that curiosity first, then continue. Keep Vesuvius serious but not gory."
