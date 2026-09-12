@@ -800,7 +800,7 @@ void setup() {
   const auto sound = audio.begin();
   audio_ok = sound == ESP_OK;
   apply_volume();
-  Serial.printf("audio begin: %s mic=I2S0 PDM clk=%d data=%d speaker=D9/GPIO%d LEDC-PWM 10bit/62.5kHz device=%uHz memo=%us wire=%uHz\n",
+  Serial.printf("audio begin: %s mic=I2S0 PDM clk=%d data=%d speaker=D9/GPIO%d LEDC-PWM 9bit/62.5kHz device=%uHz memo=%us wire=%uHz\n",
                 esp_err_to_name(sound), gizmo::board::microphone_clock, gizmo::board::microphone_data,
                 gizmo::board::amp_out,
                 gizmo::Audio::kSampleRate, gizmo::Audio::kCapacitySeconds, gizmo::FriendLink::kWireSampleRate);

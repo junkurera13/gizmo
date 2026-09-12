@@ -54,7 +54,7 @@ Remote UP/DOWN/SEL switches each close their signal to J3's 3V3 common. **Do not
 
 J5 is a logic/control header, not a motor output. The off-board assembly contains the 1k base resistor, C1815, flyback diode, and motor. **GPIO3 is a strapping pin**: do not add an external pull-up or drive it high during reset. Firmware drives it low at boot. No GPIO was remapped.
 
-The speaker is the complete Adafruit STEMMA 3885 module. There are no SPK+/SPK− pads, MAX98357A, I2S clocks, or audio signals on D0/D3/D10. Current firmware uses 10-bit/62.5 kHz PWM on D9. Route GPIO8 through an audio low-pass filter before the STEMMA SIGNAL input; a direct PWM jumper is prototype-only. GPIO21 remains reserved for the unused Sense microSD CS; GPIO41/42 stay on the PDM microphone.
+The speaker is the complete Adafruit STEMMA 3885 module. There are no SPK+/SPK− pads, MAX98357A, I2S clocks, or audio signals on D0/D3/D10. Current firmware restores the physically proven 9-bit/62.5 kHz PWM profile on D9; keep the assembled direct GPIO8-to-SIGNAL jumper unchanged for this software-only test. GPIO21 remains reserved for the unused Sense microSD CS; GPIO41/42 stay on the PDM microphone.
 
 ## Assembly and verification
 

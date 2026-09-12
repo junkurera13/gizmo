@@ -89,7 +89,7 @@ they show full, matching the simulator's default level.
 | `BOOT` | power-on; Glass flipbook, chime at 2875 ms, wordmark held to 5050 ms; buttons ignored | automatically to `IDLE` |
 | `IDLE` | home: character, clock (when set), battery | PTT down → `RECORDING` (and Friend `ptt` if `/ws` is up); UP → `SETTINGS`; Down or serial `d` → `CAMERA`; double-Select (≤320 ms) → `CAMERA`; single Select → local memo `PLAYBACK` if Friend is down, or Friend `select` if `/ws` is up |
 | `RECORDING` | PTT held; 16 kHz PDM mic → PSRAM memo (20 s cap) and, when Friend is online, resampled 24 kHz chunks on `/ws`; REC band with VU over the home character (skipped if PTT started from Camera) | PTT up or buffer full → `IDLE` (Camera stays Camera) |
-| `PLAYBACK` | memo → 10-bit PWM on D9 at 16 kHz and the Volume setting; PLAY band with progress over the character | end of memo or SELECT → `IDLE`; PTT → `RECORDING` |
+| `PLAYBACK` | memo → 9-bit / 62.5 kHz PWM on D9 at 16 kHz and the Volume setting; PLAY band with progress over the character | end of memo or SELECT → `IDLE`; PTT → `RECORDING` |
 | `SETTINGS` | two rows, Brightness / Volume. Local menu; not yet the Friend `settings` overlay. Brightness scales RGB565 on blit (LED is tied to 3V3). Volume scales PCM and plays a short local tick on each step | UP/DOWN move rows, SELECT toggles adjust (UP/DOWN change the level, auto-repeat on hold), DOWN past Volume → `IDLE`. Values persist in NVS |
 | `CAMERA` | Down / serial `d` / double-Select / serial `c`. 78% viewfinder + 22% character strip. Local preview only: no Friend `navigate` or `frame` | Up, single Select, double-Select, serial `x` / `h` → `IDLE` |
 

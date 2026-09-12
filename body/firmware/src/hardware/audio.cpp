@@ -22,9 +22,9 @@ constexpr uint32_t kVuDecayMs = 60;
 
 #ifdef ARDUINO
 constexpr size_t kAmpRingSamples = Audio::kSampleRate / 2;
-// Exact APB divider: 80 MHz / (1024 * 1.25) = 62.5 kHz. The 10-bit duty
-// reduces quantization while preserving two carrier periods per sample update.
-// The camera uses a separate LEDC timer.
+// Exact XTAL divider: 40 MHz / (512 * 1.25) = 62.5 kHz. This restores the
+// physically proven 9-bit profile while preserving two carrier periods per
+// sample update. The camera uses a separate LEDC timer.
 constexpr uint8_t kPwmChannel = 4;  // LEDC_TIMER_2; camera XCLK keeps TIMER_0
 constexpr uint8_t kPwmBits = kPwmAudioBits;
 constexpr uint32_t kPwmFreq = 62500;

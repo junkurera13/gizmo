@@ -2,10 +2,10 @@
 
 For generated stills and motion, also run [SHOW_TESTING.md](SHOW_TESTING.md).
 
-Branch: `cursor/firmware-overnight-fixes-6357` (PR #2). Keep it unmerged until
-this board pass. The pin map, 16 kHz device audio rate, and audio-only PTT are
-unchanged. Assets and public TLS roots are committed; no asset export is
-needed to flash. Device tokens are not committed.
+Test branch: `main`. Before flashing, compare `git rev-parse --short HEAD` with
+the checkpoint hash supplied by the sender. The pin map, 16 kHz device audio
+rate, and audio-only PTT are unchanged. No asset export is needed to flash.
+Device tokens are not committed.
 
 ## Pull, build, flash
 
@@ -13,7 +13,7 @@ Preserve any local circuit/firmware edits before switching branches.
 
 ```sh
 git fetch origin
-git switch cursor/firmware-overnight-fixes-6357
+git switch main
 git pull --ff-only
 python3 -m venv body/firmware/.venv
 body/firmware/.venv/bin/python -m pip install -r body/firmware/requirements.txt
@@ -70,11 +70,14 @@ f
 - Interrupt a long answer with PTT. Old speech should stop. Ask another question.
 - Hold PTT for over 20 seconds in both home and Camera: the memo limit must close
   the turn; releasing afterward must not leave the brain's mic open.
+- On the first spoken response, serial must print
+  `speaker: PWM 62500 Hz, 9-bit, updates 31250 Hz`. Any other carrier profile
+  means the software-only speaker regression fix is not the image under test.
 - When idle, the speaker should become silent with no persistent clock whine.
   Hold PTT with Volume at 0: GPIO8 must remain LOW. If the speaker still squeaks,
-  scope the 16 kHz PDM clock, 3V3 rail, grounds, and the filtered STEMMA SIGNAL
-  node; that noise is coupling outside the PCM volume path. PTT never sends a
-  camera frame to Friend; Camera is local preview only.
+  preserve the current wiring and return the continuous video plus serial log;
+  that is the checkpoint before considering any circuit change. PTT never sends
+  a camera frame to Friend; Camera is local preview only.
 
 ## 4. Failure and recovery
 
