@@ -14,6 +14,7 @@ void ShowPlayer::begin() {
   held_jobs_ = xQueueCreate(1, sizeof(Job));
   results_ = xQueueCreate(4, sizeof(Media));
   media_mux_ = xSemaphoreCreateMutex();
+  jpeg_mux_ = xSemaphoreCreateMutex();
   dec_scratch_ = static_cast<uint8_t*>(heap_caps_malloc(kDecScratch, MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT));
   for (int b = 0; b < kDecBufs; ++b) {
     dec_pixels_[b] =
@@ -21,7 +22,7 @@ void ShowPlayer::begin() {
     dec_index_[b].store(-1);
     dec_gen_[b].store(0);
   }
-  bool buffers_ok = media_mux_ != nullptr && dec_scratch_ != nullptr;
+  bool buffers_ok = media_mux_ != nullptr && jpeg_mux_ != nullptr && dec_scratch_ != nullptr;
   for (int b = 0; b < kDecBufs; ++b) buffers_ok = buffers_ok && dec_pixels_[b] != nullptr;
   if (!jobs_ || !held_jobs_ || !results_ || xTaskCreate(task, "show-download", 16384, this, 1, nullptr) != pdPASS) {
     if (jobs_) vQueueDelete(jobs_);
@@ -33,7 +34,7 @@ void ShowPlayer::begin() {
   // Decode-ahead floats unpinned so it scavenges whichever core is idle —
   // the loop's SPI DMA waits on one side, network stalls on the other.
   if (!buffers_ok ||
-      xTaskCreate(decode_task, "show-decode", 8192, this, 1, nullptr) != pdPASS) {
+      xTaskCreate(decode_task, "show-decode", 24576, this, 1, nullptr) != pdPASS) {
     Serial.println("show: decode-ahead unavailable; sync decoding only");
   }
 }
@@ -49,6 +50,11 @@ void ShowPlayer::cancel(bool dismiss) {
   release(still_);
   release(clip_);
   if (media_mux_) xSemaphoreGive(media_mux_);
+  // esp_jpg_decode is chip-global and not reentrant. The generation bump makes
+  // a copied-but-not-started decode skip inside jpeg_mux_; this drain waits out
+  // one already holding it, so no ShowPlayer decode outlives cancel() into the
+  // camera's blit.
+  if (jpeg_mux_) { xSemaphoreTake(jpeg_mux_, portMAX_DELAY); xSemaphoreGive(jpeg_mux_); }
   drawn_ = -1;
   if (jobs_) xQueueReset(jobs_);
   drop_held();
@@ -198,9 +204,33 @@ void ShowPlayer::update() {
                   media.motion ? "motion" : "still", unsigned(media.count), unsigned(media.length), kShowFps);
   }
 }
+bool ShowPlayer::decode_jpeg(const uint8_t* bytes, size_t length, uint16_t* pixels) {
+  if (!bytes || length == 0 || !pixels) return false;
+  if (jpeg_mux_) xSemaphoreTake(jpeg_mux_, portMAX_DELAY);
+  const bool ok = jpg2rgb565(bytes, length, reinterpret_cast<uint8_t*>(pixels), JPG_SCALE_NONE);
+  if (jpeg_mux_) xSemaphoreGive(jpeg_mux_);
+  return ok;
+}
+bool ShowPlayer::decode_media_frame(const Media& media, size_t index, uint16_t* pixels) {
+  if (!pixels) return false;
+  // media then jpeg: the decode task copies under media_mux_ and only then
+  // takes jpeg_mux_, so this order cannot deadlock with decode_run().
+  if (media_mux_) xSemaphoreTake(media_mux_, portMAX_DELAY);
+  bool ok = false;
+  if (media.bytes && media.count > 0 && index < media.count) {
+    const ShowFrame frame = media.frames[index];
+    if (frame.length > 0 && frame.offset + frame.length <= media.length) {
+      ok = decode_jpeg(media.bytes + frame.offset, frame.length, pixels);
+    }
+  }
+  if (media_mux_) xSemaphoreGive(media_mux_);
+  return ok;
+}
 bool ShowPlayer::render(uint16_t* pixels, bool force) {
   if (!pixels || !available()) return false;
-  Media& media = clip_.bytes ? clip_ : still_;
+  const bool have_clip = clip_.bytes != nullptr && clip_.count > 0;
+  Media& media = have_clip ? clip_ : still_;
+  if (!media.bytes || media.count == 0) return false;
   const size_t index = media.motion ? (uint64_t(uint32_t(millis() - started_)) * kShowFps / 1000) % media.count : 0;
   if (!force && !changed_ && drawn_ == int(index)) return false;
   if (media.motion) {
@@ -214,23 +244,21 @@ bool ShowPlayer::render(uint16_t* pixels, bool force) {
       }
     }
   }
-  const ShowFrame& frame = media.frames[index];
-  if (!jpg2rgb565(media.bytes + frame.offset, frame.length, reinterpret_cast<uint8_t*>(pixels), JPG_SCALE_NONE)) {
-    Serial.println("show: JPEG decode failed; retaining still or returning home");
-    if (media.motion) {
-      if (media_mux_) xSemaphoreTake(media_mux_, portMAX_DELAY);
-      ++media_gen_;
-      release(clip_);
-      if (media_mux_) xSemaphoreGive(media_mux_);
-      changed_ = true;
-      return render(pixels, true);
-    }
-    cancel();
-    return false;
+  if (decode_media_frame(media, index, pixels)) {
+    drawn_ = int(index);
+    changed_ = false;
+    return true;
   }
-  drawn_ = int(index);
-  changed_ = false;
-  return true;
+  Serial.println("show: JPEG decode failed; retaining still or returning home");
+  if (media.motion) {
+    // A bad motion frame must not free the clip: the decode task may still
+    // be inside esp_jpg_decode, which is not reentrant. Keep the clip and
+    // draw the still for this tick.
+    changed_ = true;
+    return still_.bytes && still_.count > 0 && decode_media_frame(still_, 0, pixels);
+  }
+  cancel();
+  return false;
 }
 void ShowPlayer::diagnose() const {
   Serial.printf("show: viewing=%d still=%u clip=%u frames=%u held_cue=%lu held_still=%u held_clip=%u fps=%d free_psram=%u\n",
@@ -387,7 +415,7 @@ void ShowPlayer::decode_run() {
     bool have = false;
     if (media_mux_ != nullptr && xSemaphoreTake(media_mux_, portMAX_DELAY) == pdTRUE) {
       Media& media = clip_;
-      if (media.motion && media.bytes != nullptr && dec_scratch_ != nullptr) {
+      if (media.motion && media.bytes != nullptr && media.count > 0 && dec_scratch_ != nullptr) {
         index = (uint64_t(uint32_t(millis() - started_)) * kShowFps / 1000) % media.count;
         count = media.count;
         gen = media_gen_.load();
@@ -429,8 +457,16 @@ void ShowPlayer::decode_run() {
       if (!wanted) w = b;  // behind the playhead: free to reuse
     }
     if (w < 0) w = dec_w_.fetch_add(1) % kDecBufs;
-    if (dec_pixels_[w] == nullptr ||
-        !jpg2rgb565(dec_scratch_, length, reinterpret_cast<uint8_t*>(dec_pixels_[w]), JPG_SCALE_NONE)) {
+    bool ok = false;
+    if (jpeg_mux_) xSemaphoreTake(jpeg_mux_, portMAX_DELAY);
+    // Re-check under the lock: cancel() bumps the generation and drains this
+    // lock, so a frame copied before the bump must skip the decoder here —
+    // taking the lock itself is not proof the media is still current.
+    if (media_gen_.load() == gen && dec_pixels_[w] != nullptr) {
+      ok = jpg2rgb565(dec_scratch_, length, reinterpret_cast<uint8_t*>(dec_pixels_[w]), JPG_SCALE_NONE);
+    }
+    if (jpeg_mux_) xSemaphoreGive(jpeg_mux_);
+    if (!ok) {
       vTaskDelay(pdMS_TO_TICKS(10));
       continue;
     }

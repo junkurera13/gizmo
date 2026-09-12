@@ -731,7 +731,7 @@ void camera_loop() {
       const bool blit_now = !audio.live_playing() || millis() - last_camera_blit >= 250;
       if (blit_now && frame->width == gizmo::assets::kPanelWidth && frame->height == gizmo::assets::kPanelHeight &&
           ensure_framebuffer() &&
-          jpg2rgb565(frame->buf, frame->len, reinterpret_cast<uint8_t*>(framebuffer), JPG_SCALE_NONE)) {
+          show_player.decode_jpeg(frame->buf, frame->len, framebuffer)) {
         camera_status = nullptr;
         paint_camera(true, nullptr);
         last_camera_blit = millis();

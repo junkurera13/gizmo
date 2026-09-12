@@ -56,8 +56,8 @@ int main(int argc,char** argv) {
   mock_now+=84;assert(player.render(pixels));assert(mock_decoded_frame!=first);
   mock_now+=84;assert(player.render(pixels));assert(mock_decoded_frame==first);
   mock_jpeg_failures=1;
-  assert(player.render(pixels,true)); // damaged motion falls back to the retained still
-  assert(player.available() && player.clip_.bytes==nullptr);
+  assert(player.render(pixels,true)); // a bad motion frame keeps the clip and draws the still
+  assert(player.available() && player.clip_.bytes!=nullptr);
   // Errors leave the already-visible still intact.
   for(int status:{302,401,404,503}) {response(true);mock_media_status=status;assert(!player.download(job,true,media));assert(player.available());}
   response(true);mock_media_length=int(kShowMaxBytes)+1;assert(!player.download(job,true,media));
