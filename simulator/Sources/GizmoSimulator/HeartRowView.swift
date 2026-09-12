@@ -1,11 +1,10 @@
 import AppKit
 import SwiftUI
 
-/// Home HUD: hearts and time on one line at the top, centered, sitting
+/// Home HUD: clock and battery on one line at the top, centered, sitting
 /// on the same baseline — the original status bar, not split to corners.
 /// She's in the space below.
 struct HomeClusterView: View {
-    let art: HeartArt?
     let level: Double
     let character: SpriteAnimation?
 
@@ -16,7 +15,6 @@ struct HomeClusterView: View {
             let timeSize = w * 0.05
             let timeFont = GlassFonts.clock(size: timeSize)
             let capHeight = timeFont.capHeight
-            let halfSteps = max(0, min(10, Int((level * 10).rounded())))
 
             ZStack {
                 if let character {
@@ -32,8 +30,8 @@ struct HomeClusterView: View {
                             .font(Font(timeFont))
                             .foregroundStyle(Color.white)
 
-                        HeartRow(art: art, halfSteps: halfSteps, side: capHeight)
-                            .alignmentGuide(.firstTextBaseline) { $0[.bottom] }
+                        BatteryView(level: level, side: capHeight)
+                            .alignmentGuide(.firstTextBaseline) { $0[.bottom] - capHeight / 5 }
                     }
                     .padding(.top, h * 0.045)
                     .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
@@ -49,45 +47,40 @@ struct HomeClusterView: View {
     }
 }
 
-private struct HeartRow: View {
-    let art: HeartArt?
-    let halfSteps: Int
+/// Same battery the firmware draws in screens.cpp: a ~2:1 white outline one
+/// cap height tall, 1px wall with diagonal corner steps, 2px padding, then
+/// the nub. Charge fills the interior proportionally.
+private struct BatteryView: View {
+    let level: Double
     let side: CGFloat
 
     var body: some View {
-        HStack(spacing: side * 0.2) {
-            ForEach(0..<5, id: \.self) { index in
-                heart(at: index)
+        Canvas { context, _ in
+            let wall = max(1, (side / 12).rounded())
+            let pad = wall * 2
+            let bodyW = side * 2
+            let bodyH = side
+            let nubW = wall * 2
+            let nubH = side * 2 / 5
+
+            func fill(_ x: CGFloat, _ y: CGFloat, _ w: CGFloat, _ h: CGFloat) {
+                context.fill(Path(CGRect(x: x, y: y, width: w, height: h)), with: .color(.white))
             }
+            fill(wall * 2, 0, bodyW - wall * 4, wall)
+            fill(wall * 2, bodyH - wall, bodyW - wall * 4, wall)
+            fill(0, wall * 2, wall, bodyH - wall * 4)
+            fill(bodyW - wall, wall * 2, wall, bodyH - wall * 4)
+            fill(wall, wall, wall, wall)
+            fill(bodyW - wall * 2, wall, wall, wall)
+            fill(wall, bodyH - wall * 2, wall, wall)
+            fill(bodyW - wall * 2, bodyH - wall * 2, wall, wall)
+            let charge = min(max(level, 0), 1)
+            if charge > 0 {
+                let inset = wall + pad
+                fill(inset, inset, (bodyW - inset * 2) * charge, bodyH - inset * 2)
+            }
+            fill(bodyW + wall, (bodyH - nubH) / 2, nubW, nubH)
         }
-    }
-
-    @ViewBuilder
-    private func heart(at index: Int) -> some View {
-        let filled = halfSteps - index * 2
-        if let image = image(at: index) {
-            Image(nsImage: image)
-                .resizable()
-                .interpolation(.none)
-                .aspectRatio(contentMode: .fit)
-                .frame(width: side, height: side)
-                // Heart PNGs are 96×96 with 9px padding; scale so the
-                // glyph itself is `side` (the time's cap height).
-                .scaleEffect(96.0 / 78.0)
-        } else {
-            Image(systemName: filled > 0 ? "heart.fill" : "heart")
-                .resizable()
-                .aspectRatio(contentMode: .fit)
-                .foregroundStyle(Color.red.opacity(filled == 1 ? 0.55 : 1))
-                .frame(width: side, height: side)
-        }
-    }
-
-    private func image(at index: Int) -> NSImage? {
-        guard let art else { return nil }
-        let filled = halfSteps - index * 2
-        if filled >= 2 { return art.full }
-        if filled == 1 { return art.half }
-        return art.empty
+        .frame(width: side * 2 + max(1, (side / 12).rounded()) * 3, height: side)
     }
 }

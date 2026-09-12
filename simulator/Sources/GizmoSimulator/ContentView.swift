@@ -135,9 +135,9 @@ private struct DeviceView: View {
                         .id("\(spriteName)-\(model.bootGeneration)")
                 } else if homeVisible {
                     HomeClusterView(
-                        art: spriteStore.hearts,
                         level: model.batteryLevel,
-                        character: spriteStore.animation(for: "idle")
+                        character: spriteStore.animation(for: model.glassState)
+                            ?? spriteStore.animation(for: "idle")
                     )
                 }
             }

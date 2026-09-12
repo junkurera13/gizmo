@@ -38,6 +38,10 @@ struct SpriteAnimationView: View {
 
     private func frameIndex(at elapsed: TimeInterval) -> Int {
         let count = animation.frames.count
+        if let slots = animation.slots, !slots.isEmpty, animation.period > 0 {
+            let slot = slots[Int(elapsed / animation.period) % slots.count]
+            return min(max(slot, 0), count - 1)
+        }
         guard count > 1, animation.fps > 0 else { return 0 }
         let raw = Int(elapsed * animation.fps)
         return animation.loop ? raw % count : min(raw, count - 1)
