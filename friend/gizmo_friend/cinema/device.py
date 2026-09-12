@@ -18,23 +18,26 @@ import io
 import logging
 import math
 import os
-import tempfile
 import wave
 from dataclasses import dataclass
-from pathlib import Path
 
-import imageio_ffmpeg
 from fastapi import WebSocketDisconnect
 from PIL import Image, ImageOps
 
 from gizmo_friend.brain.images import ConjuredStill
-from gizmo_friend.brain.shows import ConjuredClip, ShowStore, StoredShow
+from gizmo_friend.brain.shows import ShowStore, StoredShow
 from gizmo_friend.cinema.routes import FilmBudget
 from gizmo_friend.cinema.runtime import CinemaSession
 from gizmo_friend.settings import DeviceSettings
 
 FPS = 12
 SEGMENT_SECONDS = 5
+# Heavy enough to read on the ILI9341, light enough that a 50 ms ESP JPEG
+# decode stays inside the 83 ms 12 fps budget while the next cue downloads.
+DEVICE_JPEG_QUALITY = 65
+# aiortc drops the first Director NALs; those packets replay as one frozen
+# picture. Wait for a second distinct frame before the 5s clock starts.
+WARMUP_DISTINCT_FRAMES = 2
 
 logger = logging.getLogger(__name__)
 
@@ -44,6 +47,16 @@ def frame_image(frame) -> Image.Image:
     canvas = Image.new("RGB", (320, 240), (5, 17, 31))
     canvas.paste(ImageOps.fit(frame.to_image(), (320, 192)), (0, 0))
     return canvas
+
+
+def jpeg_frame(image: Image.Image, *, quality: int = DEVICE_JPEG_QUALITY) -> bytes:
+    encoded = io.BytesIO()
+    image.save(encoded, "JPEG", quality=quality, subsampling=2)
+    return encoded.getvalue()
+
+
+def frame_digest(image: Image.Image) -> bytes:
+    return hashlib.md5(image.tobytes()).digest()
 
 
 @dataclass
@@ -58,9 +71,8 @@ def encode_segment(
 ) -> DeviceSegment:
     if not images or not pcm:
         raise ValueError("Empty film segment")
-    encoded = io.BytesIO()
-    images[0].save(encoded, "JPEG", quality=85, subsampling=2)
-    jpeg = encoded.getvalue()
+    frames = [jpeg_frame(image) for image in images]
+    jpeg = frames[0]
     still = ConjuredStill(
         subject=subject,
         jpeg=jpeg,
@@ -73,31 +85,10 @@ def encode_segment(
         latency_seconds=0,
     )
     saved = store.save(still, session_id="cinema", motion=subject)
-    with tempfile.TemporaryDirectory() as directory:
-        path = Path(directory) / "segment.mp4"
-        writer = imageio_ffmpeg.write_frames(
-            str(path), (320, 240), fps=FPS, codec="libx264", ffmpeg_timeout=15
-        )
-        next(writer)
-        try:
-            for image in images:
-                writer.send(image.tobytes())
-        finally:
-            writer.close()
-        clip = ConjuredClip(
-            motion=subject,
-            mp4=path.read_bytes(),
-            prompt=subject,
-            model="minimax/h3-max/director",
-            request_id=saved.id,
-            source_image_sha256=hashlib.sha256(jpeg).hexdigest(),
-            latency_seconds=0,
-            expanded_prompt=None,
-            timings={},
-        )
-        store.save_clip(saved.id, clip)
-    frames = store.mjpeg(saved.id, width=320, height=240, fps=FPS)
-    return DeviceSegment(saved, pcm, frames.frame_count)
+    stored = store.put_mjpeg(
+        saved.id, b"".join(frames), frame_count=len(frames), width=320, height=240, fps=FPS
+    )
+    return DeviceSegment(saved, pcm, stored.frame_count)
 
 
 class DeviceFilmPlayer:
@@ -144,18 +135,27 @@ class DeviceFilmPlayer:
         first_time = None
         next_frame = 0
         pcm_offset = 0
+        last_digest = None
+        distinct = 0
         with wave.open(io.BytesIO(prepared.wav), "rb") as audio:
             pcm = audio.readframes(audio.getnframes())
         target_frames = math.ceil(prepared.duration * FPS)
         try:
             while revision == self.cinema.revision and next_frame < target_frames:
                 frame = await track.recv()
+                image = await asyncio.to_thread(frame_image, frame)
+                digest = frame_digest(image)
+                changed = digest != last_digest
+                last_digest = digest
                 if first_time is None:
+                    if changed:
+                        distinct += 1
+                    if distinct < WARMUP_DISTINCT_FRAMES:
+                        continue
                     first_time = frame.time
                 timestamp = frame.time - first_time
                 if timestamp + 0.001 < next_frame / FPS:
                     continue
-                image = await asyncio.to_thread(frame_image, frame)
                 while (
                     next_frame / FPS <= timestamp + 0.001 and next_frame < target_frames
                 ):

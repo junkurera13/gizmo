@@ -79,6 +79,28 @@ class ShowMediaTests(unittest.TestCase):
             data = data[end:]
         self.assertEqual(decoded, count)
 
+    def test_put_mjpeg_is_served_without_an_mp4(self):
+        store = ShowStore(self.root / 'device', device_id='fixture')
+        still = Image.new('RGB', (320, 240), (20, 40, 60))
+        encoded = io.BytesIO()
+        still.save(encoded, 'JPEG', quality=65, subsampling=2)
+        from gizmo_friend.brain.images import ConjuredStill
+        show = store.save(
+            ConjuredStill(
+                subject='Rocket', jpeg=encoded.getvalue(), prompt='Rocket',
+                model='test', width=320, height=240, source_width=320,
+                source_height=240, latency_seconds=0,
+            ),
+            session_id='cinema',
+            motion='Rocket',
+        )
+        frames = store.put_mjpeg(
+            show.id, encoded.getvalue() * 3, frame_count=3, width=320, height=240, fps=12,
+        )
+        self.assertEqual(store.mjpeg(show.id), frames)
+        self.assertEqual(frames.frame_count, 3)
+        self.assertFalse(show.clip_path.is_file())
+
     def test_old_incompatible_mjpeg_cache_is_rebuilt_once(self):
         store = ShowStore(self.root / 'device', device_id='fixture')
         show_id = 'a' * 32

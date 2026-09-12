@@ -251,7 +251,6 @@ class ShowStore:
             raise ValueError(f"w and h must be between 1 and {MAX_FRAME_DIMENSION}")
         if not 1 <= fps <= MAX_FRAME_FPS:
             raise ValueError(f"fps must be between 1 and {MAX_FRAME_FPS}")
-        source = self.clip_path(show_id)
         name = f"{width}x{height}@{fps}fps-v{MJPEG_ENCODING_VERSION}"
         directory = self.directory / ".cache" / show_id
         cached = directory / f"{name}.mjpeg"
@@ -269,6 +268,7 @@ class ShowStore:
 
         if result := ready():
             return result
+        source = self.clip_path(show_id)
         with self._lock(show_id, name):
             if result := ready():
                 return result
@@ -284,3 +284,39 @@ class ShowStore:
                     cached.unlink(missing_ok=True)
                     raise
         return StoredFrames(cached, width, height, fps, count)
+
+    def put_mjpeg(
+        self,
+        show_id: str,
+        data: bytes,
+        *,
+        frame_count: int,
+        width: int = 320,
+        height: int = 240,
+        fps: int = 12,
+    ) -> StoredFrames:
+        """Write a device MJPEG cache without an MP4 round-trip."""
+        if frame_count < 1 or not data:
+            raise ValueError("mjpeg cache is empty")
+        name = f"{width}x{height}@{fps}fps-v{MJPEG_ENCODING_VERSION}"
+        directory = self.directory / ".cache" / show_id
+        directory.mkdir(parents=True, exist_ok=True)
+        cached = directory / f"{name}.mjpeg"
+        sidecar = directory / f"{name}.mjpeg.json"
+        with self._lock(show_id, name):
+            _atomic_write(cached, data)
+            try:
+                _atomic_write(
+                    sidecar,
+                    (json.dumps({
+                        "width": width,
+                        "height": height,
+                        "fps": fps,
+                        "frame_count": frame_count,
+                        "bytes": len(data),
+                    }) + "\n").encode(),
+                )
+            except BaseException:
+                cached.unlink(missing_ok=True)
+                raise
+        return StoredFrames(cached, width, height, fps, frame_count)

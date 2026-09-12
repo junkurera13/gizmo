@@ -425,7 +425,7 @@ class RouteTests(unittest.TestCase):
             )
 
 
-class DeviceEncodingTests(unittest.TestCase):
+class DeviceEncodingTests(unittest.IsolatedAsyncioTestCase):
     def test_director_segment_uses_existing_device_media_contract(self):
         import io
 
@@ -453,6 +453,67 @@ class DeviceEncodingTests(unittest.TestCase):
                 [(component[1], component[2]) for component in image.layer],
                 [(2, 2), (1, 1), (1, 1)],
             )
+            self.assertFalse(segment.show.clip_path.is_file())
+
+    async def test_capture_skips_frozen_director_preroll(self):
+        import io
+        import wave
+
+        from gizmo_friend.brain.shows import ShowStore
+        from gizmo_friend.cinema.device import DeviceFilmPlayer
+        from PIL import Image
+
+        class FakeFrame:
+            def __init__(self, time, color):
+                self.time = time
+                self._image = Image.new("RGB", (640, 360), color)
+
+            def to_image(self):
+                return self._image.copy()
+
+        class FakeTrack:
+            def __init__(self, frames):
+                self._frames = list(frames)
+                self.stopped = False
+
+            async def recv(self):
+                if not self._frames:
+                    await asyncio.sleep(30)
+                    raise asyncio.CancelledError
+                return self._frames.pop(0)
+
+            def stop(self):
+                self.stopped = True
+
+        frozen = [(i / 50, (10, 10, 10)) for i in range(8)]
+        moving = [(0.2 + i / 12, (min(i * 12, 240), 40, 80)) for i in range(16)]
+        track = FakeTrack([FakeFrame(t, color) for t, color in frozen + moving])
+        wav = io.BytesIO()
+        with wave.open(wav, "wb") as audio:
+            audio.setnchannels(1)
+            audio.setsampwidth(2)
+            audio.setframerate(24000)
+            audio.writeframes(b"\x00\x00" * 24000)
+        prepared = SimpleNamespace(
+            wav=wav.getvalue(),
+            duration=1.0,
+            plan=SimpleNamespace(title="Rocket"),
+        )
+        cinema = SimpleNamespace(revision=1)
+        with tempfile.TemporaryDirectory() as root:
+            store = ShowStore(Path(root) / "devices" / "test-device", device_id="test-device")
+            player = DeviceFilmPlayer(cinema, store, AsyncMock(), {})
+            queue = asyncio.Queue()
+            await asyncio.wait_for(player.capture(track, queue, prepared, 1), 2)
+            segment = queue.get_nowait()
+            self.assertIsNotNone(segment)
+            self.assertEqual(segment.frames, 12)
+            frames = store.mjpeg(segment.show.id)
+            data = frames.path.read_bytes()
+            first = data[: data.index(b"\xff\xd9") + 2]
+            image = Image.open(io.BytesIO(first))
+            # The frozen gray preroll must not be the first encoded picture.
+            self.assertNotEqual(image.getpixel((160, 96)), (10, 10, 10))
 
 
 class AudioTimelineTests(unittest.IsolatedAsyncioTestCase):
