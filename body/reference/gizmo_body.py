@@ -49,7 +49,9 @@ def endpoint(base_url: str, path: str, *, websocket: bool = False) -> str:
 
 
 class BodyClient:
-    def __init__(self, base_url: str, device_id: str, token: str = "") -> None:
+    def __init__(
+        self, base_url: str, device_id: str, token: str = "", *, glass_cues: bool = False
+    ) -> None:
         if not device_id or len(device_id) > 64 or any(
             not (character.isalnum() or character in "-_.") for character in device_id
         ):
@@ -57,6 +59,7 @@ class BodyClient:
         self.base_url = base_url
         self.device_id = device_id
         self.token = token
+        self.glass_cues = glass_cues
         self.socket: Any = None
         self.hello: dict[str, Any] | None = None
         self.initial_glass: dict[str, Any] | None = None
@@ -84,6 +87,8 @@ class BodyClient:
             "X-Gizmo-Device": self.device_id,
             "X-Gizmo-Protocol": str(PROTOCOL_VERSION),
         }
+        if self.glass_cues:
+            headers["X-Gizmo-Glass-Cues"] = "1"
         if self.token:
             headers["Authorization"] = f"Bearer {self.token}"
         self.socket = await connect(
@@ -181,7 +186,12 @@ class BodyRuntime:
         delay = 0.25
         try:
             while not self.stopping:
-                client = BodyClient(self.args.url, self.args.device_id, self.args.token)
+                client = BodyClient(
+                    self.args.url,
+                    self.args.device_id,
+                    self.args.token,
+                    glass_cues=self.glass.enabled,
+                )
                 try:
                     hello, initial_glass = await client.connect()
                     await self._activate(client)
@@ -325,13 +335,32 @@ class BodyRuntime:
         self.speaker.set_volume(max(0, min(step_count, level)) / step_count)
 
     async def _fetch_glass(self, event: dict[str, Any]) -> None:
+        cue = event.get("cue")
+        held = event.get("hold") is True and isinstance(cue, int) and cue > 0
+        expected = []
+        if isinstance(event.get("still"), str):
+            expected.append("still")
+        if isinstance(event.get("frames"), str):
+            expected.append("motion")
         try:
-            for media in await self.glass.fetch(event):
+            fetched = await self.glass.fetch(event)
+            ready = {"motion" if media.get("kind") == "frames" else "still" for media in fetched}
+            for media in fetched:
                 self.report({"type": "glass_media", **media})
+            if held:
+                for kind in expected:
+                    await self._send(
+                        {"type": "glass_ready", "cue": cue, "kind": kind, "ok": kind in ready}
+                    )
         except asyncio.CancelledError:
-            pass
+            raise
         except (HardwareIOError, httpx.HTTPError, OSError, ValueError) as error:
             self.report({"type": "glass_media", "status": "error", "message": str(error)})
+            if held:
+                for kind in expected:
+                    await self._send(
+                        {"type": "glass_ready", "cue": cue, "kind": kind, "ok": False}
+                    )
 
     async def send_control(self, event: dict[str, Any]) -> None:
         if event.get("type") == "ptt":
