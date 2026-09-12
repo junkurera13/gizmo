@@ -48,7 +48,9 @@ def birthday_seed() -> str:
 MOMENTS: dict[str, Moment] = {}
 ORDER: tuple[str, ...] = (
     "birthday",
+    "plant",
     "draw",
+    "mathcheck",
     "ants",
     "homework",
     "trex",
@@ -90,18 +92,106 @@ _register(
         },
     ),
     Moment(
+        id="plant",
+        line="What's wrong with this plant?",
+        seed="",
+        contract=(
+            "The kid is showing you an outdoor plant through Gizmo's camera. Describe only "
+            "the visible symptoms instead of claiming a certain diagnosis. Give a short, "
+            "calm answer and suggest what to inspect next. Keep the live camera view moving "
+            "while you answer and do not generate other media."
+        ),
+        demo={
+            "prompt": "Gizmo, what's wrong with this plant?",
+            "prompt_audio": "/static/demo-plant-question.mp3?v=plant5",
+            "reply": "Brown spots and yellow edges mean this leaf needs more shade.",
+            "reply_audio": "/static/demo-plant-gizmo.wav?v=plant8",
+            "reply_audio_rate": 1.0,
+            "camera": {
+                "video": "/static/demo-plant-camera.mp4?v=plant5",
+                "start_at": 2.6,
+                "cues": [
+                    {
+                        "at": 3.05,
+                        "prompt": "Gizmo, what's wrong with this plant?",
+                        "audio": "/static/demo-plant-question.mp3?v=plant5",
+                    },
+                ],
+            },
+        },
+    ),
+    Moment(
         id="draw",
         line="What should I draw?",
         seed=(
-            "The kid loves sharks and space, especially combining them. They have asked "
-            "you to remember that. Offer ideas that use those interests unless they ask "
-            "for something else."
+            "The kid often talks about Adventure Time and especially likes Jake the Dog. "
+            "They have asked you to remember that."
         ),
         contract=(
             "They want a drawing idea. Use what you remember about their interests. "
             "Propose one concrete subject and put a simple visual reference on screen. "
             "Do not ask them to pick a medium or app."
         ),
+        demo={
+            "prompt": "Gizmo, what should I draw?",
+            "prompt_audio": "/static/demo-draw-kid.mp3?v=draw1",
+            "reply": (
+                "You're always talking about Adventure Time, so I recommend Jake the Dog. "
+                "His round body, simple legs, and big eyes make him easy and fun to draw."
+            ),
+            "reply_audio": "/static/demo-draw-gizmo.wav?v=draw1",
+            "image": "/static/demo-draw-jake.png?v=draw1",
+            "subject": "Jake the Dog from Adventure Time",
+        },
+    ),
+    Moment(
+        id="mathcheck",
+        line="Did I get this right?",
+        seed=(
+            "The kid is checking their work on 27 + 16. They wrote 42, but the correct answer is 43."
+        ),
+        contract=(
+            "Praise the attempt before correcting it. Explain regrouping with a make-a-ten method in "
+            "simple language: move 3 from the 6 to the 7 to make another 10, leaving 3, then combine "
+            "four tens and three ones. Show each step visually and keep the tone suitable for a child "
+            "aged 6 to 10."
+        ),
+        demo={
+            "prompt": "Gizmo, did I get this right?",
+            "prompt_audio": "/static/demo-math-kid.mp3?v=math2",
+            "reply": (
+                "Nice work—you were only one away! Twenty-seven plus sixteen is forty-three, not "
+                "forty-two. Look at the ones: move three from the six to the seven to make a new ten, "
+                "with three left. Now we have four tens and three ones, which makes forty-three. "
+                "Great job checking your answer!"
+            ),
+            "reply_audio": "/static/demo-math-gizmo.wav?v=math1",
+            "reply_audio_rate": 1.0,
+            "camera": {
+                "video": "/static/demo-math-camera.mp4?v=math3",
+                "start_at": 0,
+                "home_wait_ms": 1000,
+                "reply_wait_ms": 2000,
+                "loop": True,
+                "cues": [
+                    {
+                        "at": 1.0,
+                        "prompt": "Gizmo, did I get this right?",
+                        "audio": "/static/demo-math-kid.mp3?v=math2",
+                    },
+                ],
+            },
+            "math": {
+                "attempt": "27 + 16 = 42",
+                "make_ten": "7 + 3 = 10",
+                "left": "3 left",
+                "answer": "40 + 3 = 43",
+                "description": (
+                    "Twenty-seven plus sixteen corrected from forty-two to forty-three by regrouping "
+                    "the ones into a new ten, with three ones left."
+                ),
+            },
+        },
     ),
     Moment(
         id="ants",

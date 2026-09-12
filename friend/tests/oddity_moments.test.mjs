@@ -12,7 +12,7 @@ async function app() {
       id, dataset:{}, style:{}, hidden: id === 'moments' || id === 'preview-gate',
       textContent:'', value:'',
       classList:{add(){},remove(){},contains(){return false;},toggle(){}},
-      addEventListener(){}, setAttribute(){}, replaceChildren(){},
+      addEventListener(){}, removeEventListener(){}, setAttribute(){}, replaceChildren(){},
       pause(){}, load(){}, removeAttribute(){},
     });
     return elements.get(id);
@@ -52,7 +52,7 @@ async function app() {
   context.globalThis = context;
   let source = await fs.readFile(new URL('../gizmo_friend/static/oddity.js', import.meta.url), 'utf8');
   source = source.replace(/^import .*;\r?\n/gm, '').replace(/\r?\nsyncPower\(\);[\s\S]*$/, '');
-  vm.runInContext(source, context);
+  vm.runInContext(`'use strict';\n${source}`, context);
   context.sent = sent;
   vm.runInContext('mountDevice = async () => {}; deviceReady = true; awake = true; socket = {readyState:1, send(value){sent.push(value)}};', context);
   return {element, context, fetches, sent, run: code => vm.runInContext(code, context)};
@@ -114,6 +114,114 @@ test('Pompeii plays three synchronized narrated videos', async () => {
   assert.deepEqual([...ui.context.recorded], ['kid.mp3', 'one.wav', 'two.wav', 'three.wav']);
   assert.deepEqual([...ui.context.videos], ['one.mp4', 'two.mp4', 'three.mp4']);
   assert.equal(ui.element('caption').textContent, 'Three');
+  assert.match(ui.element('status').textContent, /Demo finished/);
+});
+
+test('drawing demo shows Jake before Umbriel recommends the easy drawing', async () => {
+  const ui = await app();
+  ui.context.recorded = []; ui.context.images = [];
+  ui.run(`
+    delay = async () => {};
+    playDemoRecording = async (src, signal, text) => { recorded.push(src); setCaption(text); };
+    showDemoImage = async (src, subject) => { images.push([src, subject]); demoOwnsScene = true; };
+    moments = [{id:'draw', line:'What should I draw?', demo:{
+      prompt:'Gizmo, what should I draw?', prompt_audio:'kid.mp3',
+      reply:"You're always talking about Adventure Time, so I recommend Jake the Dog. His round body, simple legs, and big eyes make him easy and fun to draw.",
+      reply_audio:'umbriel.wav', image:'jake.png', subject:'Jake the Dog from Adventure Time',
+    }}]; syncMoment('draw');
+  `);
+  await ui.run('sayMoment()');
+  assert.deepEqual([...ui.context.recorded], ['kid.mp3', 'umbriel.wav']);
+  assert.equal(JSON.stringify(ui.context.images), JSON.stringify([['jake.png', 'Jake the Dog from Adventure Time']]));
+  assert.match(ui.element('caption').textContent, /Jake the Dog/);
+  assert.match(ui.element('status').textContent, /Demo finished/);
+});
+
+test('plant demo keeps Camera moving while the single kid recording and Umbriel play', async () => {
+  const ui = await app();
+  ui.context.events = [];
+  ui.element('camera-feed').pause = () => ui.context.events.push('pause:video');
+  ui.run(`
+    delay = async () => {};
+    glass = {
+      openDemoCamera(src) { events.push('open:' + src); return document.getElementById('camera-feed'); },
+      closeCamera() { events.push('home'); }, syncReply() {},
+    };
+    startMedia = async () => events.push('video');
+    waitForMediaTime = async (media, at) => events.push('cue:' + at);
+    playDemoRecording = async (src, signal, text, timed, playbackRate = 1) => {
+      events.push('audio:' + src);
+      if (src === 'umbriel.wav') {
+        events.push('reply-video-rate:' + document.getElementById('camera-feed').playbackRate);
+        events.push('reply-audio-rate:' + playbackRate);
+      }
+      if (text) setCaption(text);
+    };
+    moments = [{id:'plant', line:"What's wrong with this plant?", demo:{
+      prompt:"Gizmo, what's wrong with this plant?", prompt_audio:'question.mp3',
+      reply:'The leaf looks damaged.', reply_audio:'umbriel.wav', reply_audio_rate:1,
+      camera:{video:'plant.mp4', start_at:2.6, cues:[
+        {at:3.05, prompt:"Gizmo, what's wrong with this plant?", audio:'question.mp3'},
+      ]},
+    }}]; syncMoment('plant');
+  `);
+  await ui.run('sayMoment()');
+  assert.deepEqual([...ui.context.events], [
+    'open:plant.mp4', 'video',
+    'cue:3.05', 'audio:question.mp3',
+    'audio:umbriel.wav', 'reply-video-rate:1', 'reply-audio-rate:1', 'pause:video', 'home',
+  ]);
+  assert.equal(ui.element('camera-feed').loop, false);
+  assert.equal(ui.element('camera-feed').playbackRate, 1);
+  assert.equal(ui.element('camera-feed').currentTime, 2.6);
+  assert.deepEqual([...ui.run('history.map(item => item.text)')], [
+    "Gizmo, what's wrong with this plant?",
+    'The leaf looks damaged.',
+  ]);
+  assert.equal(ui.element('caption').textContent, '');
+  assert.equal(ui.element('device').dataset.ptt, 'false');
+  assert.match(ui.element('status').textContent, /Demo finished/);
+});
+
+test('math-check demo keeps its fitted camera video moving through the delayed kid line and reply', async () => {
+  const ui = await app();
+  ui.context.events = [];
+  ui.element('camera-feed').pause = () => ui.context.events.push('pause:video');
+  ui.run(`
+    delay = async (milliseconds) => events.push('wait:' + milliseconds);
+    glass = {
+      openDemoCamera(src) { events.push('open:' + src); return document.getElementById('camera-feed'); },
+      closeCamera() { events.push('home'); }, syncReply() {},
+    };
+    startMedia = async () => events.push('video');
+    waitForMediaTime = async (media, at) => events.push('cue:' + at);
+    playDemoRecording = async (src, signal, text, timed, playbackRate = 1) => {
+      events.push('audio:' + src);
+      if (src === 'umbriel.wav') events.push('reply-video-loop:' + document.getElementById('camera-feed').loop);
+      if (text) setCaption(text);
+    };
+    moments = [{id:'mathcheck', line:'Did I get this right?', demo:{
+      prompt:'Gizmo, did I get this right?', prompt_audio:'kid.mp3',
+      reply:'Nice work—you were only one away! Twenty-seven plus sixteen is forty-three, not forty-two.',
+      reply_audio:'umbriel.wav', reply_audio_rate:1,
+      camera:{video:'math.mp4', start_at:0, home_wait_ms:1000, reply_wait_ms:2000, loop:true, cues:[
+        {at:1, prompt:'Gizmo, did I get this right?', audio:'kid.mp3'},
+      ]},
+    }}]; syncMoment('mathcheck');
+  `);
+  await ui.run('sayMoment()');
+  assert.deepEqual([...ui.context.events], [
+    'wait:1000', 'wait:120', 'open:math.mp4', 'wait:100', 'video',
+    'cue:1', 'audio:kid.mp3',
+    'wait:2000', 'audio:umbriel.wav', 'reply-video-loop:true', 'pause:video', 'home',
+  ]);
+  assert.equal(ui.element('camera-feed').loop, true);
+  assert.equal(ui.element('camera-feed').currentTime, 0);
+  assert.deepEqual([...ui.run('history.map(item => item.text)')], [
+    'Gizmo, did I get this right?',
+    'Nice work—you were only one away! Twenty-seven plus sixteen is forty-three, not forty-two.',
+  ]);
+  assert.equal(ui.element('caption').textContent, '');
   assert.match(ui.element('status').textContent, /Demo finished/);
 });
 

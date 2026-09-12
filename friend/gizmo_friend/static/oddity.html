@@ -7,7 +7,7 @@
   <link rel="icon" href="data:,">
   <link rel="stylesheet" href="/static/oddity-boot.css?v=gate14">
   <link rel="stylesheet" href="/static/oddity.css">
-  <link rel="stylesheet" href="/static/oddity-device.css?v=gate53">
+  <link rel="stylesheet" href="/static/oddity-device.css?v=gate56">
   <link rel="stylesheet" href="/static/oddity-experience.css">
   <link rel="preload" as="image" href="/static/device-reference-ptt-pressed.png">
   <link rel="preload" as="image" href="/static/oddity-character-half.png?v=char3">
@@ -46,7 +46,7 @@
       document.documentElement.classList.add('oddity-locked');
     }
   </script>
-  <script type="module" src="/static/oddity.js?v=gate66"></script>
+  <script type="module" src="/static/oddity.js?v=gate71"></script>
 </head>
 <body>
   <header class="masthead">
@@ -122,7 +122,23 @@
                 <span id="camera-status">CAMERA</span>
               </div>
             </div>
-            <div id="scene" class="scene"><img id="still" alt="" hidden><video id="film" muted playsinline preload="auto" hidden></video><canvas id="orbit" class="orbit-canvas" aria-label="Orbit experiment: a satellite falling around Earth" hidden></canvas></div>
+            <div id="scene" class="scene">
+              <img id="still" alt="" hidden>
+              <video id="film" muted playsinline preload="auto" hidden></video>
+              <canvas id="orbit" class="orbit-canvas" aria-label="Orbit experiment: a satellite falling around Earth" hidden></canvas>
+              <div id="demo-math" class="demo-math" role="img" hidden>
+                <p class="math-kicker">LET'S CHECK</p>
+                <p id="math-attempt" class="math-attempt"></p>
+                <div class="math-make-ten">
+                  <div class="math-ten-dots" aria-hidden="true">
+                    <i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i>
+                  </div>
+                  <strong id="math-make-ten"></strong>
+                </div>
+                <div class="math-leftover"><span aria-hidden="true"><i></i><i></i><i></i></span><b id="math-left"></b></div>
+                <p id="math-answer" class="math-answer"></p>
+              </div>
+            </div>
             <div id="caption" class="caption" aria-live="polite"></div>
             <div id="interaction" class="interaction" aria-label="Explore with Gizmo" hidden></div>
             <button id="play-blocked" class="play-blocked" hidden>Tap to play narration</button>
