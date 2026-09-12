@@ -64,10 +64,17 @@ GLASS_NO_ACK_GRACE_SECONDS = 1.0 # a body that never acks gets this long to fetc
 AUDIO_CHUNK_BYTES = 11_520       # 240 ms of 24 kHz PCM16 per audio event to the body
 # Film turns announce the wait, not the story: one short line while the
 # thinking animation runs, then Cinema's own narration takes over.
+# Keep these dry. Story TTS + "Ooh — let me cook" reads as breathy slow-mo.
+FILM_ACK_STYLE = (
+    "Read the following as Gizmo, a small dry wizard talking to a kid. "
+    "Brisk, even, matter-of-fact, about 170 words per minute. "
+    "No whispering, breathy delivery, drawn-out vowels, or dramatic suspense. "
+    "Start promptly. Do not add words."
+)
 FILM_ACK_LINES = (
-    "Ooh — let me cook something up.",
-    "Hang on. I'm making you a film.",
-    "This one deserves a film. One second.",
+    "Hang on.",
+    "One second.",
+    "Give me a second.",
 )
 
 
@@ -1329,7 +1336,7 @@ class GizmoSession:
         line = FILM_ACK_LINES[self._film_ack_index % len(FILM_ACK_LINES)]
         self._film_ack_index += 1
         try:
-            voice = await self.narration.narrate(line)
+            voice = await self.narration.narrate(line, style=FILM_ACK_STYLE)
         except asyncio.CancelledError:
             raise
         except Exception as error:  # noqa: BLE001 - a silent wait beats a crash

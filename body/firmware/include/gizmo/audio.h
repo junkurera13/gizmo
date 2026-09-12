@@ -38,8 +38,9 @@ class Audio {
   // so idle D9 is quiet.
   size_t enqueue_live(const int16_t* samples, size_t count);
   void stop_live();
-  // Session says more PCM is coming (state "talking"): an empty ring is a
-  // starvation gap to hold through, not the end of the stream.
+  // Friend may still send PCM this turn (thinking or talking). An empty ring
+  // is then a starvation gap, not the end of the stream — film-ack audio is
+  // thinking, narration is talking, and the MJPEG GET can starve either.
   void set_live_expecting(bool expecting) { live_expecting_ = expecting; }
   size_t live_capacity_left() const { return live_cap_ - live_n_; }
 

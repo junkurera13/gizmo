@@ -18,9 +18,8 @@ constexpr int kDmaFrames = 256;
 constexpr int32_t kMicGain = 3;
 constexpr int kMaxRecordChunksPerUpdate = 16;
 constexpr int kMaxPlaybackChunksPerUpdate = 32;
-// Talking-state starvation cover: a held-cue GET can starve the PCM socket for
-// seconds. The amp keeps running (DMA auto-clear plays silence) instead of a
-// clicky stop/start per gap.
+// Held-cue GET can starve the PCM socket for seconds. The PWM ISR already
+// fades an empty ring to silence; keeping the amp up avoids a clicky restart.
 constexpr uint32_t kLiveGapHoldMs = 8000;
 constexpr uint32_t kVuDecayMs = 60;
 
@@ -490,11 +489,11 @@ void Audio::pump_playback() {
 
 void Audio::pump_live() {
   if (live_n_ == 0) {
-    // Empty software ring does not mean DMA has played its tail. Keep the
-    // bitstream running for at least the DMA depth after the last write.
-    // While the session is talking the gap is starvation, not the end: the amp
-    // stays on (auto-clear plays silence) so resumed PCM does not click through
-    // a restart. Once it stops talking, the normal drain deadline applies.
+    // Empty software ring does not mean the ISR has played its tail. Keep the
+    // bitstream running for at least the hardware depth after the last write.
+    // While Friend is still in this turn (thinking or talking) a gap is radio
+    // starvation: the ISR fades to silence so resumed PCM does not click
+    // through a restart. Once the turn ends, the normal drain deadline applies.
     if (live_playing_ && static_cast<int32_t>(millis() - live_drain_until_) >= 0 &&
         (!live_expecting_ ||
          static_cast<int32_t>(millis() - live_drain_until_) >= static_cast<int32_t>(kLiveGapHoldMs))) {

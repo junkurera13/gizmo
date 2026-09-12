@@ -451,5 +451,16 @@ class FilmCapabilityTests(ShowSessionFixture):
         self.assertTrue(self.transport.submit_tool_output.await_count >= 1)
 
 
+class FilmAckTests(unittest.TestCase):
+    def test_ack_lines_are_a_dry_wait(self):
+        from gizmo_friend.session import FILM_ACK_LINES, FILM_ACK_STYLE
+        joined = " ".join(FILM_ACK_LINES).lower()
+        self.assertNotIn("ooh", joined)
+        self.assertNotIn("cook", joined)
+        self.assertNotIn("—", " ".join(FILM_ACK_LINES))
+        self.assertIn("brisk", FILM_ACK_STYLE.lower())
+        self.assertIn("breathy", FILM_ACK_STYLE.lower())
+
+
 if __name__ == "__main__":
     unittest.main()
