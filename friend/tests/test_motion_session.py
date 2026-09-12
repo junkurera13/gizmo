@@ -424,6 +424,30 @@ class FilmCapabilityTests(ShowSessionFixture):
         self.assertTrue(any(event.get("type") == "glass" and event.get("reason") == "film" for event in events))
         self.assertFalse(any(event.get("type") in {"audio", "transcript_delta"} for event in events))
 
+    async def test_typed_ask_paints_thinking_before_the_director_returns(self):
+        director = ControlledDirector()
+        self.friend.visual_director = director
+        await self.friend.handle(TextLine(text="How do rockets fly?"))
+        self.assertEqual(self.friend.machine.state, State.THINKING)
+        self.assertTrue(any(event.get("type") == "state" for event in self.events()))
+        await director.wait_for_calls(1)
+        director.finish(0, VisualDecision())
+        await asyncio.wait_for(asyncio.shield(self.friend._director_task), 1)
+
+    async def test_film_ack_plays_cached_pcm_without_waiting_on_tts(self):
+        calls = []
+
+        async def narrate(text, *, style=None):
+            calls.append(text)
+            return None
+
+        self.friend.narration.narrate = narrate
+        self.friend._film_starting = True
+        self.friend._film_ack_pcm = [b"\x00\x01" * 64]
+        await self.friend._announce_film()
+        self.assertEqual(calls, [])
+        self.assertTrue(any(event.get("type") == "audio" for event in self.events()))
+
     async def test_live_tool_call_cannot_spend_a_still_inside_a_film(self):
         cinema = StubCinema()
         self.friend._cinema = cinema
