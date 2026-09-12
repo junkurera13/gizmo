@@ -74,11 +74,12 @@ int main(int argc,char** argv) {
     player.dec_index_[b].store(-1);player.dec_gen_[b].store(0);player.dec_bad_[b].store(false);
   }
   xTaskCreate(ShowPlayer::decode_task,"dec",8192,&player,1,nullptr);
-  // render() never decodes motion on the loop: it draws whatever the ring has.
+  // Clock starts on the first presented frame, not when the clip lands, so a
+  // slow first decode cannot skip the opening frames.
   assert(wait_render(player,pixels));
-  const int first_drawn=player.drawn_;
-  mock_now+=84;assert(wait_render(player,pixels));assert(player.drawn_!=first_drawn);
-  mock_now+=84;assert(wait_render(player,pixels));assert(player.drawn_==first_drawn);
+  assert(player.drawn_==0);
+  mock_now+=84;assert(wait_render(player,pixels));assert(player.drawn_==1);
+  mock_now+=84;assert(wait_render(player,pixels));assert(player.drawn_==0);
   // A failed frame is marked bad and skipped: render repeats the previous
   // frame instead of decoding inline, and the clip is retained. Republishing
   // bumps the generation, so the decode task re-decodes and the injected
@@ -87,15 +88,17 @@ int main(int argc,char** argv) {
   ShowPlayer::Job again{request,player.revision_.load(),false,false};
   response(true);assert(player.download(again,true,media));
   player.publish(media);player.update();
-  for(int i=0;i<100;++i){player.render(pixels,true);std::this_thread::sleep_for(std::chrono::milliseconds(4));}
   bool marked=false;
-  for(int b=0;b<ShowPlayer::kDecBufs;++b)
-    if(player.dec_bad_[b].load()&&player.dec_gen_[b].load()==player.media_gen_.load())marked=true;
+  for(int i=0;i<100 && !marked;++i){
+    for(int b=0;b<ShowPlayer::kDecBufs;++b)
+      if(player.dec_bad_[b].load()&&player.dec_gen_[b].load()==player.media_gen_.load())marked=true;
+    std::this_thread::sleep_for(std::chrono::milliseconds(4));
+  }
   assert(marked);
   assert(player.available() && player.clip_.bytes!=nullptr);
-  // The pipeline advances past the skipped frame; the next index draws again.
+  // Opening frame 0 is bad; render still starts on the first good ring slot.
   bool recovered=false;
-  for(int i=0;i<300 && !recovered;++i){mock_now+=84;recovered=player.render(pixels);std::this_thread::sleep_for(std::chrono::milliseconds(2));}
+  for(int i=0;i<300 && !recovered;++i){recovered=player.render(pixels);mock_now+=84;std::this_thread::sleep_for(std::chrono::milliseconds(2));}
   assert(recovered);
   // Errors leave the already-visible still intact.
   for(int status:{302,401,404,503}) {response(true);mock_media_status=status;assert(!player.download(job,true,media));assert(player.available());}

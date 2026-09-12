@@ -11,6 +11,7 @@
 
 namespace gizmo {
 void ShowPlayer::begin() {
+  if (jobs_) return;
   jobs_ = xQueueCreate(1, sizeof(Job));
   held_jobs_ = xQueueCreate(1, sizeof(Job));
   results_ = xQueueCreate(4, sizeof(Media));
@@ -37,13 +38,34 @@ void ShowPlayer::begin() {
     Serial.println("show: download task unavailable");
   }
   // Decode-ahead pins to core 0 so JPEG work runs parallel to the body loop
-  // instead of stealing the core that blits and pumps audio.
+  // instead of stealing the core that blits and pumps audio. Priority 2 sits
+  // above show-download (1) so the next-clip GET cannot starve the playhead,
+  // and below friend-net (3) so spoken PCM still wins the core.
   if (!buffers_ok ||
-      xTaskCreatePinnedToCore(decode_task, "show-decode", 24576, this, 1, nullptr, 0) != pdPASS) {
+      xTaskCreatePinnedToCore(decode_task, "show-decode", 24576, this, 2, nullptr, 0) != pdPASS) {
     Serial.println("show: decode-ahead unavailable; sync decoding only");
   }
 }
 void ShowPlayer::release(Media& media) { free(media.bytes); media = Media{}; }
+size_t ShowPlayer::motion_index(size_t count) const {
+  if (count == 0) return 0;
+  const uint32_t origin = started_.load();
+  if (origin == 0) return 0;
+  return static_cast<size_t>((uint64_t(uint32_t(millis() - origin)) * kShowFps / 1000) % count);
+}
+void ShowPlayer::arm_clip() {
+  started_.store(0);
+  drawn_ = -1;
+  changed_ = true;
+}
+void ShowPlayer::note_presented(size_t index) {
+  if (started_.load() != 0) return;
+  const uint32_t now = millis();
+  const uint32_t back = static_cast<uint32_t>(index * 1000 / kShowFps);
+  uint32_t origin = now - back;
+  if (origin == 0) origin = 1;
+  started_.store(origin);
+}
 void ShowPlayer::cancel(bool dismiss) {
   if (dismiss && *request_.still) strlcpy(dismissed_, request_.still, sizeof(dismissed_));
   // Keep an explicit local dismissal across the server's clear acknowledgement
@@ -61,6 +83,7 @@ void ShowPlayer::cancel(bool dismiss) {
   // cancel() into the camera's blit.
   jpeg_lock();
   jpeg_unlock();
+  started_.store(0);
   drawn_ = -1;
   if (jobs_) xQueueReset(jobs_);
   drop_held();
@@ -124,9 +147,7 @@ bool ShowPlayer::swap_held(const ShowRequest& r) {
   held_request_ = ShowRequest{};
   held_request_.cue = r.cue;  // remember which cue the in-flight held job belongs to
   strlcpy(held_request_.still, r.still, sizeof(held_request_.still));
-  started_ = millis();
-  drawn_ = -1;
-  changed_ = true;
+  arm_clip();
   return true;
 }
 void ShowPlayer::submit(const ShowRequest& r) {
@@ -180,9 +201,7 @@ void ShowPlayer::update() {
         release(target);
         target = media;
         if (media_mux_) xSemaphoreGive(media_mux_);
-        started_ = millis();
-        drawn_ = -1;
-        changed_ = true;
+        arm_clip();
       } else if (media.cue == held_request_.cue) {
         Media& target = media.motion ? held_clip_ : held_still_;
         release(target);
@@ -203,9 +222,7 @@ void ShowPlayer::update() {
     release(target);
     target = media;
     if (media_mux_) xSemaphoreGive(media_mux_);
-    started_ = millis();
-    drawn_ = -1;
-    changed_ = true;
+    arm_clip();
     Serial.printf("show: ready %s frames=%u bytes=%u 320x240 fps=%d\n",
                   media.motion ? "motion" : "still", unsigned(media.count), unsigned(media.length), kShowFps);
   }
@@ -233,17 +250,35 @@ bool ShowPlayer::render(uint16_t* pixels, bool force) {
   const bool have_clip = clip_.bytes != nullptr && clip_.count > 0;
   Media& media = have_clip ? clip_ : still_;
   if (!media.bytes || media.count == 0) return false;
-  const size_t index = media.motion ? (uint64_t(uint32_t(millis() - started_)) * kShowFps / 1000) % media.count : 0;
+  const size_t index = media.motion ? motion_index(media.count) : 0;
   if (!force && !changed_ && drawn_ == int(index)) return false;
   if (media.motion) {
     const uint32_t gen = media_gen_.load();
+    auto present = [&](size_t idx) -> bool {
+      for (int b = 0; b < kDecBufs; ++b) {
+        if (dec_index_[b].load() == int(idx) && dec_gen_[b].load() == gen &&
+            !dec_bad_[b].load() && dec_pixels_[b]) {
+          memcpy(pixels, dec_pixels_[b], kDecPixels);
+          note_presented(idx);
+          drawn_ = int(idx);
+          changed_ = false;
+          return true;
+        }
+      }
+      return false;
+    };
+    if (present(index)) return true;
+    bool current_bad = false;
     for (int b = 0; b < kDecBufs; ++b) {
-      if (dec_index_[b].load() == int(index) && dec_gen_[b].load() == gen &&
-          !dec_bad_[b].load() && dec_pixels_[b]) {
-        memcpy(pixels, dec_pixels_[b], kDecPixels);
-        drawn_ = int(index);
-        changed_ = false;
-        return true;
+      if (dec_index_[b].load() == int(index) && dec_gen_[b].load() == gen && dec_bad_[b].load()) {
+        current_bad = true;
+      }
+    }
+    // Clock has not started, or this JPEG is corrupt: take the next good ring
+    // slot so a bad frame cannot freeze the playhead.
+    if (started_.load() == 0 || current_bad) {
+      for (size_t ahead = 1; ahead < kDecBufs && ahead < media.count; ++ahead) {
+        if (present((index + ahead) % media.count)) return true;
       }
     }
     // Never decode motion on the body loop: a ~60 ms inline decode starves the
@@ -406,6 +441,7 @@ void ShowPlayer::run() {
 }
 void ShowPlayer::decode_task(void* context) { static_cast<ShowPlayer*>(context)->decode_run(); }
 void ShowPlayer::decode_run() {
+  int decoded = 0;
   for (;;) {
     size_t target = 0;
     size_t length = 0;
@@ -416,7 +452,7 @@ void ShowPlayer::decode_run() {
     if (media_mux_ != nullptr && xSemaphoreTake(media_mux_, portMAX_DELAY) == pdTRUE) {
       Media& media = clip_;
       if (media.motion && media.bytes != nullptr && media.count > 0 && dec_scratch_ != nullptr) {
-        index = (uint64_t(uint32_t(millis() - started_)) * kShowFps / 1000) % media.count;
+        index = motion_index(media.count);
         count = media.count;
         gen = media_gen_.load();
         // Earliest of the next few frames not already decoded for this media.
@@ -474,8 +510,9 @@ void ShowPlayer::decode_run() {
     dec_gen_[w].store(gen);
     // The busy path has no blocking call: while a clip decodes continuously
     // this loop never yields, starving the core-0 idle task the watchdog
-    // checks — a mid-film reboot with no panic dump. One tick feeds it.
-    vTaskDelay(pdMS_TO_TICKS(1));
+    // checks — a mid-film reboot with no panic dump. One tick every four
+    // frames still feeds it without adding ~10 ms of sleep per JPEG.
+    if ((++decoded & 3) == 0) vTaskDelay(pdMS_TO_TICKS(1));
   }
 }
 }

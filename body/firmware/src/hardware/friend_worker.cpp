@@ -7,6 +7,7 @@
 
 namespace gizmo {
 void FriendLink::begin() {
+  if (commands_) return;
   commands_ = xQueueCreate(32, sizeof(Command));
   speaker_ = xQueueCreate(80, sizeof(Speaker));
   statuses_ = xQueueCreate(1, sizeof(Status));

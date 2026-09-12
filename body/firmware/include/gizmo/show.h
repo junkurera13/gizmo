@@ -51,6 +51,9 @@ class ShowPlayer {
   bool swap_held(const ShowRequest& request);
   void drop_held();
   void ack(uint32_t cue, bool motion, bool ok);
+  size_t motion_index(size_t count) const;
+  void arm_clip();
+  void note_presented(size_t index);
   QueueHandle_t jobs_ = nullptr, held_jobs_ = nullptr, results_ = nullptr;
   SemaphoreHandle_t media_mux_ = nullptr;
   // Decoded-ahead ring for motion playback. A JPEG frame decode costs ~50 ms
@@ -58,7 +61,9 @@ class ShowPlayer {
   // copies the next frames' JPEG bytes under media_mux_, decodes them into
   // these SPIRAM buffers, and render() becomes a memcpy. Buffers tagged with
   // the media generation they came from; a stale generation is skipped.
-  static constexpr int kDecBufs = 3;
+  // Six slots is ~500 ms at 12 fps, enough to absorb a TLS burst on core 0
+  // without the playhead running dry.
+  static constexpr int kDecBufs = 6;
   static constexpr size_t kDecScratch = 40 * 1024;
   static constexpr size_t kDecPixels = kShowWidth * kShowHeight * sizeof(uint16_t);
   uint16_t* dec_pixels_[kDecBufs] = {};
@@ -80,7 +85,7 @@ class ShowPlayer {
   static constexpr size_t kAckCap = 8;
   GlassReady acks_[kAckCap];
   size_t ack_r_ = 0, ack_w_ = 0;
-  uint32_t started_ = 0;
+  std::atomic<uint32_t> started_{0};
   int drawn_ = -1;
   bool changed_ = false;
 };
