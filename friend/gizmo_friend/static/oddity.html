@@ -7,7 +7,7 @@
   <link rel="icon" href="data:,">
   <link rel="stylesheet" href="/static/oddity-boot.css?v=gate14">
   <link rel="stylesheet" href="/static/oddity.css">
-  <link rel="stylesheet" href="/static/oddity-device.css?v=gate61">
+  <link rel="stylesheet" href="/static/oddity-device.css?v=gate68">
   <link rel="stylesheet" href="/static/oddity-experience.css">
   <link rel="preload" as="image" href="/static/device-reference-ptt-pressed.png">
   <link rel="preload" as="image" href="/static/oddity-character-half.png?v=char3">
@@ -43,7 +43,7 @@
       document.documentElement.classList.add('oddity-locked');
     }
   </script>
-  <script type="module" src="/static/oddity.js?v=gate75"></script>
+  <script type="module" src="/static/oddity.js?v=gate80"></script>
 </head>
 <body>
   <header class="masthead">
@@ -124,17 +124,26 @@
               <video id="film" muted playsinline preload="auto" hidden></video>
               <canvas id="orbit" class="orbit-canvas" aria-label="Orbit experiment: a satellite falling around Earth" hidden></canvas>
               <div id="demo-math" class="demo-math" role="img" hidden>
-                <p class="math-kicker">LET'S CHECK</p>
+                <div class="math-cloud math-cloud-one" aria-hidden="true"></div>
+                <div class="math-cloud math-cloud-two" aria-hidden="true"></div>
                 <p id="math-attempt" class="math-attempt"></p>
-                <div class="math-transfer"><b id="math-base">27</b><span>+</span><b id="math-rest">16</b><span class="math-moving">← 3</span></div>
-                <div class="math-make-ten">
-                  <div class="math-ten-dots" aria-hidden="true">
-                    <i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i>
-                  </div>
-                  <strong id="math-make-ten"></strong>
+                <div class="math-pals" aria-hidden="true">
+                  <div class="math-pal math-pal-a"><div class="math-face"><i></i><i></i><b id="math-base">26</b></div><small><span>20</span><em>+</em><span>6</span></small></div>
+                  <div class="math-plus">+</div>
+                  <div class="math-pal math-pal-b"><div class="math-face"><i></i><i></i><b id="math-rest">16</b></div><small><span>10</span><em>+</em><span>6</span></small></div>
                 </div>
-                <div class="math-leftover"><span aria-hidden="true"><i></i><i></i><i></i></span><b id="math-left"></b></div>
+                <div class="math-stories">
+                  <div class="math-story math-tens-story">
+                    <div class="math-rods" aria-hidden="true"><i></i><i></i><i></i></div>
+                    <strong id="math-make-ten"></strong>
+                  </div>
+                  <div class="math-story math-ones-story">
+                    <div class="math-dots" aria-hidden="true"><span><i></i><i></i><i></i><i></i><i></i><i></i></span><span><i></i><i></i><i></i><i></i><i></i><i></i></span></div>
+                    <strong id="math-left"></strong>
+                  </div>
+                </div>
                 <p id="math-answer" class="math-answer"></p>
+                <div class="math-confetti" aria-hidden="true"><i></i><i></i><i></i><i></i><i></i><i></i></div>
               </div>
               <div id="demo-rainbow" class="demo-rainbow" role="img" hidden>
                 <div class="rainbow-atmosphere" aria-hidden="true"><i></i><i></i><i></i><i></i><i></i><i></i></div>

@@ -57,6 +57,8 @@ let demoController, demoRunning = false, demoPlayedMoment = '', demoOwnsScene = 
 let demoCaptions = [];
 let demoTimed = null;
 let demoMathCues = null;
+let captionSwapTimer = 0;
+let pendingCaption = '';
 voice.addEventListener('timeupdate', () => {
   if (!playing || !currentBeat?.audio || voice.paused) return;
   setCaption(filmTimed.length
@@ -73,8 +75,29 @@ demoAudio.addEventListener('timeupdate', () => {
 });
 
 function setCaption(text = '') {
-  $('caption').textContent = text;
-  glass?.syncReply?.(text);
+  const caption = $('caption');
+  const next = String(text || '').trim();
+  if (!caption) return;
+  if ((captionSwapTimer && pendingCaption === next) || (!captionSwapTimer && caption.textContent === next)) return;
+  globalThis.clearTimeout(captionSwapTimer);
+  captionSwapTimer = 0;
+  pendingCaption = next;
+  if (!caption.textContent || !next) {
+    caption.classList.remove('is-swapping');
+    caption.textContent = next;
+    pendingCaption = '';
+    glass?.syncReply?.(next);
+    return;
+  }
+  caption.classList.add('is-swapping');
+  captionSwapTimer = globalThis.setTimeout(() => {
+    captionSwapTimer = 0;
+    caption.textContent = pendingCaption;
+    glass?.syncReply?.(pendingCaption);
+    pendingCaption = '';
+    const reveal = globalThis.requestAnimationFrame || ((callback) => globalThis.setTimeout(callback, 0));
+    reveal(() => caption.classList.remove('is-swapping'));
+  }, 130);
 }
 function status(text, state) { $('status').textContent = text; if (state && glass?.world === 'home') stage.dataset.state = state; }
 function notice(text = '') { $('notice').textContent = text; $('notice').hidden = !text; }
@@ -293,6 +316,7 @@ function waitForAwake(signal) {
 }
 function hideDemoVisuals() {
   demoMathCues = null;
+  stage.classList.remove('demo-fullscreen');
   $('demo-math')?.classList.remove('is-active');
   if ($('demo-math')) $('demo-math').hidden = true;
   $('demo-rainbow')?.classList.remove('is-active', 'is-focus-split');
@@ -365,6 +389,9 @@ async function showDemoImage(src, subject, signal) {
   $('scene').classList.remove('scene-enter'); void $('scene').offsetWidth; $('scene').classList.add('scene-enter');
   demoOwnsScene = true;
 }
+function expandDemoSceneFullscreen() {
+  if (demoOwnsScene) stage.classList.add('demo-fullscreen');
+}
 function showDemoMath(math, signal) {
   if (signal.aborted) throw new DOMException('Stopped', 'AbortError');
   orbitView?.hide(); screenOrbit = false;
@@ -372,17 +399,19 @@ function showDemoMath(math, signal) {
   $('still').classList.remove('is-demo-reference'); $('still').hidden = true;
   hideDemoVisuals();
   const visual = $('demo-math');
-  const attempt = String(math.attempt || '27 + 16 = 42');
+  const attempt = String(math.attempt || '26 + 16 = 43');
   const wrong = attempt.match(/^(.*?=\s*)(\S+)$/);
   $('math-attempt').replaceChildren(document.createTextNode(wrong?.[1] || attempt));
   if (wrong) {
     const value = document.createElement('span'); value.className = 'math-wrong'; value.textContent = wrong[2];
     $('math-attempt').append(value);
   }
-  $('math-make-ten').textContent = '27 + 3 = 30';
-  $('math-left').textContent = math.left || '3 left';
-  $('math-answer').textContent = math.answer || '40 + 3 = 43';
-  demoMathCues = math.visual_timed || [[0,0],[3,1],[8,2],[11,3],[16,4]];
+  $('math-base').textContent = '26';
+  $('math-rest').textContent = '16';
+  $('math-make-ten').textContent = math.make_ten || '20 + 10 = 30';
+  $('math-left').textContent = math.left || '6 + 6 = 12';
+  $('math-answer').textContent = math.answer || '30 + 12 = 42';
+  demoMathCues = math.visual_timed || [[0,0],[8.4,1],[10.8,2],[13.3,3],[16.1,4]];
   syncDemoMath(0);
   visual.setAttribute('aria-label', math.description || 'A visual correction showing twenty-seven plus sixteen equals forty-three.');
   visual.hidden = false; visual.classList.remove('is-active'); void visual.offsetWidth; visual.classList.add('is-active');
@@ -394,8 +423,6 @@ function syncDemoMath(seconds) {
   let step = 0;
   for (const [at, value] of demoMathCues || []) { if (seconds >= at) step = value; }
   $('demo-math').dataset.step = String(step);
-  $('math-base').textContent = step >= 2 ? '30' : '27';
-  $('math-rest').textContent = step >= 1 ? '13' : '16';
 }
 function showDemoRainbow(rainbow, signal) {
   if (signal.aborted) throw new DOMException('Stopped', 'AbortError');
@@ -562,6 +589,7 @@ async function sayMoment() {
       const followup = item.demo.followup;
       setCaption();
       await delay(500, signal);
+      if (followup.fullscreen_during_prompt && demoOwnsScene) expandDemoSceneFullscreen();
       status('Listen to the question…', 'listening');
       setTalkPressed(true); $('talk').classList.add('recording');
       try { await playKidRecording(followup.audio, signal); }
@@ -569,11 +597,14 @@ async function sayMoment() {
       history.push({role:'user', text:followup.prompt});
       status('Gizmo is thinking…', 'thinking');
       await delay(followup.reply_wait_ms ?? 650, signal);
+      if (followup.video) await showDemoVideo(followup.video, signal);
+      else stage.classList.remove('demo-fullscreen');
       status('Gizmo is answering…', 'playing');
       await playDemoRecording(followup.reply_audio, signal, followup.reply, followup.reply_timed);
       history.push({role:'assistant', text:followup.reply}); renderNotes();
     }
     setCaption();
+    if (item.demo.fullscreen_after_reply) expandDemoSceneFullscreen();
     demoPlayedMoment = item.id;
     status('Demo finished. Press replay to watch it again.', 'idle');
     if (!item.demo.keep_scene) dissolveScene();

@@ -99,6 +99,8 @@ ODDITY_PUBLIC_ASSETS = {
     "/static/demo-mathcheck-refreshed.wav",
     "/static/demo-pompeii-followup-refreshed.wav",
     "/static/demo-pompeii-kid-followup-refreshed.wav",
+    "/static/demo-pompeii-kid-followup-user.mp3",
+    "/static/demo-pompeii-followup.mp4",
     "/static/demo-pompeii-polished.mp4",
     "/static/oddity-heart-full.png",
     "/static/oddity-heart-half.png",

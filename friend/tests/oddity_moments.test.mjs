@@ -117,22 +117,48 @@ test('Pompeii plays three synchronized narrated videos', async () => {
   assert.match(ui.element('status').textContent, /Demo finished/);
 });
 
+test('Pompeii continues with the recorded kid follow-up and its answer video', async () => {
+  const ui = await app();
+  ui.context.recorded = []; ui.context.videos = [];
+  ui.run(`
+    delay = async () => {};
+    playDemoRecording = async (src, signal, text) => { recorded.push(src); setCaption(text); };
+    showDemoVideo = async (src) => { videos.push(src); demoOwnsScene = true; };
+    moments = [{id:'pompeii', line:'What happened to Pompeii?', demo:{
+      prompt:'Gizmo, what happened to Pompeii?', prompt_audio:'opening-kid.mp3',
+      reply:'Pompeii was buried in ash.', reply_audio:'main.wav', video:'main.mp4',
+      followup:{prompt:'How were the paintings still there?', audio:'followup-kid.mp3',
+        video:'followup.mp4', reply_wait_ms:800, reply:'The ash protected them.', reply_audio:'followup.wav'},
+    }}]; syncMoment('pompeii');
+  `);
+  await ui.run('sayMoment()');
+  assert.deepEqual([...ui.context.recorded], ['opening-kid.mp3', 'main.wav', 'followup-kid.mp3', 'followup.wav']);
+  assert.deepEqual([...ui.context.videos], ['main.mp4', 'followup.mp4']);
+  assert.deepEqual([...ui.run('history.map(item => item.text)')], [
+    'Gizmo, what happened to Pompeii?', 'Pompeii was buried in ash.',
+    'How were the paintings still there?', 'The ash protected them.',
+  ]);
+});
+
 test('drawing demo shows Jake before Umbriel recommends the easy drawing', async () => {
   const ui = await app();
-  ui.context.recorded = []; ui.context.images = [];
+  ui.context.recorded = []; ui.context.images = []; ui.context.fullscreenExpansions = 0;
   ui.run(`
     delay = async () => {};
     playDemoRecording = async (src, signal, text) => { recorded.push(src); setCaption(text); };
     showDemoImage = async (src, subject) => { images.push([src, subject]); demoOwnsScene = true; };
+    expandDemoSceneFullscreen = () => { fullscreenExpansions += 1; };
     moments = [{id:'draw', line:'What should I draw?', demo:{
       prompt:'Gizmo, what should I draw?', prompt_audio:'kid.mp3',
       reply:"You're always talking about Adventure Time, so I recommend Jake the Dog. His round body, simple legs, and big eyes make him easy and fun to draw.",
       reply_audio:'umbriel.wav', image:'jake.png', subject:'Jake the Dog from Adventure Time',
+      fullscreen_after_reply:true,
     }}]; syncMoment('draw');
   `);
   await ui.run('sayMoment()');
   assert.deepEqual([...ui.context.recorded], ['kid.mp3', 'umbriel.wav']);
   assert.equal(JSON.stringify(ui.context.images), JSON.stringify([['jake.png', 'Jake the Dog from Adventure Time']]));
+  assert.equal(ui.context.fullscreenExpansions, 1);
   assert.equal(ui.element('caption').textContent, '');
   assert.match(ui.element('status').textContent, /Demo finished/);
 });
@@ -203,7 +229,7 @@ test('math-check closes camera before thinking and reveals math before narration
     moments = [{id:'mathcheck', line:'Did I get this right?', demo:{
       prompt:'Gizmo, did I get this right?', prompt_audio:'kid.mp3',
       reply:'Nice work—you were only one away! Twenty-seven plus sixteen is forty-three, not forty-two.',
-      reply_audio:'umbriel.wav', reply_audio_rate:1, math:{attempt:'27 + 16 = 42'},
+      reply_audio:'umbriel.wav', reply_audio_rate:1, math:{attempt:'26 + 16 = 43'},
       camera:{video:'math.mp4', start_at:0, home_wait_ms:1000, reply_wait_ms:2000, loop:true, cues:[
         {at:1, prompt:'Gizmo, did I get this right?', audio:'kid.mp3'},
       ]},

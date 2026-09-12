@@ -33,40 +33,36 @@
     "duration": 7.86
   },
   "plant": {
-    "reply": "Your plant caught a tiny fungal bug, which works just like a cold for plants! It covers the leaves with dark spots and yellow circles, making the edges brown and crispy. You can help it heal by snipping off the sick leaves and throwing them away in the trash. Just make sure to water only the dirt around the base, keeping the remaining leaves dry so the fungus can't spread.",
-    "reply_audio": "/static/demo-plant-refreshed.wav",
+    "reply": "Your plant caught a tiny fungal bug, which causes dark spots, yellow circles, and crispy brown edges. Help it heal by snipping off the sick leaves and throwing them in the trash. Water only the dirt around the base, keeping the other leaves dry so the fungus can't spread.",
+    "reply_audio": "/static/demo-plant-refreshed.wav?v=plant2",
     "reply_timed": [
       [
         0.0,
-        "Your plant caught a tiny fungal bug, which works just like a cold for plants!"
+        "Your plant caught a tiny fungal bug,"
       ],
       [
-        5.3,
-        ""
+        3.224,
+        "which causes dark spots, yellow circles,"
       ],
       [
-        5.52,
-        "It covers the leaves with dark spots and yellow circles, making the edges brown and crispy."
+        5.988,
+        "and crispy brown edges."
       ],
       [
-        12.5,
-        ""
+        8.05,
+        "Help it heal by snipping off the sick leaves"
       ],
       [
-        12.72,
-        "You can help it heal by snipping off the sick leaves and throwing them away in the trash."
+        10.864,
+        "and throwing them in the trash."
       ],
       [
-        18.16,
-        ""
+        12.96,
+        "Water only the dirt around the base,"
       ],
       [
-        18.38,
-        "Just make sure to water only the dirt around the base, keeping the remaining leaves dry so the fungus can't spread."
-      ],
-      [
-        25.66,
-        ""
+        15.459,
+        "keeping the other leaves dry so the fungus can't spread."
       ]
     ],
     "visual_timed": [
@@ -75,70 +71,46 @@
         0
       ],
       [
-        5.52,
+        8.05,
         1
       ],
       [
-        12.72,
+        12.96,
         2
-      ],
-      [
-        18.38,
-        3
       ]
     ],
-    "duration": 25.88
+    "duration": 19.25
   },
   "mathcheck": {
-    "reply": "Good checking! Your answer is just one away. Take three from sixteen and add them to the seven in twenty-seven. That turns twenty-seven into thirty. Sixteen now has thirteen left: one ten and three ones. Add that ten to thirty. Now forty plus three makes forty-three! You were so close. Making a ten helps us keep track.",
-    "reply_audio": "/static/demo-mathcheck-refreshed.wav",
+    "reply": "Twenty-six plus sixteen is forty-two, not forty-three! Twenty plus ten is thirty; six plus six is twelve. Together, forty-two!",
+    "reply_audio": "/static/demo-mathcheck-refreshed.wav?v=math4",
     "reply_timed": [
       [
         0.0,
-        "Good checking! Your answer is just one away."
+        "Twenty-six plus sixteen is forty-two, not forty-three!"
       ],
       [
-        3.66,
+        5.7,
         ""
       ],
       [
-        3.88,
-        "Take three from sixteen and add them to the seven in twenty-seven."
+        5.92,
+        "Twenty plus ten is thirty;"
       ],
       [
-        9.88,
+        8.26,
+        "six plus six is twelve."
+      ],
+      [
+        10.6,
         ""
       ],
       [
-        10.1,
-        "That turns twenty-seven into thirty."
+        10.82,
+        "Together, forty-two!"
       ],
       [
-        13.03,
-        ""
-      ],
-      [
-        13.25,
-        "Sixteen now has thirteen left: one ten and three ones."
-      ],
-      [
-        19.62,
-        ""
-      ],
-      [
-        19.84,
-        "Add that ten to thirty. Now forty plus three makes forty-three!"
-      ],
-      [
-        25.17,
-        ""
-      ],
-      [
-        25.39,
-        "You were so close. Making a ten helps us keep track."
-      ],
-      [
-        29.63,
+        13.61,
         ""
       ]
     ],
@@ -148,27 +120,23 @@
         0
       ],
       [
-        3.88,
+        5.92,
         1
       ],
       [
-        10.1,
+        6.92,
         2
       ],
       [
-        13.25,
+        8.26,
         3
       ],
       [
-        19.84,
+        10.82,
         4
-      ],
-      [
-        25.39,
-        5
       ]
     ],
-    "duration": 29.85
+    "duration": 13.83
   },
   "pompeii-followup": {
     "reply": "The ash covered the buildings and helped protect many walls and paintings. Archaeologists carefully uncovered them, so we can learn about life there.",
