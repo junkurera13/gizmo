@@ -67,6 +67,9 @@ class ShowPlayer {
   std::atomic<uint32_t> media_gen_{0};
   std::atomic<int> dec_index_[kDecBufs];
   std::atomic<uint32_t> dec_gen_[kDecBufs];
+  // Set when the decoder failed on this frame: render skips it (repeats the
+  // previous frame) and the pipeline moves on instead of retrying forever.
+  std::atomic<bool> dec_bad_[kDecBufs];
   std::atomic<int> dec_w_{0};
   std::atomic<uint32_t> revision_{0};
   std::atomic<uint32_t> held_revision_{0};

@@ -21,6 +21,7 @@ void ShowPlayer::begin() {
         static_cast<uint16_t*>(heap_caps_malloc(kDecPixels, MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT));
     dec_index_[b].store(-1);
     dec_gen_[b].store(0);
+    dec_bad_[b].store(false);
   }
   bool buffers_ok = media_mux_ != nullptr && jpeg_mux_ != nullptr && dec_scratch_ != nullptr;
   for (int b = 0; b < kDecBufs; ++b) buffers_ok = buffers_ok && dec_pixels_[b] != nullptr;
@@ -236,27 +237,25 @@ bool ShowPlayer::render(uint16_t* pixels, bool force) {
   if (media.motion) {
     const uint32_t gen = media_gen_.load();
     for (int b = 0; b < kDecBufs; ++b) {
-      if (dec_index_[b].load() == int(index) && dec_gen_[b].load() == gen && dec_pixels_[b]) {
+      if (dec_index_[b].load() == int(index) && dec_gen_[b].load() == gen &&
+          !dec_bad_[b].load() && dec_pixels_[b]) {
         memcpy(pixels, dec_pixels_[b], kDecPixels);
         drawn_ = int(index);
         changed_ = false;
         return true;
       }
     }
+    // Never decode motion on the body loop: a ~60 ms inline decode starves the
+    // speaker pump and lands the blit mid-scan. Repeat the last frame until the
+    // decode-ahead ring catches up (a failed frame is skipped via dec_bad_).
+    return false;
   }
   if (decode_media_frame(media, index, pixels)) {
     drawn_ = int(index);
     changed_ = false;
     return true;
   }
-  Serial.println("show: JPEG decode failed; retaining still or returning home");
-  if (media.motion) {
-    // A bad motion frame must not free the clip: the decode task may still
-    // be inside esp_jpg_decode, which is not reentrant. Keep the clip and
-    // draw the still for this tick.
-    changed_ = true;
-    return still_.bytes && still_.count > 0 && decode_media_frame(still_, 0, pixels);
-  }
+  Serial.println("show: JPEG decode failed; returning home");
   cancel();
   return false;
 }
@@ -466,13 +465,10 @@ void ShowPlayer::decode_run() {
       ok = jpg2rgb565(dec_scratch_, length, reinterpret_cast<uint8_t*>(dec_pixels_[w]), JPG_SCALE_NONE);
     }
     if (jpeg_mux_) xSemaphoreGive(jpeg_mux_);
-    if (!ok) {
-      vTaskDelay(pdMS_TO_TICKS(10));
-      continue;
-    }
-    // Publish index before generation: render() only consumes a buffer whose
-    // generation matches, so the last store must be the one that makes it
-    // visible — never (new generation, stale index) over half-written pixels.
+    // Publish bad-flag, index, then generation last (the commit point). A
+    // failed frame is marked bad so the playhead skips it — the pipeline must
+    // advance, not retry the same corrupt frame forever.
+    dec_bad_[w].store(!ok);
     dec_index_[w].store(static_cast<int>(target));
     dec_gen_[w].store(gen);
   }

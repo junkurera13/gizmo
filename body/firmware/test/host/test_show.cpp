@@ -2,12 +2,27 @@
 #include <HTTPClient.h>
 #include <img_converters.h>
 #include <freertos/task.h>
+#include <freertos/semphr.h>
 #include <fstream>
 #include <iterator>
 #include <cassert>
+#include <thread>
+#include <chrono>
 #define private public
 #include "gizmo/show.h"
 #undef private
+
+using namespace gizmo;
+
+// Motion frames are decoded off the body loop now; render() is a memcpy over
+// the decode-ahead ring, so tests poll for the task to publish a frame.
+static bool wait_render(ShowPlayer& player, uint16_t* pixels, int tries = 300) {
+  for (int i = 0; i < tries; ++i) {
+    if (player.render(pixels)) return true;
+    std::this_thread::sleep_for(std::chrono::milliseconds(2));
+  }
+  return false;
+}
 
 int main(int argc,char** argv) {
   using namespace gizmo;
@@ -51,13 +66,38 @@ int main(int argc,char** argv) {
   assert(xQueueReceive(player.jobs_,&job,0));assert(!job.still);
   response(true);assert(player.download(job,true,media));
   player.publish(media);player.update();assert(player.clip_.count==2);
-  assert(player.render(pixels));
-  const auto* first=mock_decoded_frame;
-  mock_now+=84;assert(player.render(pixels));assert(mock_decoded_frame!=first);
-  mock_now+=84;assert(player.render(pixels));assert(mock_decoded_frame==first);
+  // Wire the decode-ahead path the way begin() does: buffers, muxes, task.
+  player.media_mux_=xSemaphoreCreateMutex();
+  player.jpeg_mux_=xSemaphoreCreateMutex();
+  player.dec_scratch_=new uint8_t[ShowPlayer::kDecScratch];
+  for(int b=0;b<ShowPlayer::kDecBufs;++b){
+    player.dec_pixels_[b]=new uint16_t[320*240];
+    player.dec_index_[b].store(-1);player.dec_gen_[b].store(0);player.dec_bad_[b].store(false);
+  }
+  xTaskCreate(ShowPlayer::decode_task,"dec",8192,&player,1,nullptr);
+  // render() never decodes motion on the loop: it draws whatever the ring has.
+  assert(wait_render(player,pixels));
+  const int first_drawn=player.drawn_;
+  mock_now+=84;assert(wait_render(player,pixels));assert(player.drawn_!=first_drawn);
+  mock_now+=84;assert(wait_render(player,pixels));assert(player.drawn_==first_drawn);
+  // A failed frame is marked bad and skipped: render repeats the previous
+  // frame instead of decoding inline, and the clip is retained. Republishing
+  // bumps the generation, so the decode task re-decodes and the injected
+  // failure lands there — not on the next still's decode.
   mock_jpeg_failures=1;
-  assert(player.render(pixels,true)); // a bad motion frame keeps the clip and draws the still
+  ShowPlayer::Job again{request,player.revision_.load(),false,false};
+  response(true);assert(player.download(again,true,media));
+  player.publish(media);player.update();
+  for(int i=0;i<100;++i){player.render(pixels,true);std::this_thread::sleep_for(std::chrono::milliseconds(4));}
+  bool marked=false;
+  for(int b=0;b<ShowPlayer::kDecBufs;++b)
+    if(player.dec_bad_[b].load()&&player.dec_gen_[b].load()==player.media_gen_.load())marked=true;
+  assert(marked);
   assert(player.available() && player.clip_.bytes!=nullptr);
+  // The pipeline advances past the skipped frame; the next index draws again.
+  bool recovered=false;
+  for(int i=0;i<300 && !recovered;++i){mock_now+=84;recovered=player.render(pixels);std::this_thread::sleep_for(std::chrono::milliseconds(2));}
+  assert(recovered);
   // Errors leave the already-visible still intact.
   for(int status:{302,401,404,503}) {response(true);mock_media_status=status;assert(!player.download(job,true,media));assert(player.available());}
   response(true);mock_media_length=int(kShowMaxBytes)+1;assert(!player.download(job,true,media));

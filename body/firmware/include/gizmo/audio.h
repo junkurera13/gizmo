@@ -38,6 +38,9 @@ class Audio {
   // so idle D9 is quiet.
   size_t enqueue_live(const int16_t* samples, size_t count);
   void stop_live();
+  // Session says more PCM is coming (state "talking"): an empty ring is a
+  // starvation gap to hold through, not the end of the stream.
+  void set_live_expecting(bool expecting) { live_expecting_ = expecting; }
   size_t live_capacity_left() const { return live_cap_ - live_n_; }
 
   void set_volume(uint8_t step, uint8_t steps);
@@ -70,6 +73,7 @@ class Audio {
   bool playing_ = false;
   bool live_armed_ = false;    // accepting inbound PCM; speaker may be stopped
   bool live_playing_ = false;  // PWM running for live inbound audio
+  bool live_expecting_ = false;
   bool draining_ = false;   // last samples queued, waiting for DMA to finish
   uint32_t drain_until_ = 0;
   int16_t* memo_ = nullptr;

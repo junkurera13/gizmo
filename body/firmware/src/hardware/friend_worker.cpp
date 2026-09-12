@@ -188,6 +188,7 @@ void FriendLink::run() {
     if (connection.take_show(show)) xQueueOverwrite(shows_, &show);
     if (connection.take_line(status.line, sizeof(status.line))) ++status.line_revision;
     status.thinking = connection.session_thinking();
+    status.talking = connection.session_talking();
     if (connection.ready() != was_ready) {
       ++status.generation;
       was_ready = connection.ready();
