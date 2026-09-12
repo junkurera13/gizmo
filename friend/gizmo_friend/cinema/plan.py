@@ -114,6 +114,32 @@ class DirectedFilmPlan(FilmPlan):
     beats: list[FilmBeat] = Field(min_length=1, max_length=5)
 
 
+def soundtrack_timings(plan: FilmPlan, pcm: bytes) -> list[dict]:
+    """Split one recording into beat windows by spoken-word weight."""
+    weights = [max(len(beat.narration.split()), 1) for beat in plan.beats]
+    total = sum(weights)
+    length = len(pcm) - len(pcm) % 2
+    timings = []
+    cursor = 0
+    for index, beat in enumerate(plan.beats):
+        if index == len(plan.beats) - 1:
+            end = length
+        else:
+            end = cursor + length * weights[index] // total
+            end -= end % 2
+            end = min(max(end, cursor), length)
+        timings.append(
+            {
+                "start": cursor / 48000,
+                "end": end / 48000,
+                "narration": beat.narration,
+                "action": beat.action,
+            }
+        )
+        cursor = end
+    return timings
+
+
 @dataclass
 class PreparedFilm:
     plan: FilmPlan
@@ -157,36 +183,22 @@ class FilmMaker:
         return DirectedFilmPlan.model_validate_json(raw)
 
     async def synthesize(self, plan: FilmPlan) -> PreparedFilm:
-        # One Gemini TTS call at a time. Firing every beat together 429s the
-        # quota and aborts the film before Director ever sees a WAV.
-        voices = []
-        for beat in plan.beats:
-            voices.append(await self.voice.narrate(beat.narration))
-        for i, voice in enumerate(voices):
-            if voice is None:
-                voices[i] = await self.voice.narrate(plan.beats[i].narration)
-        if any(voice is None for voice in voices):
+        # One soundtrack, one Google TTS call. Per-beat voices multiply 429s
+        # on the preview pool and abort the film before Director sees a WAV.
+        script = " ".join(beat.narration for beat in plan.beats)
+        voice = await self.voice.narrate(script)
+        if voice is None:
+            voice = await self.voice.narrate(script)
+        if voice is None:
             raise RuntimeError("The narration did not arrive. Please try again.")
-        pcm = bytearray()
-        timings = []
-        for beat, voice in zip(plan.beats, voices):
-            start = len(pcm) / 48000
-            pcm.extend(voice.pcm)
-            timings.append(
-                {
-                    "start": start,
-                    "end": len(pcm) / 48000,
-                    "narration": beat.narration,
-                    "action": beat.action,
-                }
-            )
+        timings = soundtrack_timings(plan, voice.pcm)
         buffer = io.BytesIO()
         with wave.open(buffer, "wb") as audio:
             audio.setnchannels(1)
             audio.setsampwidth(2)
             audio.setframerate(24000)
-            audio.writeframes(bytes(pcm))
-        return PreparedFilm(plan, "", len(pcm) / 48000, buffer.getvalue(), timings)
+            audio.writeframes(voice.pcm)
+        return PreparedFilm(plan, "", len(voice.pcm) / 48000, buffer.getvalue(), timings)
 
     async def upload_audio(self, wav: bytes) -> str:
         if not wav:

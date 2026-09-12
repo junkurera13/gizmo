@@ -476,8 +476,9 @@ class AudioTimelineTests(unittest.IsolatedAsyncioTestCase):
             order.append(text)
             await asyncio.sleep(0)
             inflight -= 1
+            words = max(len(text.split()), 1)
             return Narration(
-                text=text, pcm=b"\x01\x00" * 2400, model="test", latency_seconds=0
+                text=text, pcm=b"\x01\x00" * (2400 * words), model="test", latency_seconds=0
             )
 
         maker.voice = SimpleNamespace(narrate=narrate)
@@ -492,7 +493,7 @@ class AudioTimelineTests(unittest.IsolatedAsyncioTestCase):
         async with asyncio.timeout(1):
             prepared = await maker.prepare(plan)
         self.assertEqual(peak, 1)
-        self.assertEqual(order, ["0", "1", "2"])
+        self.assertEqual(order, ["0 1 2"])
         self.assertEqual(prepared.duration, 0.3)
         self.assertEqual([row["start"] for row in prepared.timings], [0, 0.1, 0.2])
         with wave.open(io.BytesIO(prepared.wav), "rb") as audio:

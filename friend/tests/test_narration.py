@@ -6,7 +6,11 @@ import unittest
 
 import httpx
 
-from gizmo_friend.brain.narration import GeminiNarrationProvider, NARRATION_RATE
+from gizmo_friend.brain.narration import (
+    GeminiNarrationProvider,
+    NARRATION_RATE,
+    narration_error_detail,
+)
 
 
 def pcm_json(samples: int = NARRATION_RATE // 5) -> bytes:
@@ -30,6 +34,23 @@ def pcm_json(samples: int = NARRATION_RATE // 5) -> bytes:
     return json.dumps(payload).encode()
 
 
+class NarrationErrorDetailTests(unittest.TestCase):
+    def test_reads_resource_exhausted_and_quota_metric(self):
+        body = json.dumps(
+            {
+                "error": {
+                    "message": "Resource exhausted",
+                    "status": "RESOURCE_EXHAUSTED",
+                    "details": [
+                        {"quotaMetric": "generativelanguage.googleapis.com/generate_content_requests"}
+                    ],
+                }
+            }
+        ).encode()
+        self.assertIn("RESOURCE_EXHAUSTED", narration_error_detail(body))
+        self.assertIn("generate_content_requests", narration_error_detail(body))
+
+
 class GeminiNarrationRetryTests(unittest.IsolatedAsyncioTestCase):
     async def test_retries_429_then_returns_speech(self):
         calls = []
@@ -48,3 +69,36 @@ class GeminiNarrationRetryTests(unittest.IsolatedAsyncioTestCase):
         self.assertIsNotNone(voice)
         self.assertEqual(len(calls), 2)
         self.assertGreaterEqual(len(voice.pcm), NARRATION_RATE // 10 * 2)
+        self.assertIn("gemini-3.1-flash-tts-preview", str(calls[0].url))
+
+    async def test_falls_back_to_2_5_after_preview_429s(self):
+        calls = []
+
+        def handle(request: httpx.Request) -> httpx.Response:
+            calls.append(request)
+            if "gemini-3.1-flash-tts-preview" in str(request.url):
+                return httpx.Response(
+                    429,
+                    headers={"retry-after": "0"},
+                    text=json.dumps(
+                        {
+                            "error": {
+                                "message": "Resource exhausted",
+                                "status": "RESOURCE_EXHAUSTED",
+                            }
+                        }
+                    ),
+                )
+            return httpx.Response(200, content=pcm_json())
+
+        provider = GeminiNarrationProvider(api_key="test-key")
+        await provider.close()
+        provider._client = httpx.AsyncClient(transport=httpx.MockTransport(handle))
+        self.addAsyncCleanup(provider.close)
+        voice = await provider.narrate("The rocket pushes gas out the back.")
+        self.assertIsNotNone(voice)
+        self.assertEqual(voice.model, "gemini-2.5-flash-preview-tts")
+        self.assertEqual(provider.model, "gemini-2.5-flash-preview-tts")
+        self.assertEqual(len(calls), 5)
+        self.assertTrue(all("gemini-3.1-flash-tts-preview" in str(call.url) for call in calls[:4]))
+        self.assertIn("gemini-2.5-flash-preview-tts", str(calls[4].url))
