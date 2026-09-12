@@ -18,7 +18,7 @@ void FriendLink::begin() {
     }
   }
   if (!commands_ || !speaker_ || !statuses_ || !shows_ || jpeg_slot_[0] == nullptr || jpeg_slot_[1] == nullptr ||
-      xTaskCreate(task, "friend-net", 16384, this, 1, nullptr) != pdPASS) {
+      xTaskCreate(task, "friend-net", 16384, this, 3, nullptr) != pdPASS) {
     if (commands_) vQueueDelete(commands_);
     if (speaker_) vQueueDelete(speaker_);
     if (statuses_) vQueueDelete(statuses_);

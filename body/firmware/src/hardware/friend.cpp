@@ -575,8 +575,9 @@ void FriendConnection::on_message(const char* json, size_t len) {
         Serial.printf("friend speaker: start %u pcm bytes\n", static_cast<unsigned>(decoded_len));
       }
       if (!enqueue_speaker(reinterpret_cast<const int16_t*>(decoded), decoded_len / 2)) {
+        // can_receive() already backpressures the socket for a full ring, so
+        // this is a defensive drop — a lost chunk must never reset the device.
         free(decoded);
-        abort();
         return;
       }
     }
@@ -664,9 +665,11 @@ void FriendConnection::on_message(const char* json, size_t len) {
     }
     glass_seen_ = true;
     if (hello_ok_ && session_ready_) {
+      if (phase_ != FriendPhase::kOnline) {
+        Serial.println("friend: online (hello + glass)");
+      }
       phase_ = FriendPhase::kOnline;
       strncpy(detail_, "ONLINE", sizeof(detail_) - 1);
-      Serial.println("friend: online (hello + glass)");
     }
     return;
   }

@@ -18,6 +18,7 @@ struct HTTPClient {
   int GET() {mock_health_entered.store(true);while(mock_health_blocked.load())std::this_thread::sleep_for(std::chrono::milliseconds(1));return mock_media_status;}
   String getString() {return "{\"body_protocol\":{\"version\":1}}";}
   void end() {}
+  void setReuse(bool) {}
   void setFollowRedirects(int value) {mock_redirects=value;}
   void collectHeaders(const char**,size_t) {}
   void addHeader(const char* key,const char* value) {mock_request_headers[key]=value;}

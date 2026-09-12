@@ -25,7 +25,6 @@ int main() {
   // Configuration is also queued, never executed on the body loop.
   assert(link.set_token("test-token"));
   mock_health_blocked.store(false);
-  mock_task_stop.store(true);
-  mock_task.join();
+  join_mock_tasks();
   puts("worker: body loop stays responsive while HTTP is blocked; commands queue without waiting");
 }

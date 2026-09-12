@@ -2,6 +2,7 @@
 #include <atomic>
 #include <freertos/FreeRTOS.h>
 #include <freertos/queue.h>
+#include <freertos/semphr.h>
 #include "gizmo/show_format.h"
 
 namespace gizmo {
@@ -37,6 +38,8 @@ class ShowPlayer {
   };
   static void task(void* context);
   void run();
+  static void decode_task(void* context);
+  void decode_run();
   bool download(const Job& job, bool motion, Media& media);
   void publish(Media& media);
   void release(Media& media);
@@ -45,6 +48,21 @@ class ShowPlayer {
   void drop_held();
   void ack(uint32_t cue, bool motion, bool ok);
   QueueHandle_t jobs_ = nullptr, held_jobs_ = nullptr, results_ = nullptr;
+  SemaphoreHandle_t media_mux_ = nullptr;
+  // Decoded-ahead ring for motion playback. A JPEG frame decode costs ~50 ms
+  // on the body loop — over half the 83 ms frame budget — so a separate task
+  // copies the next frames' JPEG bytes under media_mux_, decodes them into
+  // these SPIRAM buffers, and render() becomes a memcpy. Buffers tagged with
+  // the media generation they came from; a stale generation is skipped.
+  static constexpr int kDecBufs = 3;
+  static constexpr size_t kDecScratch = 40 * 1024;
+  static constexpr size_t kDecPixels = kShowWidth * kShowHeight * sizeof(uint16_t);
+  uint16_t* dec_pixels_[kDecBufs] = {};
+  uint8_t* dec_scratch_ = nullptr;
+  std::atomic<uint32_t> media_gen_{0};
+  std::atomic<int> dec_index_[kDecBufs];
+  std::atomic<uint32_t> dec_gen_[kDecBufs];
+  std::atomic<int> dec_w_{0};
   std::atomic<uint32_t> revision_{0};
   std::atomic<uint32_t> held_revision_{0};
   ShowRequest request_;

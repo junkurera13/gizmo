@@ -127,7 +127,7 @@ int main(int argc,char** argv) {
   for(int i=0;i<10000;++i)async.update();
   async.cancel();
   assert(std::chrono::steady_clock::now()-started<std::chrono::milliseconds(100));
-  mock_health_blocked=false;mock_task_stop=true;mock_task.join();
+  mock_health_blocked=false;join_mock_tasks();
   async.update();assert(!async.available());
   puts("show: authenticated downloads, still-to-motion, loop timing, HTTP/metadata/truncation failures, stale cancellation, blocked-HTTP responsiveness passed");
 }
