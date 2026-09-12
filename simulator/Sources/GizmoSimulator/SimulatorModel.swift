@@ -40,6 +40,12 @@ struct ScreenClip: Identifiable {
     let encodedBytes: Int
 }
 
+private struct PendingCue {
+    var still: NSImage?
+    var clip: ScreenClip?
+    var task: Task<Void, Never>?
+}
+
 @MainActor
 final class SimulatorModel: ObservableObject {
     static let shared = SimulatorModel()
@@ -95,6 +101,9 @@ final class SimulatorModel: ObservableObject {
     private var screenClipRequest = UUID()
     private var requestedClipPath: String?
     private var clipStillPath: String?
+    /// Held film cues buffered but not yet told to play (`go`). Same contract
+    /// as the body: preload still + bounded MJPEG, ack, wait for go.
+    private var pendingCues: [Int: PendingCue] = [:]
     private var socket: URLSessionWebSocketTask?
     private var receiveTask: Task<Void, Never>?
     private var sendTask: Task<Void, Never>?
@@ -696,7 +705,11 @@ final class SimulatorModel: ObservableObject {
 
     private func connect() {
         connectionStatus = .connecting
-        let task = session.webSocketTask(with: backend.request(for: backend.webSocketURL))
+        var request = backend.request(for: backend.webSocketURL)
+        // Advertise held-cue film playback: the brain only starts Cinema when
+        // a connected body asks for held glass cues.
+        request.setValue("1", forHTTPHeaderField: "X-Gizmo-Glass-Cues")
+        let task = session.webSocketTask(with: request)
         socket = task
         task.resume()
 
@@ -732,6 +745,7 @@ final class SimulatorModel: ObservableObject {
         closeCamera()
         closeSettings(animated: false)
         stopMicrophone()
+        dropPendingCues()
         sendTask?.cancel()
         speaker.interrupt()
         connectionStatus = .offline
@@ -849,9 +863,17 @@ final class SimulatorModel: ObservableObject {
             speaker.interrupt()
             spokenLine = ""
         } else if type == "glass" {
-            // Reconnect snapshots can contain both URLs in the same event.
-            if let still = object["still"] as? String { loadScreenImage(path: still) }
-            if let frames = object["frames"] as? String { loadScreenFrames(path: frames) }
+            if let cue = object["cue"] as? Int {
+                if object["hold"] as? Bool == true {
+                    holdCue(cue, object: object)
+                } else if object["go"] as? Bool == true {
+                    playCue(cue, object: object)
+                }
+            } else {
+                // Reconnect snapshots can contain both URLs in the same event.
+                if let still = object["still"] as? String { loadScreenImage(path: still) }
+                if let frames = object["frames"] as? String { loadScreenFrames(path: frames) }
+            }
         } else if type == "error" {
             appendEvent("error", object["message"] as? String ?? "Unknown error")
         }
@@ -899,6 +921,7 @@ final class SimulatorModel: ObservableObject {
     }
 
     private func clearShow() {
+        dropPendingCues()
         clearClip()
         screenImageRequest = UUID()
         screenImageTask?.cancel()
@@ -969,6 +992,111 @@ final class SimulatorModel: ObservableObject {
                 if !Task.isCancelled { appendEvent("clip error", error.localizedDescription) }
             }
         }
+    }
+
+    /// Held cue: buffer the still and bounded MJPEG, ack, then wait for `go`.
+    /// Same preload contract the body speaks — the segment must never paint
+    /// before the brain says go.
+    private func holdCue(_ cue: Int, object: [String: Any]) {
+        func fail() {
+            send(["type": "glass_ready", "cue": cue, "kind": "motion", "ok": false])
+        }
+        guard !poweredOff, screenOn, deviceState != "asleep",
+              let stillPath = object["still"] as? String,
+              let framesPath = object["frames"] as? String,
+              let stillURL = showURL(stillPath, extension: "jpg", extras: []),
+              let framesURL = showURL(framesPath, extension: "mjpeg", extras: [("fps", hardwareProfile.fps)])
+        else {
+            fail()
+            return
+        }
+        pendingCues[cue]?.task?.cancel()
+        let task = Task {
+            do {
+                let (stillData, stillResponse) = try await session.data(for: backend.request(for: stillURL))
+                guard !Task.isCancelled,
+                      (stillResponse as? HTTPURLResponse)?.statusCode == 200,
+                      let still = NSImage(data: stillData)
+                else { throw URLError(.badServerResponse) }
+                var request = backend.request(for: framesURL)
+                request.timeoutInterval = 35
+                let (framesData, framesResponse) = try await downloadBoundedFrames(
+                    session: session,
+                    request: request,
+                    maximumBytes: hardwareProfile.maxEncodedBytes
+                )
+                guard !Task.isCancelled else { return }
+                let sequence = try MotionJPEGSequence(
+                    data: framesData, response: framesResponse, profile: hardwareProfile
+                )
+                pendingCues[cue] = PendingCue(
+                    still: still,
+                    clip: ScreenClip(
+                        id: framesPath,
+                        stillPath: stillPath,
+                        frames: sequence.frames,
+                        fps: sequence.fps,
+                        width: sequence.width,
+                        height: sequence.height,
+                        encodedBytes: sequence.encodedBytes
+                    )
+                )
+                appendEvent(
+                    "film cue buffered",
+                    "\(cue): \(sequence.frames.count) JPEGs at \(sequence.fps) fps"
+                )
+                send(["type": "glass_ready", "cue": cue, "kind": "motion", "ok": true])
+            } catch {
+                if !Task.isCancelled {
+                    pendingCues.removeValue(forKey: cue)
+                    appendEvent("film cue error", "\(cue): \(error.localizedDescription)")
+                    fail()
+                }
+            }
+        }
+        pendingCues[cue] = PendingCue(task: task)
+    }
+
+    /// `go` on a buffered cue: promote it to the glass with its caption.
+    private func playCue(_ cue: Int, object: [String: Any]) {
+        if let pending = pendingCues.removeValue(forKey: cue), let still = pending.still, let clip = pending.clip {
+            clearClip()
+            screenImageRequest = UUID()
+            screenImageTask?.cancel()
+            clipStillPath = clip.stillPath
+            screenImage = still
+            screenImageID = clip.stillPath
+            screenClip = clip
+            viewingStill = true
+            if let caption = object["text"] as? String { spokenLine = caption }
+            appendEvent("film playing", "\(clip.frames.count) frames at \(clip.fps) fps")
+        } else {
+            // Missed or evicted buffer: degrade to the plain show path.
+            if let still = object["still"] as? String { loadScreenImage(path: still) }
+            if let frames = object["frames"] as? String { loadScreenFrames(path: frames) }
+        }
+    }
+
+    private func showURL(_ path: String, extension ext: String, extras: [(String, Int)]) -> URL? {
+        guard let url = URL(string: path, relativeTo: baseHTTPURL)?.absoluteURL,
+              url.scheme == baseHTTPURL.scheme, url.host == baseHTTPURL.host,
+              url.port == baseHTTPURL.port, url.pathExtension == ext,
+              var parts = URLComponents(url: url, resolvingAgainstBaseURL: false)
+        else { return nil }
+        var items = (parts.queryItems ?? []).filter { !["w", "h", "fps"].contains($0.name) } + [
+            URLQueryItem(name: "w", value: String(hardwareProfile.width)),
+            URLQueryItem(name: "h", value: String(hardwareProfile.height)),
+        ]
+        for (name, value) in extras {
+            items.append(URLQueryItem(name: name, value: String(value)))
+        }
+        parts.queryItems = items
+        return parts.url
+    }
+
+    private func dropPendingCues() {
+        for (_, cue) in pendingCues { cue.task?.cancel() }
+        pendingCues.removeAll()
     }
 
     private func stillPath(forFramesPath path: String) -> String? {

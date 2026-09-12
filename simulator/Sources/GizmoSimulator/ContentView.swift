@@ -136,7 +136,7 @@ private struct DeviceView: View {
                 } else if homeVisible {
                     HomeClusterView(
                         level: model.batteryLevel,
-                        character: spriteStore.animation(for: model.glassState)
+                        character: spriteStore.animation(for: homeAnimationName)
                             ?? spriteStore.animation(for: "idle")
                     )
                 }
@@ -162,6 +162,15 @@ private struct DeviceView: View {
     private var homeVisible: Bool {
         guard model.screenOn, !model.viewingStill else { return false }
         return ["listening", "talking", "thinking"].contains(model.glassState)
+    }
+
+    /// Firmware mapping (ensure_home_base): the lean plays only while PTT is
+    /// held and recording, the paint while the brain is thinking; the idle
+    /// blink covers every other home state — including "listening".
+    private var homeAnimationName: String {
+        if model.isPushToTalking { return "listening" }
+        if model.glassState == "thinking" { return "thinking" }
+        return "idle"
     }
 
     /// Scratch mapping: device state → preview folder name.
