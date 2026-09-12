@@ -22,8 +22,8 @@ class ShowPlayer {
   bool available() const { return still_.bytes != nullptr; }
   bool motion_playing() const { return clip_.bytes != nullptr; }
   bool render(uint16_t* pixels, bool force = false);
-  // esp_jpg_decode is chip-global and not reentrant: every JPEG decode on the
-  // device (film frames, stills, camera preview) must go through this lock.
+  // Decodes under the chip-global gizmo::jpeg_lock (esp_jpg_decode is not
+  // reentrant); the camera preview shares it through this entry point.
   bool decode_jpeg(const uint8_t* bytes, size_t length, uint16_t* pixels);
   bool take_glass_ready(GlassReady& ack);
   void diagnose() const;
@@ -53,7 +53,6 @@ class ShowPlayer {
   void ack(uint32_t cue, bool motion, bool ok);
   QueueHandle_t jobs_ = nullptr, held_jobs_ = nullptr, results_ = nullptr;
   SemaphoreHandle_t media_mux_ = nullptr;
-  SemaphoreHandle_t jpeg_mux_ = nullptr;
   // Decoded-ahead ring for motion playback. A JPEG frame decode costs ~50 ms
   // on the body loop — over half the 83 ms frame budget — so a separate task
   // copies the next frames' JPEG bytes under media_mux_, decodes them into

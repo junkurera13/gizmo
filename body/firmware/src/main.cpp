@@ -842,7 +842,11 @@ void loop() {
   friend_link.update(wifi.online());
   const bool had_show = show_player.available();
   gizmo::ShowRequest show_request;
-  if (friend_link.take_show(show_request)) {
+  // Media stays out of the boot window: a replayed show/held cue would start a
+  // TLS fetch and the decode task mid-flipbook, starving (or racing the raw
+  // boot-slot decode on) the loop that draws it. The queue is last-wins, so
+  // the current glass state applies right after BOOT -> IDLE.
+  if (state != State::kBoot && friend_link.take_show(show_request)) {
     if (state == State::kSettings || state == State::kCamera || state == State::kPlayback) {
       // A held story cue is not a picture yet; only a real one is declined with Select.
       if (show_request.viewing && !show_request.hold) friend_link.send_select();

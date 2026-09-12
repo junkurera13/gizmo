@@ -68,7 +68,6 @@ int main(int argc,char** argv) {
   player.publish(media);player.update();assert(player.clip_.count==2);
   // Wire the decode-ahead path the way begin() does: buffers, muxes, task.
   player.media_mux_=xSemaphoreCreateMutex();
-  player.jpeg_mux_=xSemaphoreCreateMutex();
   player.dec_scratch_=new uint8_t[ShowPlayer::kDecScratch];
   for(int b=0;b<ShowPlayer::kDecBufs;++b){
     player.dec_pixels_[b]=new uint16_t[320*240];

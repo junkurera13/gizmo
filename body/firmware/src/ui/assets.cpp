@@ -1,4 +1,5 @@
 #include "gizmo/assets.h"
+#include "gizmo/jpeg_lock.h"
 #include <stdlib.h>
 #include "img_converters.h"
 
@@ -8,9 +9,9 @@ bool decode(const uint8_t* begin, const uint8_t* end, const draw::Canvas& canvas
   if (begin == nullptr || end == nullptr || end <= begin) return false;
   if (!canvas.valid() || canvas.width != kPanelWidth || canvas.height != kPanelHeight) return false;
   // jpg2rgb565 writes width*height*2 bytes at the JPEG's own size, which the
-  // exporter fixed to the panel profile.
-  return jpg2rgb565(begin, static_cast<size_t>(end - begin), reinterpret_cast<uint8_t*>(canvas.pixels),
-                    JPG_SCALE_NONE);
+  // exporter fixed to the panel profile. It runs under the chip-global jpeg
+  // lock so boot/home frames cannot race the show decode-ahead task.
+  return jpeg_decode_locked(begin, static_cast<size_t>(end - begin), canvas.pixels);
 }
 }  // namespace
 

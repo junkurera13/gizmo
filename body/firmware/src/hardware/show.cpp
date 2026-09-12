@@ -1,4 +1,5 @@
 #include "gizmo/show.h"
+#include "gizmo/jpeg_lock.h"
 #include "gizmo/trust_roots.h"
 #include <Arduino.h>
 #include <HTTPClient.h>
@@ -14,7 +15,6 @@ void ShowPlayer::begin() {
   held_jobs_ = xQueueCreate(1, sizeof(Job));
   results_ = xQueueCreate(4, sizeof(Media));
   media_mux_ = xSemaphoreCreateMutex();
-  jpeg_mux_ = xSemaphoreCreateMutex();
   dec_scratch_ = static_cast<uint8_t*>(heap_caps_malloc(kDecScratch, MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT));
   for (int b = 0; b < kDecBufs; ++b) {
     dec_pixels_[b] =
@@ -23,7 +23,7 @@ void ShowPlayer::begin() {
     dec_gen_[b].store(0);
     dec_bad_[b].store(false);
   }
-  bool buffers_ok = media_mux_ != nullptr && jpeg_mux_ != nullptr && dec_scratch_ != nullptr;
+  bool buffers_ok = media_mux_ != nullptr && dec_scratch_ != nullptr;
   for (int b = 0; b < kDecBufs; ++b) buffers_ok = buffers_ok && dec_pixels_[b] != nullptr;
   if (!jobs_ || !held_jobs_ || !results_ || xTaskCreate(task, "show-download", 16384, this, 1, nullptr) != pdPASS) {
     if (jobs_) vQueueDelete(jobs_);
@@ -52,10 +52,11 @@ void ShowPlayer::cancel(bool dismiss) {
   release(clip_);
   if (media_mux_) xSemaphoreGive(media_mux_);
   // esp_jpg_decode is chip-global and not reentrant. The generation bump makes
-  // a copied-but-not-started decode skip inside jpeg_mux_; this drain waits out
-  // one already holding it, so no ShowPlayer decode outlives cancel() into the
-  // camera's blit.
-  if (jpeg_mux_) { xSemaphoreTake(jpeg_mux_, portMAX_DELAY); xSemaphoreGive(jpeg_mux_); }
+  // a copied-but-not-started decode skip inside the shared jpeg lock; this
+  // drain waits out one already holding it, so no ShowPlayer decode outlives
+  // cancel() into the camera's blit.
+  jpeg_lock();
+  jpeg_unlock();
   drawn_ = -1;
   if (jobs_) xQueueReset(jobs_);
   drop_held();
@@ -206,11 +207,7 @@ void ShowPlayer::update() {
   }
 }
 bool ShowPlayer::decode_jpeg(const uint8_t* bytes, size_t length, uint16_t* pixels) {
-  if (!bytes || length == 0 || !pixels) return false;
-  if (jpeg_mux_) xSemaphoreTake(jpeg_mux_, portMAX_DELAY);
-  const bool ok = jpg2rgb565(bytes, length, reinterpret_cast<uint8_t*>(pixels), JPG_SCALE_NONE);
-  if (jpeg_mux_) xSemaphoreGive(jpeg_mux_);
-  return ok;
+  return jpeg_decode_locked(bytes, length, pixels);
 }
 bool ShowPlayer::decode_media_frame(const Media& media, size_t index, uint16_t* pixels) {
   if (!pixels) return false;
@@ -457,14 +454,14 @@ void ShowPlayer::decode_run() {
     }
     if (w < 0) w = dec_w_.fetch_add(1) % kDecBufs;
     bool ok = false;
-    if (jpeg_mux_) xSemaphoreTake(jpeg_mux_, portMAX_DELAY);
+    jpeg_lock();
     // Re-check under the lock: cancel() bumps the generation and drains this
     // lock, so a frame copied before the bump must skip the decoder here —
     // taking the lock itself is not proof the media is still current.
     if (media_gen_.load() == gen && dec_pixels_[w] != nullptr) {
       ok = jpg2rgb565(dec_scratch_, length, reinterpret_cast<uint8_t*>(dec_pixels_[w]), JPG_SCALE_NONE);
     }
-    if (jpeg_mux_) xSemaphoreGive(jpeg_mux_);
+    jpeg_unlock();
     // Publish bad-flag, index, then generation last (the commit point). A
     // failed frame is marked bad so the playhead skips it — the pipeline must
     // advance, not retry the same corrupt frame forever.
