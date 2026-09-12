@@ -31,14 +31,10 @@ function invite(beat) {
   status(beat.interaction.kind === 'orbit' ? 'Change the speed. See what happens.' : 'Take your time. You can always tell me something else.', 'exploring');
 }
 const embedded = /(?:^|[?&])embedded=1(?:&|$)/.test(globalThis.location?.search || '');
-const lab = /(?:^|[?&])lab=1(?:&|$)/.test(globalThis.location?.search || '');
-// The lab is the internal surface — it should look exactly like the public
-// emulator, so lab mode always renders the embedded device chrome.
-if (embedded || lab) document.documentElement.classList.add('embedded');
-if (lab) document.documentElement.classList.add('oddity-lab');
-let playMoments = embedded && !lab;
-const CODE_KEY = lab ? 'oddity-lab-code-v1' : 'oddity-preview-v1';
-const SESSION_KEY = lab ? 'oddity-lab-session-v1' : 'oddity-session-v1';
+if (embedded) document.documentElement.classList.add('embedded');
+let playMoments = embedded;
+const CODE_KEY = 'oddity-preview-v1';
+const SESSION_KEY = 'oddity-session-v1';
 const MOMENT_KEY = 'oddity-moment-v1';
 
 function stored(key) {
@@ -503,13 +499,9 @@ async function connect(previewCode, options = {}) {
   const fresh = Boolean(options.fresh);
   try {
     if (playMoments) await ensureMoments();
-    const headers = {'X-Oddity-Mode': playMoments ? 'moment' : 'lab'};
-    if (playMoments) {
-      headers['X-Oddity-Preview'] = preview;
-      if (momentId) headers['X-Oddity-Moment'] = momentId;
-    } else {
-      headers['X-Oddity-Lab'] = preview;
-    }
+    const headers = {'X-Oddity-Mode': playMoments ? 'moment' : 'sandbox'};
+    headers['X-Oddity-Preview'] = preview;
+    if (playMoments && momentId) headers['X-Oddity-Moment'] = momentId;
     if (session && !fresh) headers['X-Oddity-Session'] = session;
     const response = await fetch('/oddity/session', {method: 'POST', headers});
     if (response.status === 401) {

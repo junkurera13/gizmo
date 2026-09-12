@@ -20,7 +20,6 @@ from gizmo_friend.oddity.moments import ORDER, catalog, lookup
 from gizmo_friend.oddity.runtime import ExperienceSession, MEDIA_NAME
 
 COOKIE = "oddity_session"
-LAB_COOKIE = "oddity_lab_session"
 IDENTITY = re.compile(r"[0-9a-f]{32}")
 
 
@@ -48,7 +47,6 @@ def router(root: Path, static: Path) -> APIRouter:
             connection.query_params.get("session", ""),
             connection.headers.get("x-oddity-session", ""),
             connection.cookies.get(COOKIE, ""),
-            connection.cookies.get(LAB_COOKIE, ""),
         )
         for value in values:
             if IDENTITY.fullmatch(value) and (root / "oddity" / value / "session.json").exists():
@@ -92,17 +90,11 @@ def router(root: Path, static: Path) -> APIRouter:
         })
         path.write_text(json.dumps(saved))
 
-    def authenticate(request: Request, *, lab: bool) -> None:
-        preview_token = os.environ.get("ODDITY_PREVIEW_TOKEN", "").strip()
-        lab_token = os.environ.get("ODDITY_LAB_TOKEN", "").strip()
-        cloud = bool(os.environ.get("RAILWAY_ENVIRONMENT_ID"))
-        if lab:
-            if cloud and not lab_token:
-                raise HTTPException(503, "lab access is not configured")
-            if not _token_ok(request.headers.get("x-oddity-lab", ""), lab_token):
-                raise HTTPException(401, "lab code required")
+    def authenticate(request: Request) -> None:
+        if not os.environ.get("RAILWAY_ENVIRONMENT_ID"):
             return
-        if cloud and not preview_token:
+        preview_token = os.environ.get("ODDITY_PREVIEW_TOKEN", "").strip()
+        if not preview_token:
             raise HTTPException(503, "preview access is not configured")
         if not _token_ok(request.headers.get("x-oddity-preview", ""), preview_token):
             raise HTTPException(401, "preview code required")
@@ -130,21 +122,16 @@ def router(root: Path, static: Path) -> APIRouter:
     @api.post("/oddity/session")
     async def provision(request: Request):
         mode_header = request.headers.get("x-oddity-mode", "").strip()
-        wants_lab = mode_header == "lab"
         moment_id = request.headers.get("x-oddity-moment", "").strip()
-        if wants_lab:
-            authenticate(request, lab=True)
-            mode, moment_id = "lab", ""
-        elif moment_id or os.environ.get("RAILWAY_ENVIRONMENT_ID"):
-            authenticate(request, lab=False)
+        if mode_header == "moment" or os.environ.get("RAILWAY_ENVIRONMENT_ID"):
+            authenticate(request)
             if not moment_id:
                 moment_id = ORDER[0]
             if not lookup(moment_id):
                 raise HTTPException(400, "unknown moment")
             mode = "moment"
         else:
-            authenticate(request, lab=False)
-            mode, moment_id = "lab", ""
+            mode, moment_id = "sandbox", ""
         existing = identity(request)
         if existing and session_matches(existing, mode, moment_id):
             session_id = existing
@@ -154,7 +141,7 @@ def router(root: Path, static: Path) -> APIRouter:
         body = {"session": session_id, "mode": mode, "moment": moment_id,
                 "moments": catalog() if mode == "moment" else []}
         response = JSONResponse(body, headers={"Cache-Control": "no-store"})
-        cookie = LAB_COOKIE if mode == "lab" else COOKIE
+        cookie = COOKIE
         response.set_cookie(cookie, session_id, httponly=True, samesite="strict",
                             secure=request.url.scheme == "https", max_age=60 * 60 * 24 * 30, path="/oddity")
         return response

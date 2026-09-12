@@ -67,7 +67,7 @@ class ExperienceSession:
                 self.current.update(playing=False, interrupted=True)
             if self.current.get("awaiting"):
                 self.turn = self.current.get("invitation_turn", "")
-        self.bounded = self.mode != "lab"
+        self.bounded = self.mode == "moment"
 
     def save(self):
         _atomic_write(self.directory / "session.json", json.dumps({

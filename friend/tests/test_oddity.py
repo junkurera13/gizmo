@@ -394,7 +394,6 @@ class OddityRouteTests(unittest.TestCase):
             "GIZMO_DEVICE_TOKEN": "device-secret",
             "RAILWAY_ENVIRONMENT_ID": "production",
             "ODDITY_PREVIEW_TOKEN": "adult-review",
-            "ODDITY_LAB_TOKEN": "lab-secret",
         }
         with tempfile.TemporaryDirectory() as directory, patch.dict("os.environ", environment):
             root = Path(directory)
@@ -428,34 +427,28 @@ class OddityRouteTests(unittest.TestCase):
                 self.assertIn("birthday", saved["seed_memory"])
                 self.assertTrue(saved["director_addendum"])
 
-    def test_lab_and_moment_tokens_are_isolated_and_lab_skips_caps(self):
+    def test_cloud_forces_moment_sessions_and_refreshes_contract(self):
         environment = {
             "GIZMO_DEVICE_TOKEN": "device-secret",
             "RAILWAY_ENVIRONMENT_ID": "production",
             "ODDITY_PREVIEW_TOKEN": "adult-review",
-            "ODDITY_LAB_TOKEN": "lab-secret",
         }
         with tempfile.TemporaryDirectory() as directory, patch.dict("os.environ", environment):
             root = Path(directory)
             with TestClient(app_factory(root)) as client:
                 self.assertEqual(client.post("/oddity/session", headers={
-                    "x-oddity-mode": "lab", "x-oddity-preview": "adult-review",
-                }).status_code, 401)
-                self.assertEqual(client.post("/oddity/session", headers={
-                    "x-oddity-mode": "moment", "x-oddity-lab": "lab-secret",
+                    "x-oddity-mode": "sandbox",
                 }).status_code, 401)
                 self.assertEqual(client.post("/oddity/session", headers={
                     "x-oddity-mode": "moment", "x-oddity-preview": "adult-review",
                     "x-oddity-moment": "not-a-moment",
                 }).status_code, 400)
-                lab = client.post("/oddity/session", headers={
-                    "x-oddity-mode": "lab", "x-oddity-lab": "lab-secret",
+                sandbox = client.post("/oddity/session", headers={
+                    "x-oddity-mode": "sandbox", "x-oddity-preview": "adult-review",
                 })
-                self.assertEqual(lab.status_code, 200)
-                self.assertEqual(lab.json()["mode"], "lab")
-                self.assertEqual(lab.json()["moments"], [])
-                saved = json.loads((root / "oddity" / lab.json()["session"] / "session.json").read_text())
-                self.assertEqual(saved["mode"], "lab")
+                self.assertEqual(sandbox.status_code, 200)
+                self.assertEqual(sandbox.json()["mode"], "moment")
+                self.assertEqual(sandbox.json()["moment"], "birthday")
                 first = client.post("/oddity/session", headers={
                     "x-oddity-mode": "moment", "x-oddity-preview": "adult-review",
                     "x-oddity-moment": "draw",
@@ -484,15 +477,30 @@ class OddityRouteTests(unittest.TestCase):
                 refreshed = json.loads(reused_path.read_text())
                 self.assertNotEqual(refreshed["director_addendum"], "stale contract")
 
-    def test_cloud_lab_without_token_is_unavailable(self):
+    def test_cloud_session_without_preview_token_is_unavailable(self):
         environment = {
             "GIZMO_DEVICE_TOKEN": "device-secret",
             "RAILWAY_ENVIRONMENT_ID": "production",
+        }
+        with tempfile.TemporaryDirectory() as directory, patch.dict("os.environ", environment):
+            with TestClient(app_factory(Path(directory))) as client:
+                self.assertEqual(client.post("/oddity/session").status_code, 503)
+
+    def test_local_sessions_need_no_code(self):
+        environment = {
+            "GIZMO_DEVICE_TOKEN": "",
+            "RAILWAY_ENVIRONMENT_ID": "",
             "ODDITY_PREVIEW_TOKEN": "adult-review",
         }
         with tempfile.TemporaryDirectory() as directory, patch.dict("os.environ", environment):
             with TestClient(app_factory(Path(directory))) as client:
-                self.assertEqual(client.post("/oddity/session", headers={"x-oddity-mode": "lab"}).status_code, 503)
+                sandbox = client.post("/oddity/session")
+                self.assertEqual(sandbox.status_code, 200)
+                self.assertEqual(sandbox.json()["mode"], "sandbox")
+                self.assertEqual(sandbox.json()["moments"], [])
+                moment = client.post("/oddity/session", headers={"x-oddity-mode": "moment"})
+                self.assertEqual(moment.status_code, 200)
+                self.assertEqual(moment.json()["mode"], "moment")
 
     def test_websocket_rejects_cross_origin(self):
         from starlette.websockets import WebSocketDisconnect

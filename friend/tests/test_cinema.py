@@ -325,7 +325,6 @@ class RouteTests(unittest.TestCase):
                     "RAILWAY_ENVIRONMENT_ID": "test",
                     "GIZMO_DEVICE_TOKEN": "test",
                     "GIZMO_DIRECTOR_ENABLED": "",
-                    "ODDITY_LAB_TOKEN": "",
                 },
             ),
             TestClient(app_factory(Path(root))) as client,

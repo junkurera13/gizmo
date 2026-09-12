@@ -55,7 +55,6 @@ export default defineRailway(() => {
       FAL_KEY: preserve(),
       GIZMO_DEVICE_TOKEN: preserve(),
       ODDITY_PREVIEW_TOKEN: preserve(),
-      ODDITY_LAB_TOKEN: preserve(),
       GIZMO_USER_ID: "gizmo-owner",
       GIZMO_DIRECTOR_DEVICE: preserve(),
       GIZMO_FILM_VOICE: preserve(),
