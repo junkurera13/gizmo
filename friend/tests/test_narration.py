@@ -3,6 +3,7 @@ from __future__ import annotations
 import base64
 import json
 import unittest
+from unittest.mock import AsyncMock
 
 import httpx
 
@@ -140,3 +141,36 @@ class GeminiNarrationRetryTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(len(calls), 2)
         self.assertIn("gemini-3.1-flash-tts-preview", str(calls[0].url))
         self.assertIn("gemini-2.5-flash-preview-tts", str(calls[1].url))
+
+    async def test_timeout_on_preview_falls_back_to_2_5(self):
+        calls = []
+
+        def handle(request: httpx.Request) -> httpx.Response:
+            calls.append(request)
+            if "gemini-3.1-flash-tts-preview" in str(request.url):
+                raise TimeoutError()
+            return httpx.Response(200, content=pcm_json())
+
+        provider = GeminiNarrationProvider(api_key="test-key")
+        await provider.close()
+        provider._client = httpx.AsyncClient(transport=httpx.MockTransport(handle))
+        provider._reset_client = AsyncMock()
+        self.addAsyncCleanup(provider.close)
+        voice = await provider.narrate("The rocket pushes gas out the back.")
+        self.assertIsNotNone(voice)
+        self.assertEqual(voice.model, "gemini-2.5-flash-preview-tts")
+        self.assertEqual(len(calls), 2)
+
+    async def test_timeout_on_last_model_returns_none(self):
+        def handle(request: httpx.Request) -> httpx.Response:
+            raise TimeoutError()
+
+        provider = GeminiNarrationProvider(
+            api_key="test-key", model="gemini-2.5-flash-preview-tts", fallback_models=(),
+        )
+        await provider.close()
+        provider._client = httpx.AsyncClient(transport=httpx.MockTransport(handle))
+        provider._reset_client = AsyncMock()
+        self.addAsyncCleanup(provider.close)
+        voice = await provider.narrate("The rocket pushes gas out the back.")
+        self.assertIsNone(voice)

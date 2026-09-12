@@ -33,9 +33,11 @@ NARRATION_MODEL = "gemini-3.1-flash-tts-preview"
 # still looks empty. Oddity already voices on 2.5 with this same key.
 NARRATION_FALLBACK_MODELS = ("gemini-2.5-flash-preview-tts",)
 NARRATION_ENDPOINT = "https://generativelanguage.googleapis.com/v1beta/models"
-# A directed film is 35–45s of speech. 2.5 TTS routinely needs longer than
-# the old 20s deadline; cutting it off aborts Cinema before Director starts.
-NARRATION_TIMEOUT_SECONDS = 60.0
+# Gemini 2.5 TTS returns about as fast as the audio is long (26s of
+# speech took 24s). The deadline sits just above a ~20s soundtrack.
+# 60s was a bandage on a 35–45s script; a hang then made the kid wait
+# a minute for Live.
+NARRATION_TIMEOUT_SECONDS = 30.0
 NARRATION_RATE = 24_000
 NARRATION_ATTEMPTS = 4
 NARRATION_FALLBACK_ATTEMPTS = 2
@@ -146,6 +148,14 @@ class GeminiNarrationProvider(NarrationProvider):
     def __post_init__(self) -> None:
         self._client = httpx.AsyncClient(timeout=self.timeout_seconds, follow_redirects=False)
 
+    async def _reset_client(self) -> None:
+        previous = self._client
+        self._client = httpx.AsyncClient(timeout=self.timeout_seconds, follow_redirects=False)
+        try:
+            await previous.aclose()
+        except Exception:  # noqa: BLE001 - a cancelled stream must not pin the next attempt
+            pass
+
     async def narrate(self, text: str, *, style: str | None = None) -> Narration | None:
         text = " ".join(text.split())[:MAX_NARRATION_CHARS]
         if not text:
@@ -209,9 +219,13 @@ class GeminiNarrationProvider(NarrationProvider):
                     return Narration(text=text, pcm=pcm, model=model, latency_seconds=elapsed)
                 except asyncio.CancelledError:
                     raise
-                except TimeoutError:
-                    logger.warning("Narration dropped: model=%s exceeded %.1f seconds", model, self.timeout_seconds)
-                    return None
+                except (TimeoutError, httpx.TimeoutException):
+                    logger.warning(
+                        "Narration dropped: model=%s exceeded %.1f seconds",
+                        model, self.timeout_seconds,
+                    )
+                    await self._reset_client()
+                    break
                 except httpx.HTTPStatusError as error:
                     status = error.response.status_code
                     detail = narration_error_detail(error.response.content)
@@ -230,12 +244,12 @@ class GeminiNarrationProvider(NarrationProvider):
                         model, type(error).__name__, status, detail,
                     )
                     break
-                except Exception as error:  # noqa: BLE001 - narration must fail soft; the story falls back
+                except Exception as error:  # noqa: BLE001 - try the next model before Live fallback
                     logger.warning(
                         "Narration failed: model=%s error=%s status=%s", model, type(error).__name__,
                         error.response.status_code if isinstance(error, httpx.HTTPStatusError) else None,
                     )
-                    return None
+                    break
             next_model = models[model_index + 1] if model_index + 1 < len(models) else ""
             if next_model:
                 logger.warning("Narration switching model=%s next=%s", model, next_model)

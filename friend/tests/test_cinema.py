@@ -503,6 +503,30 @@ class AudioTimelineTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(synthesized.audio_url, "")
         self.assertEqual(synthesized.wav, prepared.wav)
 
+    async def test_directed_beats_stay_one_tts_call(self):
+        from gizmo_friend.brain.narration import Narration
+        from gizmo_friend.cinema.plan import DirectedFilmPlan, FilmMaker
+
+        maker = object.__new__(FilmMaker)
+        order = []
+
+        async def narrate(text):
+            order.append(text)
+            words = max(len(text.split()), 1)
+            return Narration(
+                text=text, pcm=b"\x01\x00" * (2400 * words), model="test", latency_seconds=0
+            )
+
+        maker.voice = SimpleNamespace(narrate=narrate)
+        plan = DirectedFilmPlan(
+            title="Test",
+            beats=[FilmBeat(narration=str(n), action="move") for n in range(4)],
+            thread="next",
+        )
+        prepared = await maker.synthesize(plan)
+        self.assertEqual(order, ["0 1 2 3"])
+        self.assertEqual(prepared.duration, 0.4)
+
 
 class FakeFilmSession:
     def __init__(self):

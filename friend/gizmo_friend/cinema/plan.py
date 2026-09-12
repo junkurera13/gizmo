@@ -71,12 +71,12 @@ DIRECTED_INSTRUCTIONS = """
 DIRECTED FILM — this film is the whole answer on a screen that shows nothing else.
 A director has already decided the turn deserves a film and supplies a brief below.
 Follow the brief's angle, arc and exclusions; the question is still what you answer.
-Choose five connected beats, 35–45 seconds of speech in total, in the
+Choose four connected beats, 18–24 seconds of speech in total, in the
 explanatory spirit of Kurzgesagt or Crash Course: a hook in the first sentence,
 then cause and effect made visible, then one idea to leave with. The film must
 reach the end of its arc: a story or history shows the event itself and what it
 left behind, a mechanism shows the effect, never only the setup. Each beat is one
-spoken sentence of 16–24 words with a concrete visible action. Every shot is
+spoken sentence of 12–16 words with a concrete visible action. Every shot is
 gentle, colorful and kid-friendly; pictures never include people, faces or
 children — crowds and figures belong in narration only.
 """
@@ -111,7 +111,7 @@ class FilmPlan(BaseModel):
 class DirectedFilmPlan(FilmPlan):
     """A directed film carries a longer arc than a `/cinema` reply."""
 
-    beats: list[FilmBeat] = Field(min_length=4, max_length=5)
+    beats: list[FilmBeat] = Field(min_length=4, max_length=4)
 
 
 def soundtrack_timings(plan: FilmPlan, pcm: bytes) -> list[dict]:
@@ -183,12 +183,11 @@ class FilmMaker:
         return DirectedFilmPlan.model_validate_json(raw)
 
     async def synthesize(self, plan: FilmPlan) -> PreparedFilm:
-        # One soundtrack, one Google TTS call. Per-beat voices multiply 429s
-        # on the preview pool and abort the film before Director sees a WAV.
+        # One soundtrack, one Google TTS call. Cinema cannot start Director
+        # until this WAV exists, so the script must stay short enough that
+        # speech finishes in ~20s.
         script = " ".join(beat.narration for beat in plan.beats)
         voice = await self.voice.narrate(script)
-        if voice is None:
-            voice = await self.voice.narrate(script)
         if voice is None:
             raise RuntimeError("The narration did not arrive. Please try again.")
         timings = soundtrack_timings(plan, voice.pcm)
