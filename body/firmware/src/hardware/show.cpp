@@ -441,7 +441,6 @@ void ShowPlayer::run() {
 }
 void ShowPlayer::decode_task(void* context) { static_cast<ShowPlayer*>(context)->decode_run(); }
 void ShowPlayer::decode_run() {
-  int decoded = 0;
   for (;;) {
     size_t target = 0;
     size_t length = 0;
@@ -508,11 +507,11 @@ void ShowPlayer::decode_run() {
     dec_bad_[w].store(!ok);
     dec_index_[w].store(static_cast<int>(target));
     dec_gen_[w].store(gen);
-    // The busy path has no blocking call: while a clip decodes continuously
-    // this loop never yields, starving the core-0 idle task the watchdog
-    // checks — a mid-film reboot with no panic dump. One tick every four
-    // frames still feeds it without adding ~10 ms of sleep per JPEG.
-    if ((++decoded & 3) == 0) vTaskDelay(pdMS_TO_TICKS(1));
+    // One tick every JPEG. pdMS_TO_TICKS(1) is 0 at Arduino's 100 Hz tick, so
+    // the old every-fourth-frame yield never left the core. During a film,
+    // friend-net (prio 3) and this task (prio 2) then occupied CPU 0 for the
+    // length of the clip and IDLE0 never ran — TWDT abort, CPU 0: show-decode.
+    vTaskDelay(1);
   }
 }
 }
