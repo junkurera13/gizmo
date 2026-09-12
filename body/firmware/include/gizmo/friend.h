@@ -23,6 +23,7 @@ class FriendLink {
   const char* device_id() const { return status_.device; }
   bool has_token() const { return status_.token; }
   bool hello_ok() const { return status_.hello; }
+  bool session_thinking() const { return status_.thinking; }
   bool set_url(const char* url);
   bool set_token(const char* token);
   void forget();
@@ -35,6 +36,7 @@ class FriendLink {
   void interrupt_speaker();
   bool take_barge_in();
   bool take_show(ShowRequest& request);
+  bool take_line(char* dest, size_t cap);
 
  private:
   enum class Kind : uint8_t { kUrl, kToken, kForget, kPttDown, kPttUp, kPcm, kSelect, kInterrupt, kGlassReady };
@@ -49,11 +51,14 @@ class FriendLink {
     FriendPhase phase = FriendPhase::kOff;
     uint32_t generation = 0;
     uint32_t interrupt = 0;
+    uint32_t line_revision = 0;
     bool token = false;
     bool hello = false;
+    bool thinking = false;
     char detail[56] = "NETWORK STARTING";
     char url[160] = "";
     char device[32] = "";
+    char line[160] = "";
   };
   bool queue(Kind kind);
   bool configure(Kind kind, const char* value);
@@ -74,6 +79,7 @@ class FriendLink {
   uint32_t jpeg_seen_ = 0;
   Status status_;
   uint32_t seen_interrupt_ = 0;
+  uint32_t seen_line_revision_ = 0;
   Speaker pending_{};
   size_t pending_read_ = 0;
 };

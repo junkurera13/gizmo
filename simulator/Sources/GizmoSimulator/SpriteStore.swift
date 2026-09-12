@@ -2,18 +2,16 @@ import AppKit
 import Combine
 import Foundation
 
-struct HeartArt {
-    let full: NSImage
-    let half: NSImage
-    let empty: NSImage
-}
-
 struct SpriteAnimation: Equatable {
     let name: String
     let frames: [NSImage]
     let fps: Double
     let loop: Bool
     let wander: Bool
+    /// Slot pattern: each entry is a frame index held for `period` seconds.
+    /// The firmware format for character states — open, blink, lean, paint.
+    let slots: [Int]?
+    let period: TimeInterval
 
     static func == (lhs: SpriteAnimation, rhs: SpriteAnimation) -> Bool {
         lhs.name == rhs.name && lhs.frames.count == rhs.frames.count
@@ -30,16 +28,13 @@ final class SpriteStore: ObservableObject {
     static let shared = SpriteStore()
 
     @Published private(set) var animations: [String: SpriteAnimation] = [:]
-    @Published private(set) var hearts: HeartArt?
     @Published private(set) var lastLoadNote: String?
 
     private static let fallbacks: [String: [String]] = [
-        "listen": ["idle"],
-        "talk": ["idle"],
-        "think": ["idle"],
-        "see": ["think", "idle"],
-        "show": ["think", "idle"],
-        "sleep": ["idle"],
+        "talking": ["idle"],
+        "sleeping": ["idle"],
+        "see": ["thinking", "idle"],
+        "show": ["thinking", "idle"],
     ]
 
     private init() {}
@@ -77,23 +72,12 @@ final class SpriteStore: ObservableObject {
         let overrides = Self.readOverrides(at: spritesDir.appendingPathComponent("sprites.json"))
         var loaded: [String: SpriteAnimation] = [:]
 
-        var loadedHearts: HeartArt?
-
         for entry in entries {
             guard (try? entry.resourceValues(forKeys: [.isDirectoryKey]))?.isDirectory == true else {
                 continue
             }
             let name = entry.lastPathComponent.lowercased()
-
-            // hearts/ holds the battery art (full/half/empty), not a flipbook.
-            if name == "hearts" {
-                if let full = NSImage(contentsOf: entry.appendingPathComponent("full.png")),
-                   let half = NSImage(contentsOf: entry.appendingPathComponent("half.png")),
-                   let empty = NSImage(contentsOf: entry.appendingPathComponent("empty.png")) {
-                    loadedHearts = HeartArt(full: full, half: half, empty: empty)
-                }
-                continue
-            }
+            if name == "hearts" { continue }
 
             let frames = Self.readFrames(in: entry)
             guard !frames.isEmpty else { continue }
@@ -104,12 +88,13 @@ final class SpriteStore: ObservableObject {
                 frames: frames,
                 fps: meta?.fps ?? 10,
                 loop: meta?.loop ?? !["boot", "sleep"].contains(name),
-                wander: meta?.wander ?? (name == "see")
+                wander: meta?.wander ?? (name == "see"),
+                slots: meta?.slots,
+                period: (meta?.periodMs ?? 0) / 1000
             )
         }
 
         animations = loaded
-        hearts = loadedHearts
         lastLoadNote = loaded.isEmpty
             ? "glass/sprites is empty — glass stays black."
             : "Loaded \(loaded.count) animation(s): \(loaded.keys.sorted().joined(separator: ", "))."
@@ -140,6 +125,13 @@ final class SpriteStore: ObservableObject {
         let fps: Double?
         let loop: Bool?
         let wander: Bool?
+        let slots: [Int]?
+        let periodMs: Double?
+
+        enum CodingKeys: String, CodingKey {
+            case fps, loop, wander, slots
+            case periodMs = "period_ms"
+        }
     }
 
     private static func readOverrides(at url: URL) -> [String: AnimationOverride] {

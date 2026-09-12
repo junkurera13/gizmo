@@ -43,6 +43,7 @@ class CinemaSession:
             self.context = []
         self.prepared = None
         self.pending: str | None = None
+        self.presented_revision: int | None = None
         self.viewer = asyncio.Event()
         self.closed = False
         self.turns = 0
@@ -67,10 +68,10 @@ class CinemaSession:
             log.write(json.dumps(record) + "\n")
         await self._deliver(event)
 
-    async def ask(self, text, *, request_id=None, direction=""):
+    async def ask(self, text, *, request_id=None, direction="") -> bool:
         text = " ".join(text.split())[:1200]
         if not text or self.closed:
-            return
+            return False
         if self.turns >= 8:
             await self.emit(
                 {
@@ -78,7 +79,7 @@ class CinemaSession:
                     "message": "This film session has reached its limit. Start a new session to continue.",
                 }
             )
-            return
+            return False
         await self.interrupt()
         self.request_id = request_id
         self.turns += 1
@@ -88,6 +89,7 @@ class CinemaSession:
         self.context.append({"user": text})
         self.pending = text
         self.work = asyncio.create_task(self.run(text, revision, direction))
+        return True
 
     async def run(self, text, revision, direction=""):
         stream = self.stream_factory(
@@ -106,10 +108,11 @@ class CinemaSession:
                     "revision": revision,
                 }
             )
+            context = [entry for entry in self.context[-8:] if not entry.get("undelivered")]
             if direction:
-                plan = await self.maker.plan(text, self.context, direction=direction)
+                plan = await self.maker.plan(text, context, direction=direction)
             else:
-                plan = await self.maker.plan(text, self.context)
+                plan = await self.maker.plan(text, context)
             self.mark("plan")
             if not self.current(revision):
                 return
@@ -319,7 +322,14 @@ class CinemaSession:
         self.viewer.set()
         return True
 
+    def mark_presented(self, revision) -> bool:
+        if revision != self.revision or self.prepared is None:
+            return False
+        self.presented_revision = revision
+        return True
+
     async def interrupt(self):
+        active_revision = self.revision
         self.revision += 1
         work, self.work = self.work, None
         if work and work is not asyncio.current_task():
@@ -338,16 +348,18 @@ class CinemaSession:
                     self.directory / "last-frame.jpg",
                 )
             await stream.close()
-        if self.prepared:
+        if self.prepared and self.presented_revision == active_revision:
             self.context.append(
                 {
                     "interrupted_plan": self.prepared.plan.model_dump(),
                     "heard": "Unknown; do not assume it was completed.",
                 }
             )
+            self.pending = None
         else:
             self._mark_undelivered()
         self.prepared = None
+        self.presented_revision = None
         self.context = self.context[-8:]
         from gizmo_friend.brain.shows import _atomic_write
 

@@ -32,7 +32,7 @@ An interruption currently closes the generating peer. The next turn opens a new 
 Browser provisioning off loopback requires:
 
 - `GIZMO_DIRECTOR_ENABLED=1`
-- `GIZMO_DIRECTOR_TOKEN` (or the existing `ODDITY_LAB_TOKEN`)
+- `GIZMO_DIRECTOR_TOKEN`
 
 Cloud WebRTC/TURN reachability and throughput have **not** been verified on Railway.
 

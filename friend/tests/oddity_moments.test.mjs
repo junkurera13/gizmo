@@ -243,3 +243,25 @@ test('cycling a moment starts a new session without the previous id', async () =
   assert.equal(provision.options.headers['X-Oddity-Mode'], 'moment');
   assert.equal(provision.options.headers['X-Oddity-Session'], undefined);
 });
+
+test('live film uses its hosted recording as the stable audio clock', async () => {
+  const ui = await app();
+  ui.context.playback = [];
+  ui.element('beat-dots').children = [];
+  await ui.run(`
+    showScene = async () => {};
+    startMedia = async media => playback.push('play:' + media.id);
+    mediaEnded = media => { playback.push('wait:' + media.id); return Promise.resolve(); };
+    waitFilm = async () => playback.push('stream-clock');
+    breathingRoom = async () => {};
+    turn = 'turn'; ready = true; plan = [{}];
+    queue = [{id:'beat', index:0, title:'Moon', narration:'Mostly gray.', subject:'Moon',
+      visual:'film', film:{revision:1, duration:2, title:'Moon', timings:[]},
+      audio:'/oddity/media/voice.wav', warnings:[], pause_seconds:0, interaction:null}];
+    playQueue();
+  `);
+  await new Promise(resolve => setTimeout(resolve, 0));
+  assert.ok(ui.context.playback.includes('play:voice'));
+  assert.ok(ui.context.playback.includes('wait:voice'));
+  assert.equal(ui.context.playback.includes('stream-clock'), false);
+});

@@ -36,10 +36,7 @@
   <link rel="preload" as="image" href="/static/oddity-boot-14.jpg?v=boot2">
   <script>
     try {
-      const lab = /(?:^|[?&])lab=1(?:&|$)/.test(location.search);
-      const key = lab ? 'oddity-lab-code-v1' : 'oddity-preview-v1';
-      if (lab) document.documentElement.classList.add('oddity-lab');
-      if (!(sessionStorage.getItem(key) || localStorage.getItem(key))) {
+      if (!(sessionStorage.getItem('oddity-preview-v1') || localStorage.getItem('oddity-preview-v1'))) {
         document.documentElement.classList.add('oddity-locked');
       }
     } catch (error) {

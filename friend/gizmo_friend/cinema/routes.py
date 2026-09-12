@@ -64,9 +64,7 @@ def router(root: Path, static: Path):
             raise HTTPException(403, "Open this page directly to begin.")
         cloud = bool(os.environ.get("RAILWAY_ENVIRONMENT_ID"))
         enabled = os.environ.get("GIZMO_DIRECTOR_ENABLED", "").lower() in {"1", "true"}
-        token = os.environ.get(
-            "GIZMO_DIRECTOR_TOKEN", os.environ.get("ODDITY_LAB_TOKEN", "")
-        )
+        token = os.environ.get("GIZMO_DIRECTOR_TOKEN", "")
         local = (
             request.client and request.client.host in {"127.0.0.1", "::1"} and not cloud
         )

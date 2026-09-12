@@ -10,7 +10,7 @@ let controller, currentBeat, paused = false, muted = false, archive = [];
 let history = [], plan = [], recorder, stream, held = false, talkHeld = false, recordingTimer, progressTimer;
 let micMeter = null, micLevel = 0, micLoud = 0;
 let microphoneAttempt = 0, mediaWaitResolve, audioUnlock, expectedClose = false;
-let captions = [];
+let captions = [], filmTimed = [];
 let orbitView, invitation, restoredInvitation, screenOrbit = false;
 let glass, peer, pendingFilm = null;
 function orbit() { return orbitView ||= createOrbit($('orbit')); }
@@ -31,14 +31,10 @@ function invite(beat) {
   status(beat.interaction.kind === 'orbit' ? 'Change the speed. See what happens.' : 'Take your time. You can always tell me something else.', 'exploring');
 }
 const embedded = /(?:^|[?&])embedded=1(?:&|$)/.test(globalThis.location?.search || '');
-const lab = /(?:^|[?&])lab=1(?:&|$)/.test(globalThis.location?.search || '');
-// The lab is the internal surface — it should look exactly like the public
-// emulator, so lab mode always renders the embedded device chrome.
-if (embedded || lab) document.documentElement.classList.add('embedded');
-if (lab) document.documentElement.classList.add('oddity-lab');
-let playMoments = embedded && !lab;
-const CODE_KEY = lab ? 'oddity-lab-code-v1' : 'oddity-preview-v1';
-const SESSION_KEY = lab ? 'oddity-lab-session-v1' : 'oddity-session-v1';
+if (embedded) document.documentElement.classList.add('embedded');
+let playMoments = embedded;
+const CODE_KEY = 'oddity-preview-v1';
+const SESSION_KEY = 'oddity-session-v1';
 const MOMENT_KEY = 'oddity-moment-v1';
 
 function stored(key) {
@@ -61,7 +57,10 @@ let demoController, demoRunning = false, demoPlayedMoment = '', demoOwnsScene = 
 let demoCaptions = [];
 let demoTimed = null;
 voice.addEventListener('timeupdate', () => {
-  if (playing && currentBeat?.audio && !voice.paused) setCaption(captionAt(captions, voice.currentTime, voice.duration));
+  if (!playing || !currentBeat?.audio || voice.paused) return;
+  setCaption(filmTimed.length
+    ? timedCaptionAt(filmTimed, voice.currentTime)
+    : captionAt(captions, voice.currentTime, voice.duration));
 });
 demoAudio.addEventListener('timeupdate', () => {
   if (demoRunning && (demoTimed || demoCaptions.length) && !demoAudio.paused) {
@@ -503,13 +502,9 @@ async function connect(previewCode, options = {}) {
   const fresh = Boolean(options.fresh);
   try {
     if (playMoments) await ensureMoments();
-    const headers = {'X-Oddity-Mode': playMoments ? 'moment' : 'lab'};
-    if (playMoments) {
-      headers['X-Oddity-Preview'] = preview;
-      if (momentId) headers['X-Oddity-Moment'] = momentId;
-    } else {
-      headers['X-Oddity-Lab'] = preview;
-    }
+    const headers = {'X-Oddity-Mode': playMoments ? 'moment' : 'sandbox'};
+    headers['X-Oddity-Preview'] = preview;
+    if (playMoments && momentId) headers['X-Oddity-Moment'] = momentId;
     if (session && !fresh) headers['X-Oddity-Session'] = session;
     const response = await fetch('/oddity/session', {method: 'POST', headers});
     if (response.status === 401) {
@@ -597,6 +592,11 @@ function renderNotes() {
     p.append(name, document.createTextNode(line.text)); return p;
   }));
 }
+function syncSound() {
+  voice.muted = muted;
+  demoAudio.muted = muted;
+  film.muted = muted || Boolean(playing && currentBeat?.film && currentBeat?.audio);
+}
 async function unlockAudio() {
   try {
     audioUnlock ||= new (window.AudioContext || window.webkitAudioContext)();
@@ -667,7 +667,7 @@ function ack(phase) {
 function stopPlayer() {
   invitation?.stop(); orbitView?.cancel();
   controller?.abort(); controller = null; playing = false; paused = false;
-  voice.pause(); film.pause(); detachFilm(); clearInterval(progressTimer);
+  voice.pause(); film.pause(); filmTimed = []; detachFilm(); clearInterval(progressTimer);
   $('pause').hidden = true; $('pause').textContent = 'Pause'; $('play-blocked').hidden = true;
   mediaWaitResolve?.(); mediaWaitResolve = null;
 }
@@ -719,7 +719,11 @@ function connectFilm(generation) {
   pc.addTransceiver('video', {direction: 'recvonly'});
   pc.addTransceiver('audio', {direction: 'recvonly'});
   const media = new MediaStream();
-  pc.ontrack = (event) => { media.addTrack(event.track); if (peer === pc) film.srcObject = media; };
+  pc.ontrack = (event) => {
+    try { if ('jitterBufferTarget' in event.receiver) event.receiver.jitterBufferTarget = 500; } catch {}
+    media.addTrack(event.track);
+    if (peer === pc) film.srcObject = media;
+  };
   const promise = (async () => {
     try {
       await pc.setLocalDescription(await pc.createOffer());
@@ -754,7 +758,7 @@ async function attachFilm(beat, signal) {
   const generation = beat.film?.revision;
   await connectFilm(generation);
   if (signal.aborted) throw new DOMException('Stopped', 'AbortError');
-  film.muted = muted;
+  syncSound();
   // The peer is connected; now Director starts painting for this revision.
   send({type: 'film_play', turn, revision: generation});
   let timer;
@@ -768,28 +772,31 @@ function waitFilm(beat, signal) {
   const cues = (beat.film?.timings || []).map((t) => [Number(t.start) || 0, t.narration || '']);
   if (!duration) return delay(800, signal);
   return new Promise((resolve, reject) => {
-    let startTime = null, ending = false;
+    let startedAt = null, lastTime = -1, lastProgress = Date.now(), interval, timeout;
     function clean() {
+      clearInterval(interval); clearTimeout(timeout);
+      film.removeEventListener('ended', done); film.removeEventListener('error', fail);
       signal.removeEventListener('abort', abort);
     }
-    function abort() { clean(); reject(new DOMException('Stopped', 'AbortError')); }
-    function presented(_now, metadata) {
-      if (ending || signal.aborted || peer == null) return;
-      if (film.paused || film.readyState < 2) {
-        if (film.requestVideoFrameCallback) film.requestVideoFrameCallback(presented);
-        return;
-      }
-      if (startTime === null) startTime = metadata.mediaTime;
-      if (cues.length) setCaption(timedCaptionAt(cues, metadata.mediaTime - startTime));
-      if (metadata.mediaTime - startTime >= duration) {
-        ending = true; clean(); resolve();
-        return;
-      }
-      if (film.requestVideoFrameCallback) film.requestVideoFrameCallback(presented);
+    function finish(action, value) { clean(); action(value); }
+    function done() { finish(resolve); }
+    function fail() { finish(reject, new Error('The film stream stopped.')); }
+    function abort() { finish(reject, new DOMException('Stopped', 'AbortError')); }
+    function check() {
+      if (signal.aborted) return abort();
+      const current = Number(film.currentTime) || 0;
+      if (startedAt === null && !film.paused && film.readyState >= 2) startedAt = current;
+      if (current > lastTime + 0.01) { lastTime = current; lastProgress = Date.now(); }
+      if (startedAt !== null && cues.length) setCaption(timedCaptionAt(cues, current - startedAt));
+      if (startedAt !== null && current - startedAt >= duration - 0.05) return done();
+      if (!paused && !film.paused && Date.now() - lastProgress > 12000) fail();
     }
-    signal.addEventListener('abort', abort, {once: true});
-    if (film.requestVideoFrameCallback) film.requestVideoFrameCallback(presented);
-    else delay(duration * 1000, signal).then(() => { if (!ending) { ending = true; clean(); resolve(); } }, abort);
+    film.addEventListener('ended', done, {once:true});
+    film.addEventListener('error', fail, {once:true});
+    signal.addEventListener('abort', abort, {once:true});
+    interval = setInterval(check, 250);
+    timeout = setTimeout(() => finish(reject, new Error('The film stream stalled.')), (duration + 30) * 1000);
+    check();
   });
 }
 async function startMedia(media, signal) {
@@ -880,7 +887,17 @@ async function playQueue() {
       if (beat.film) {
         setCaption(beat.film.title || '');
         await waitUntilUnpaused(signal);
-        await waitFilm(beat, signal);
+        if (beat.audio) {
+          filmTimed = (beat.film.timings || []).map((t) => [Number(t.start) || 0, t.narration || '']);
+          captions = captionChunks(beat.narration);
+          voice.src = beat.audio; voice.load(); syncSound();
+          const ended = mediaEnded(voice, signal); ended.catch(() => {});
+          await startMedia(voice, signal);
+          await ended;
+          filmTimed = [];
+        } else {
+          await waitFilm(beat, signal);
+        }
         await breathingRoom(beat.pause_seconds, signal);
         film.pause(); clearInterval(progressTimer); ack('finished');
         history.push({role:'assistant', text:beat.narration}); renderNotes();
@@ -1005,6 +1022,7 @@ async function startRecording() {
     recorder.ondataavailable = ({data}) => { if (data.size) { chunks.push(data); size += data.size; if (size > 1_400_000 && held) stopRecording(); } };
     recorder.onstop = async () => {
       recordingStream.getTracks().forEach(t => t.stop());
+      if (stream === recordingStream) stream = null;
       clearInterval(micMeter); micMeter = null;
       const blob = new Blob(chunks, {type:activeRecorder.mimeType});
       if (attempt !== microphoneAttempt) return;
@@ -1029,7 +1047,6 @@ function stopRecording() {
   if (recorder?.state === 'recording') recorder.stop();
   else { microphoneAttempt++; status('Hold again after allowing the microphone.', 'idle'); }
   $('talk').classList.remove('recording'); $('listening').hidden = true; $('talk-label').textContent = 'Hold the pink side to talk';
-  stream?.getTracks().forEach(t => t.stop()); stream = null;
   status('Listening back…');
 }
 $('power').onclick = () => (awake || glass.booting) ? sleep() : wake();
@@ -1061,7 +1078,7 @@ $('select').onclick = onSelect;
 $('previous').onclick = () => glass.navigate('up');
 $('next').onclick = () => glass.navigate('down');
 $('home').onclick = goHome;
-$('sound').onclick = () => { muted = !muted; voice.muted = muted; film.muted = muted; demoAudio.muted = muted; $('sound').textContent = muted ? 'Sound off' : 'Sound on'; $('sound').setAttribute('aria-pressed', String(muted)); $('sound').setAttribute('aria-label', muted ? 'Unmute narration' : 'Mute narration'); };
+$('sound').onclick = () => { muted = !muted; syncSound(); $('sound').textContent = muted ? 'Sound off' : 'Sound on'; $('sound').setAttribute('aria-pressed', String(muted)); $('sound').setAttribute('aria-label', muted ? 'Unmute narration' : 'Mute narration'); };
 $('expand').onclick = async () => { try { if (document.fullscreenElement) await document.exitFullscreen(); else await document.documentElement.requestFullscreen(); } catch { notice('Fullscreen is unavailable in this browser.'); } };
 document.addEventListener('fullscreenchange', () => $('expand').setAttribute('aria-label', document.fullscreenElement ? 'Exit fullscreen' : 'Enter fullscreen'));
 $('help').onclick = () => $('help-dialog').showModal(); $('open-notes').onclick = () => $('notes-dialog').showModal();

@@ -8,7 +8,7 @@ from contextlib import asynccontextmanager
 from pathlib import Path
 
 from fastapi import FastAPI, HTTPException, Query, Request, WebSocket, WebSocketDisconnect
-from fastapi.responses import FileResponse, JSONResponse
+from fastapi.responses import FileResponse, JSONResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
 
 from gizmo_friend.body_protocol import (
@@ -170,8 +170,8 @@ def app_factory(data_dir: Path) -> FastAPI:
         return await call_next(request)
 
     @app.get("/")
-    async def index() -> FileResponse:
-        return FileResponse(STATIC / "index.html")
+    async def index() -> RedirectResponse:
+        return RedirectResponse("/oddity")
 
     @app.get("/health")
     async def health() -> dict:

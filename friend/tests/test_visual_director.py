@@ -81,7 +81,7 @@ class VisualDecisionTests(unittest.TestCase):
         ):
             self.assertFalse(is_moving_explanation_ask(utterance), utterance)
 
-    def test_cinema_is_only_for_hard_asks_and_moving_story_scenes(self):
+    def test_cinema_follows_the_director_and_hard_asks(self):
         motion = VisualDecision(route="motion", subject="rocket", motion="it lifts")
         self.assertEqual(
             prefer_film_route(motion, "How does a rocket actually take off?").route,
@@ -96,14 +96,14 @@ class VisualDecisionTests(unittest.TestCase):
         )
         self.assertEqual(
             prefer_film_route(motion, "Make a short video of a jellyfish.").route,
-            "still",
+            "film",
         )
         self.assertEqual(
             prefer_film_route(
                 VisualDecision(route="film", subject="rocket"),
                 "Hi.",
             ).route,
-            "still",
+            "film",
         )
         self.assertEqual(
             prefer_film_route(
