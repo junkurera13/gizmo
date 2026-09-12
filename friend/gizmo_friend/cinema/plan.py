@@ -71,12 +71,12 @@ DIRECTED_INSTRUCTIONS = """
 DIRECTED FILM — this film is the whole answer on a screen that shows nothing else.
 A director has already decided the turn deserves a film and supplies a brief below.
 Follow the brief's angle, arc and exclusions; the question is still what you answer.
-Choose four or five connected beats, 30–45 seconds of speech in total, in the
+Choose four connected beats, 18–24 seconds of speech in total, in the
 explanatory spirit of Kurzgesagt or Crash Course: a hook in the first sentence,
 then cause and effect made visible, then one idea to leave with. The film must
 reach the end of its arc: a story or history shows the event itself and what it
 left behind, a mechanism shows the effect, never only the setup. Each beat is one
-spoken sentence of 10–18 words with a concrete visible action. Every shot is
+spoken sentence of 12–16 words with a concrete visible action. Every shot is
 gentle, colorful and kid-friendly; pictures never include people, faces or
 children — crowds and figures belong in narration only.
 """
@@ -111,7 +111,33 @@ class FilmPlan(BaseModel):
 class DirectedFilmPlan(FilmPlan):
     """A directed film carries a longer arc than a `/cinema` reply."""
 
-    beats: list[FilmBeat] = Field(min_length=1, max_length=5)
+    beats: list[FilmBeat] = Field(min_length=4, max_length=4)
+
+
+def soundtrack_timings(plan: FilmPlan, pcm: bytes) -> list[dict]:
+    """Split one recording into beat windows by spoken-word weight."""
+    weights = [max(len(beat.narration.split()), 1) for beat in plan.beats]
+    total = sum(weights)
+    length = len(pcm) - len(pcm) % 2
+    timings = []
+    cursor = 0
+    for index, beat in enumerate(plan.beats):
+        if index == len(plan.beats) - 1:
+            end = length
+        else:
+            end = cursor + length * weights[index] // total
+            end -= end % 2
+            end = min(max(end, cursor), length)
+        timings.append(
+            {
+                "start": cursor / 48000,
+                "end": end / 48000,
+                "narration": beat.narration,
+                "action": beat.action,
+            }
+        )
+        cursor = end
+    return timings
 
 
 @dataclass
@@ -157,38 +183,21 @@ class FilmMaker:
         return DirectedFilmPlan.model_validate_json(raw)
 
     async def synthesize(self, plan: FilmPlan) -> PreparedFilm:
-        # Short sentences synthesize concurrently. Their actual PCM lengths,
-        # not word-count estimates, define the director's audio timeline.
-        voices = await asyncio.gather(
-            *(self.voice.narrate(beat.narration) for beat in plan.beats)
-        )
-        # One flaky narration call must not sink the whole film: retry the
-        # misses once, serially this time.
-        for i, voice in enumerate(voices):
-            if voice is None:
-                voices[i] = await self.voice.narrate(plan.beats[i].narration)
-        if any(voice is None for voice in voices):
+        # One soundtrack, one Google TTS call. Cinema cannot start Director
+        # until this WAV exists, so the script must stay short enough that
+        # speech finishes in ~20s.
+        script = " ".join(beat.narration for beat in plan.beats)
+        voice = await self.voice.narrate(script)
+        if voice is None:
             raise RuntimeError("The narration did not arrive. Please try again.")
-        pcm = bytearray()
-        timings = []
-        for beat, voice in zip(plan.beats, voices):
-            start = len(pcm) / 48000
-            pcm.extend(voice.pcm)
-            timings.append(
-                {
-                    "start": start,
-                    "end": len(pcm) / 48000,
-                    "narration": beat.narration,
-                    "action": beat.action,
-                }
-            )
+        timings = soundtrack_timings(plan, voice.pcm)
         buffer = io.BytesIO()
         with wave.open(buffer, "wb") as audio:
             audio.setnchannels(1)
             audio.setsampwidth(2)
             audio.setframerate(24000)
-            audio.writeframes(bytes(pcm))
-        return PreparedFilm(plan, "", len(pcm) / 48000, buffer.getvalue(), timings)
+            audio.writeframes(voice.pcm)
+        return PreparedFilm(plan, "", len(voice.pcm) / 48000, buffer.getvalue(), timings)
 
     async def upload_audio(self, wav: bytes) -> str:
         if not wav:

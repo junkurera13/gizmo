@@ -29,9 +29,19 @@ except ImportError:  # Python 3.13+
 logger = logging.getLogger(__name__)
 
 NARRATION_MODEL = "gemini-3.1-flash-tts-preview"
+# Preview TTS 429s from Google's shared pool while the project RPM chart
+# still looks empty. Oddity already voices on 2.5 with this same key.
+NARRATION_FALLBACK_MODELS = ("gemini-2.5-flash-preview-tts",)
 NARRATION_ENDPOINT = "https://generativelanguage.googleapis.com/v1beta/models"
-NARRATION_TIMEOUT_SECONDS = 20.0
+# Gemini 2.5 TTS returns about as fast as the audio is long (26s of
+# speech took 24s). The deadline sits just above a ~20s soundtrack.
+# 60s was a bandage on a 35–45s script; a hang then made the kid wait
+# a minute for Live.
+NARRATION_TIMEOUT_SECONDS = 30.0
 NARRATION_RATE = 24_000
+NARRATION_ATTEMPTS = 4
+NARRATION_FALLBACK_ATTEMPTS = 2
+RETRYABLE_STATUS = {429, 503}
 MAX_NARRATION_CHARS = 1200
 MAX_RESPONSE_BYTES = 16 * 1024 * 1024
 # The delivery note is fixed. The planner writes what he says; this is how.
@@ -69,6 +79,49 @@ class NullNarrationProvider(NarrationProvider):
         return None
 
 
+def retry_wait_seconds(response: httpx.Response | None, attempt: int) -> float:
+    raw = response.headers.get("retry-after") if response is not None else None
+    if raw:
+        try:
+            return min(max(float(raw), 0.0), 8.0)
+        except ValueError:
+            pass
+    return min(0.5 * (2 ** attempt), 8.0)
+
+
+def narration_model_chain(
+    primary: str, fallbacks: tuple[str, ...] = NARRATION_FALLBACK_MODELS,
+) -> tuple[str, ...]:
+    chain: list[str] = []
+    for name in (primary, *fallbacks):
+        name = name.strip()
+        if name and name not in chain:
+            chain.append(name)
+    return tuple(chain)
+
+
+def narration_error_detail(body: bytes) -> str:
+    text = body.decode("utf-8", "replace")
+    try:
+        error = json.loads(text).get("error") or {}
+        parts = [error.get("status"), error.get("message")]
+        for extra in error.get("details") or []:
+            if isinstance(extra, dict) and extra.get("quotaMetric"):
+                parts.append(extra["quotaMetric"])
+                break
+        compact = " ".join(str(part) for part in parts if part)
+        if compact:
+            return compact[:400]
+    except (ValueError, TypeError, AttributeError):
+        pass
+    return " ".join(text.split())[:400]
+
+
+def daily_quota_exhausted(detail: str) -> bool:
+    text = detail.lower()
+    return "per_day" in text or "requests_per_day" in text
+
+
 def pcm_from_part(mime_type: str, data: bytes) -> bytes:
     """Normalize a TTS inline part to the 24 kHz mono PCM16 the body plays."""
     if not mime_type.lower().startswith(("audio/l16", "audio/pcm")):
@@ -89,10 +142,19 @@ class GeminiNarrationProvider(NarrationProvider):
     model: str = NARRATION_MODEL
     timeout_seconds: float = NARRATION_TIMEOUT_SECONDS
     style: str = NARRATION_STYLE
+    fallback_models: tuple[str, ...] = NARRATION_FALLBACK_MODELS
     _client: httpx.AsyncClient = field(init=False, repr=False)
 
     def __post_init__(self) -> None:
         self._client = httpx.AsyncClient(timeout=self.timeout_seconds, follow_redirects=False)
+
+    async def _reset_client(self) -> None:
+        previous = self._client
+        self._client = httpx.AsyncClient(timeout=self.timeout_seconds, follow_redirects=False)
+        try:
+            await previous.aclose()
+        except Exception:  # noqa: BLE001 - a cancelled stream must not pin the next attempt
+            pass
 
     async def narrate(self, text: str, *, style: str | None = None) -> Narration | None:
         text = " ".join(text.split())[:MAX_NARRATION_CHARS]
@@ -107,39 +169,91 @@ class GeminiNarrationProvider(NarrationProvider):
             },
         }
         started = time.perf_counter()
-        try:
-            async with asyncio.timeout(self.timeout_seconds):
-                raw = bytearray()
-                async with self._client.stream(
-                    "POST", f"{NARRATION_ENDPOINT}/{self.model}:generateContent", json=payload,
-                    headers={"x-goog-api-key": self.api_key},
-                ) as response:
-                    response.raise_for_status()
-                    async for chunk in response.aiter_bytes():
-                        raw.extend(chunk)
-                        if len(raw) > MAX_RESPONSE_BYTES:
-                            raise ValueError("Narration response exceeds size limit")
-                result = json.loads(raw)
-                parts = result["candidates"][0]["content"]["parts"]
-                inline = next(part["inlineData"] for part in parts if "inlineData" in part)
-                pcm = pcm_from_part(inline.get("mimeType", ""), base64.b64decode(inline["data"], validate=True))
-                if len(pcm) < NARRATION_RATE // 10 * 2:
-                    raise ValueError("Narration too short to be speech")
-                elapsed = time.perf_counter() - started
-                logger.info(
-                    "Narration generated: model=%s voice=%s seconds=%.3f audio_seconds=%.2f",
-                    self.model, self.voice, elapsed, len(pcm) / 2 / NARRATION_RATE,
-                )
-                return Narration(text=text, pcm=pcm, model=self.model, latency_seconds=elapsed)
-        except asyncio.CancelledError:
-            raise
-        except TimeoutError:
-            logger.warning("Narration dropped: model=%s exceeded %.1f seconds", self.model, self.timeout_seconds)
-        except Exception as error:  # noqa: BLE001 - narration must fail soft; the story falls back
-            logger.warning(
-                "Narration failed: model=%s error=%s status=%s", self.model, type(error).__name__,
-                error.response.status_code if isinstance(error, httpx.HTTPStatusError) else None,
-            )
+        models = narration_model_chain(self.model, self.fallback_models)
+        for model_index, model in enumerate(models):
+            attempts = NARRATION_ATTEMPTS if model_index == 0 else NARRATION_FALLBACK_ATTEMPTS
+            for attempt in range(attempts):
+                wait = None
+                retry_status = None
+                detail = ""
+                try:
+                    async with asyncio.timeout(self.timeout_seconds):
+                        raw = bytearray()
+                        async with self._client.stream(
+                            "POST", f"{NARRATION_ENDPOINT}/{model}:generateContent", json=payload,
+                            headers={"x-goog-api-key": self.api_key},
+                        ) as response:
+                            if response.status_code in RETRYABLE_STATUS:
+                                retry_status = response.status_code
+                                wait = retry_wait_seconds(response, attempt)
+                                detail = narration_error_detail(await response.aread())
+                            else:
+                                response.raise_for_status()
+                                async for chunk in response.aiter_bytes():
+                                    raw.extend(chunk)
+                                    if len(raw) > MAX_RESPONSE_BYTES:
+                                        raise ValueError("Narration response exceeds size limit")
+                    if wait is not None:
+                        logger.warning(
+                            "Narration %s, retry in %.1fs attempt=%s model=%s detail=%s",
+                            retry_status, wait, attempt + 1, model, detail,
+                        )
+                        if daily_quota_exhausted(detail):
+                            break
+                        if attempt + 1 < attempts:
+                            await asyncio.sleep(wait)
+                        continue
+                    result = json.loads(raw)
+                    parts = result["candidates"][0]["content"]["parts"]
+                    inline = next(part["inlineData"] for part in parts if "inlineData" in part)
+                    pcm = pcm_from_part(inline.get("mimeType", ""), base64.b64decode(inline["data"], validate=True))
+                    if len(pcm) < NARRATION_RATE // 10 * 2:
+                        raise ValueError("Narration too short to be speech")
+                    if model != self.model:
+                        self.model = model
+                    elapsed = time.perf_counter() - started
+                    logger.info(
+                        "Narration generated: model=%s voice=%s seconds=%.3f audio_seconds=%.2f",
+                        model, self.voice, elapsed, len(pcm) / 2 / NARRATION_RATE,
+                    )
+                    return Narration(text=text, pcm=pcm, model=model, latency_seconds=elapsed)
+                except asyncio.CancelledError:
+                    raise
+                except (TimeoutError, httpx.TimeoutException):
+                    logger.warning(
+                        "Narration dropped: model=%s exceeded %.1f seconds",
+                        model, self.timeout_seconds,
+                    )
+                    await self._reset_client()
+                    break
+                except httpx.HTTPStatusError as error:
+                    status = error.response.status_code
+                    detail = narration_error_detail(error.response.content)
+                    if status in RETRYABLE_STATUS and attempt + 1 < attempts:
+                        wait = retry_wait_seconds(error.response, attempt)
+                        logger.warning(
+                            "Narration %s, retry in %.1fs attempt=%s model=%s detail=%s",
+                            status, wait, attempt + 1, model, detail,
+                        )
+                        if daily_quota_exhausted(detail):
+                            break
+                        await asyncio.sleep(wait)
+                        continue
+                    logger.warning(
+                        "Narration failed: model=%s error=%s status=%s detail=%s",
+                        model, type(error).__name__, status, detail,
+                    )
+                    break
+                except Exception as error:  # noqa: BLE001 - try the next model before Live fallback
+                    logger.warning(
+                        "Narration failed: model=%s error=%s status=%s", model, type(error).__name__,
+                        error.response.status_code if isinstance(error, httpx.HTTPStatusError) else None,
+                    )
+                    break
+            next_model = models[model_index + 1] if model_index + 1 < len(models) else ""
+            if next_model:
+                logger.warning("Narration switching model=%s next=%s", model, next_model)
+                self.model = next_model
         return None
 
     async def close(self) -> None:

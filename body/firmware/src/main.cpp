@@ -777,6 +777,9 @@ void camera_loop() {
 }  // namespace
 
 void setup() {
+  // Core 0 runs WiFi, friend-net, and show-decode. A film keeps those ready
+  // for longer than the idle-task watchdog, which then reboots as IDLE0.
+  disableCore0WDT();
   pinMode(gizmo::board::sd_cs, OUTPUT);
   digitalWrite(gizmo::board::sd_cs, HIGH);
   haptic.begin();

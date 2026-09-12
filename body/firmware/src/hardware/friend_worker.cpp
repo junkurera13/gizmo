@@ -216,7 +216,7 @@ void FriendLink::run() {
       if (!packet.count) break;
       xQueueSend(speaker_, &packet, 0);
     }
-    vTaskDelay(pdMS_TO_TICKS(2));
+    vTaskDelay(1);
   }
 }
 }

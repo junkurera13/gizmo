@@ -425,7 +425,7 @@ class RouteTests(unittest.TestCase):
             )
 
 
-class DeviceEncodingTests(unittest.TestCase):
+class DeviceEncodingTests(unittest.IsolatedAsyncioTestCase):
     def test_director_segment_uses_existing_device_media_contract(self):
         import io
 
@@ -453,10 +453,71 @@ class DeviceEncodingTests(unittest.TestCase):
                 [(component[1], component[2]) for component in image.layer],
                 [(2, 2), (1, 1), (1, 1)],
             )
+            self.assertFalse(segment.show.clip_path.is_file())
+
+    async def test_capture_skips_frozen_director_preroll(self):
+        import io
+        import wave
+
+        from gizmo_friend.brain.shows import ShowStore
+        from gizmo_friend.cinema.device import DeviceFilmPlayer
+        from PIL import Image
+
+        class FakeFrame:
+            def __init__(self, time, color):
+                self.time = time
+                self._image = Image.new("RGB", (640, 360), color)
+
+            def to_image(self):
+                return self._image.copy()
+
+        class FakeTrack:
+            def __init__(self, frames):
+                self._frames = list(frames)
+                self.stopped = False
+
+            async def recv(self):
+                if not self._frames:
+                    await asyncio.sleep(30)
+                    raise asyncio.CancelledError
+                return self._frames.pop(0)
+
+            def stop(self):
+                self.stopped = True
+
+        frozen = [(i / 50, (10, 10, 10)) for i in range(8)]
+        moving = [(0.2 + i / 12, (min(i * 12, 240), 40, 80)) for i in range(16)]
+        track = FakeTrack([FakeFrame(t, color) for t, color in frozen + moving])
+        wav = io.BytesIO()
+        with wave.open(wav, "wb") as audio:
+            audio.setnchannels(1)
+            audio.setsampwidth(2)
+            audio.setframerate(24000)
+            audio.writeframes(b"\x00\x00" * 24000)
+        prepared = SimpleNamespace(
+            wav=wav.getvalue(),
+            duration=1.0,
+            plan=SimpleNamespace(title="Rocket"),
+        )
+        cinema = SimpleNamespace(revision=1)
+        with tempfile.TemporaryDirectory() as root:
+            store = ShowStore(Path(root) / "devices" / "test-device", device_id="test-device")
+            player = DeviceFilmPlayer(cinema, store, AsyncMock(), {})
+            queue = asyncio.Queue()
+            await asyncio.wait_for(player.capture(track, queue, prepared, 1), 2)
+            segment = queue.get_nowait()
+            self.assertIsNotNone(segment)
+            self.assertEqual(segment.frames, 12)
+            frames = store.mjpeg(segment.show.id)
+            data = frames.path.read_bytes()
+            first = data[: data.index(b"\xff\xd9") + 2]
+            image = Image.open(io.BytesIO(first))
+            # The frozen gray preroll must not be the first encoded picture.
+            self.assertNotEqual(image.getpixel((160, 96)), (10, 10, 10))
 
 
 class AudioTimelineTests(unittest.IsolatedAsyncioTestCase):
-    async def test_parallel_beats_keep_exact_audio_and_measured_boundaries(self):
+    async def test_serial_beats_keep_exact_audio_and_measured_boundaries(self):
         import io
         import wave
         from types import SimpleNamespace
@@ -465,16 +526,20 @@ class AudioTimelineTests(unittest.IsolatedAsyncioTestCase):
         from gizmo_friend.cinema.plan import FilmMaker
 
         maker = object.__new__(FilmMaker)
-        entered = []
-        barrier = asyncio.Event()
+        inflight = 0
+        peak = 0
+        order = []
 
         async def narrate(text):
-            entered.append(text)
-            if len(entered) == 3:
-                barrier.set()
-            await barrier.wait()
+            nonlocal inflight, peak
+            inflight += 1
+            peak = max(peak, inflight)
+            order.append(text)
+            await asyncio.sleep(0)
+            inflight -= 1
+            words = max(len(text.split()), 1)
             return Narration(
-                text=text, pcm=b"\x01\x00" * 2400, model="test", latency_seconds=0
+                text=text, pcm=b"\x01\x00" * (2400 * words), model="test", latency_seconds=0
             )
 
         maker.voice = SimpleNamespace(narrate=narrate)
@@ -488,6 +553,8 @@ class AudioTimelineTests(unittest.IsolatedAsyncioTestCase):
         )
         async with asyncio.timeout(1):
             prepared = await maker.prepare(plan)
+        self.assertEqual(peak, 1)
+        self.assertEqual(order, ["0 1 2"])
         self.assertEqual(prepared.duration, 0.3)
         self.assertEqual([row["start"] for row in prepared.timings], [0, 0.1, 0.2])
         with wave.open(io.BytesIO(prepared.wav), "rb") as audio:
@@ -496,6 +563,30 @@ class AudioTimelineTests(unittest.IsolatedAsyncioTestCase):
         synthesized = await maker.synthesize(plan)
         self.assertEqual(synthesized.audio_url, "")
         self.assertEqual(synthesized.wav, prepared.wav)
+
+    async def test_directed_beats_stay_one_tts_call(self):
+        from gizmo_friend.brain.narration import Narration
+        from gizmo_friend.cinema.plan import DirectedFilmPlan, FilmMaker
+
+        maker = object.__new__(FilmMaker)
+        order = []
+
+        async def narrate(text):
+            order.append(text)
+            words = max(len(text.split()), 1)
+            return Narration(
+                text=text, pcm=b"\x01\x00" * (2400 * words), model="test", latency_seconds=0
+            )
+
+        maker.voice = SimpleNamespace(narrate=narrate)
+        plan = DirectedFilmPlan(
+            title="Test",
+            beats=[FilmBeat(narration=str(n), action="move") for n in range(4)],
+            thread="next",
+        )
+        prepared = await maker.synthesize(plan)
+        self.assertEqual(order, ["0 1 2 3"])
+        self.assertEqual(prepared.duration, 0.4)
 
 
 class FakeFilmSession:

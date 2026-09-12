@@ -61,21 +61,6 @@ EXPRESSIONS = {"idle", "curious", "thinking", "happy", "concerned", "surprised"}
 # transcript. A late or failed director degrades to talk.
 TURN_ROUTE_GRACE_SECONDS = DIRECTOR_TIMEOUT_SECONDS
 GLASS_NO_ACK_GRACE_SECONDS = 1.0 # a body that never acks gets this long to fetch a cued picture
-AUDIO_CHUNK_BYTES = 11_520       # 240 ms of 24 kHz PCM16 per audio event to the body
-# Film turns announce the wait, not the story: one short line while the
-# thinking animation runs, then Cinema's own narration takes over.
-# Keep these dry. Story TTS + "Ooh — let me cook" reads as breathy slow-mo.
-FILM_ACK_STYLE = (
-    "Read the following as Gizmo, a small dry wizard talking to a kid. "
-    "Brisk, even, matter-of-fact, about 170 words per minute. "
-    "No whispering, breathy delivery, drawn-out vowels, or dramatic suspense. "
-    "Start promptly. Do not add words."
-)
-FILM_ACK_LINES = (
-    "Hang on.",
-    "One second.",
-    "Give me a second.",
-)
 
 
 def _today() -> str:
@@ -209,10 +194,6 @@ class GizmoSession:
         self._last_cue = 0
         self._cinema = None
         self._film_live_fallback: list[TransportEvent] | None = None
-        self._film_ack_task: asyncio.Task[None] | None = None
-        self._film_ack_warm_task: asyncio.Task[None] | None = None
-        self._film_ack_pcm: list[bytes] = []
-        self._film_ack_index = 0
         self._film_starting = False
 
     @property
@@ -422,7 +403,6 @@ class GizmoSession:
         self._touch()
         await self.emit({"type": "state"})
         self._ensure_idle_watch()
-        self._ensure_film_ack_warm()
 
     async def on_navigate(self, direction: str) -> None:
         cleaned = direction.strip().lower()
@@ -580,7 +560,7 @@ class GizmoSession:
             task
             for task in (
                 self._boot_task, self._idle_task, self._pump, self._reconnect_task,
-                self._warm_task, self._film_ack_warm_task, self._film_ack_task,
+                self._warm_task,
             )
             if task and not task.done()
         ]
@@ -1249,22 +1229,19 @@ class GizmoSession:
             logger.info("Friend cinema skipped: no held-cue body")
             return {"ok": False, "reason": "no glass cues"}
         cinema = self._cinema_capability()
-        # Cut Live first, then paint and speak the wait *before* Cinema
-        # connects. The old order waited on session setup and TTS, so the
-        # body sat idle for seconds and then said "one second."
+        # Cut Live and paint thinking before Cinema connects. Do not speak a
+        # wait line — that TTS fought the film's own narration quota.
         self._film_starting = True
         self._suppress_live_output = True
         await self._clear_line()
         self.mouth.cancel()
         await self.emit({"type": "interrupted", "reason": "film"})
         await self._enter_working()
-        self._kick_film_ack()
         try:
             result = await cinema.start(text, direction=direction or text)
         finally:
             self._film_starting = False
         if not result.get("ok"):
-            self._cancel_film_ack()
             logger.info("Friend cinema skipped: %s", result.get("reason"))
             return result
         # Preserve everything Live already generated while the judgment was
@@ -1278,7 +1255,6 @@ class GizmoSession:
 
     async def _stop_film(self, *, reason: str = "interrupt", announce: bool = True) -> bool:
         cinema = self._cinema
-        self._cancel_film_ack()
         had_fallback = self._film_live_fallback is not None
         self._film_live_fallback = None
         if cinema is None or not cinema.active:
@@ -1305,9 +1281,7 @@ class GizmoSession:
     async def _on_film_preparing(self) -> None:
         # A film in flight owns the glass once segments land; until then the
         # body plays its built-in working animation on home, not a still card.
-        # Keep an ack already kicked from _start_film; do not restart TTS.
         await self._enter_working()
-        self._kick_film_ack()
         self._cancel_pending_show()
         was_visible = self.current_show is not None
         self.current_show = None
@@ -1331,7 +1305,6 @@ class GizmoSession:
         self._show_visible_at = asyncio.get_running_loop().time()
 
     async def _on_film_presenting(self) -> None:
-        self._cancel_film_ack()
         self._film_live_fallback = None
         if self._transport:
             try:
@@ -1346,79 +1319,11 @@ class GizmoSession:
 
     async def _enter_working(self) -> None:
         """Painting starts as soon as the ask is in, not after Cinema thinks."""
-        self._ensure_film_ack_warm()
         if self.machine.state is State.THINKING:
             return
         if self.machine.can("think"):
             self.machine.apply("think")
             await self.emit({"type": "state"})
-
-    def _ensure_film_ack_warm(self) -> None:
-        if self._film_ack_pcm or (self._film_ack_warm_task and not self._film_ack_warm_task.done()):
-            return
-        try:
-            self._film_ack_warm_task = asyncio.create_task(self._warm_film_acks())
-        except RuntimeError:
-            return
-
-    async def _warm_film_acks(self) -> None:
-        clips: list[bytes] = []
-        for line in FILM_ACK_LINES:
-            try:
-                voice = await self.narration.narrate(line, style=FILM_ACK_STYLE)
-            except asyncio.CancelledError:
-                raise
-            except Exception:  # noqa: BLE001 - a missing clip falls back to live TTS
-                voice = None
-            clips.append(bytes(voice.pcm) if voice and voice.pcm else b"")
-        self._film_ack_pcm = clips
-
-    def _kick_film_ack(self) -> None:
-        if self._film_ack_task and not self._film_ack_task.done():
-            return
-        self._film_ack_task = asyncio.create_task(self._announce_film())
-
-    def _cancel_film_ack(self) -> None:
-        if self._film_ack_task and not self._film_ack_task.done():
-            self._film_ack_task.cancel()
-        self._film_ack_task = None
-
-    async def _announce_film(self) -> None:
-        """One spoken line that narrates the wait, never the story itself."""
-        index = self._film_ack_index % len(FILM_ACK_LINES)
-        line = FILM_ACK_LINES[index]
-        self._film_ack_index += 1
-        pcm = self._film_ack_pcm[index] if index < len(self._film_ack_pcm) else b""
-        if not pcm and self._film_ack_warm_task:
-            try:
-                await self._film_ack_warm_task
-            except asyncio.CancelledError:
-                raise
-            except Exception:  # noqa: BLE001 - fall through to live TTS
-                pass
-            pcm = self._film_ack_pcm[index] if index < len(self._film_ack_pcm) else b""
-        if not pcm:
-            try:
-                voice = await self.narration.narrate(line, style=FILM_ACK_STYLE)
-            except asyncio.CancelledError:
-                raise
-            except Exception as error:  # noqa: BLE001 - a silent wait beats a crash
-                logger.debug("Film acknowledgement failed: error=%s", type(error).__name__)
-                return
-            pcm = bytes(voice.pcm) if voice and voice.pcm else b""
-        if not pcm:
-            return
-        self.mouth.mark_playing()
-        try:
-            for offset in range(0, len(pcm), AUDIO_CHUNK_BYTES):
-                # The film ended or a new turn started: the line dies with it.
-                if not self.film_active() or self._closing:
-                    return
-                chunk = pcm[offset : offset + AUDIO_CHUNK_BYTES]
-                self.mouth.speak_pcm(chunk)
-                await self.emit({"type": "audio", "pcm": base64.b64encode(chunk).decode("ascii")})
-        finally:
-            self.mouth.mark_idle()
 
     async def _on_film_idle(self) -> None:
         fallback = self._film_live_fallback
