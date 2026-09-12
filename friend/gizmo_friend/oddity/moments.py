@@ -63,6 +63,7 @@ ORDER: tuple[str, ...] = (
     "ants",
     "homework",
     "trex",
+    "antarctica",
     "pompeii",
 )
 
@@ -120,7 +121,7 @@ _register(
                 "Water only the dirt around the base, keeping the other leaves dry so the fungus can't spread."
             ),
             "reply_audio": "/static/demo-plant-gizmo.wav?v=plant8",
-            "reply_audio_rate": 1.0,
+            "reply_audio_rate": 0.92,
             **_recording('plant'),
             "camera": {
                 "video": "/static/demo-plant-camera.mp4?v=plant6",
@@ -286,6 +287,31 @@ _register(
             "speed) as evidence. Help them reach a conclusion together. The value is "
             "reasoning, not crowning a winner."
         ),
+    ),
+    Moment(
+        id="antarctica",
+        line="What does Antarctica look like?",
+        seed="",
+        contract=(
+            "Answer with a short educational film that first locates Antarctica on a globe, "
+            "then travels across its ice sheet, mountains, glaciers, coast, icebergs, and "
+            "penguins. Explain that it surrounds the South Pole and that its interior is a "
+            "cold, windy desert. Keep the geography accurate, the transitions fluid, and the "
+            "imagery colorful, gentle, and suitable for children."
+        ),
+        demo={
+            "prompt": "Gizmo, what does Antarctica look like?",
+            "prompt_audio": "/static/demo-antarctica-kid.mp3?v=antarctica1",
+            "reply": (
+                "Antarctica is the icy continent at the very bottom of Earth. On a globe, it "
+                "wraps around the South Pole. Most of it is covered by a huge sheet of ice, "
+                "with bright glaciers, tall mountains, and deep blue cracks. Along the coast, "
+                "you can see floating icebergs and penguins, while the middle is a cold, windy "
+                "white desert."
+            ),
+            "reply_audio": "/static/demo-antarctica.wav?v=antarctica1",
+            "video": "/static/demo-antarctica.mp4?v=antarctica1",
+        },
     ),
     Moment(
         id="pompeii",

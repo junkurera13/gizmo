@@ -117,23 +117,45 @@ test('Pompeii plays three synchronized narrated videos', async () => {
   assert.match(ui.element('status').textContent, /Demo finished/);
 });
 
-test('Pompeii continues with the recorded kid follow-up and its answer video', async () => {
+test('Antarctica locates the continent in a synchronized educational film', async () => {
   const ui = await app();
   ui.context.recorded = []; ui.context.videos = [];
   ui.run(`
     delay = async () => {};
     playDemoRecording = async (src, signal, text) => { recorded.push(src); setCaption(text); };
     showDemoVideo = async (src) => { videos.push(src); demoOwnsScene = true; };
+    moments = [{id:'antarctica', line:'What does Antarctica look like?', demo:{
+      prompt:'Gizmo, what does Antarctica look like?', prompt_audio:'kid.mp3',
+      reply:'Antarctica surrounds the South Pole.', reply_audio:'gizmo.wav', video:'antarctica.mp4',
+    }}]; syncMoment('antarctica');
+  `);
+  await ui.run('sayMoment()');
+  assert.deepEqual([...ui.context.recorded], ['kid.mp3', 'gizmo.wav']);
+  assert.deepEqual([...ui.context.videos], ['antarctica.mp4']);
+  assert.deepEqual([...ui.run('history.map(item => item.text)')], [
+    'Gizmo, what does Antarctica look like?', 'Antarctica surrounds the South Pole.',
+  ]);
+});
+
+test('Pompeii continues with the recorded kid follow-up and its answer video', async () => {
+  const ui = await app();
+  ui.context.recorded = []; ui.context.videos = []; ui.context.fullscreenExpansions = 0;
+  ui.run(`
+    delay = async () => {};
+    playDemoRecording = async (src, signal, text) => { recorded.push(src); setCaption(text); };
+    showDemoVideo = async (src) => { videos.push(src); demoOwnsScene = true; };
+    expandDemoSceneFullscreen = () => { fullscreenExpansions += 1; };
     moments = [{id:'pompeii', line:'What happened to Pompeii?', demo:{
       prompt:'Gizmo, what happened to Pompeii?', prompt_audio:'opening-kid.mp3',
       reply:'Pompeii was buried in ash.', reply_audio:'main.wav', video:'main.mp4',
-      followup:{prompt:'How were the paintings still there?', audio:'followup-kid.mp3',
+      followup:{prompt:'How were the paintings still there?', audio:'followup-kid.mp3', fullscreen_during_prompt:true,
         video:'followup.mp4', reply_wait_ms:800, reply:'The ash protected them.', reply_audio:'followup.wav'},
     }}]; syncMoment('pompeii');
   `);
   await ui.run('sayMoment()');
   assert.deepEqual([...ui.context.recorded], ['opening-kid.mp3', 'main.wav', 'followup-kid.mp3', 'followup.wav']);
   assert.deepEqual([...ui.context.videos], ['main.mp4', 'followup.mp4']);
+  assert.equal(ui.context.fullscreenExpansions, 1);
   assert.deepEqual([...ui.run('history.map(item => item.text)')], [
     'Gizmo, what happened to Pompeii?', 'Pompeii was buried in ash.',
     'How were the paintings still there?', 'The ash protected them.',

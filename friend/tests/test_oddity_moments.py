@@ -32,13 +32,19 @@ class MomentCatalogTests(unittest.TestCase):
                 self.assertEqual(' '.join(text for _, text in cues if text), reply['reply'])
                 if item['id'] == 'birthday':
                     self.assertLess(duration, 9)
+                if item['id'] == 'plant':
+                    self.assertLess(duration / demo['reply_audio_rate'], 21.2)
+                    self.assertGreater(duration / demo['reply_audio_rate'], 20.5)
                 if 'math' in demo:
                     self.assertLess(demo['math']['visual_timed'][-1][0], duration)
 
     def test_public_catalog_hides_seed_and_contract(self):
         public = catalog()
-        self.assertEqual([item["id"] for item in public], ["birthday", "plant", "draw", "mathcheck", "rainbow", "pompeii"])
-        self.assertEqual(len(public), 6)
+        self.assertEqual(
+            [item["id"] for item in public],
+            ["birthday", "plant", "draw", "mathcheck", "rainbow", "antarctica", "pompeii"],
+        )
+        self.assertEqual(len(public), 7)
         self.assertNotIn("seed", public[0])
         self.assertNotIn("contract", public[0])
         self.assertEqual(public[0]["demo"]["prompt_audio"], "/static/demo-birthday-kid.mp3?v=days1")
@@ -63,23 +69,22 @@ class MomentCatalogTests(unittest.TestCase):
                 "/static/demo-plant-question.mp3?v=plant5",
             ],
         )
-        self.assertEqual(plant["reply_audio"], "/static/demo-plant-refreshed.wav")
+        self.assertEqual(plant["reply_audio"], "/static/demo-plant-refreshed.wav?v=plant2")
         self.assertEqual(
             [caption for _, caption in plant["reply_timed"]],
             [
                 "Your plant caught a tiny fungal bug,",
-                "which works just like a cold for plants!",
-                "It covers the leaves with dark spots and yellow circles,",
-                "making the edges brown and crispy.",
-                "You can help it heal by snipping off the sick leaves",
-                "and throwing them away in the trash.",
-                "Just make sure to water only the dirt around the base,",
-                "keeping the remaining leaves dry so the fungus can't spread.",
+                "which causes dark spots, yellow circles,",
+                "and crispy brown edges.",
+                "Help it heal by snipping off the sick leaves",
+                "and throwing them in the trash.",
+                "Water only the dirt around the base,",
+                "keeping the other leaves dry so the fungus can't spread.",
             ],
         )
         self.assertEqual(plant['camera']['reply_wait_ms'], 1000)
         self.assertTrue(plant['camera']['loop'])
-        self.assertEqual(plant["reply_audio_rate"], 1.0)
+        self.assertEqual(plant["reply_audio_rate"], 0.92)
         self.assertNotIn("touch", plant["reply"].lower())
         self.assertNotIn("soil", plant["reply"].lower())
         draw = public[2]["demo"]
@@ -124,13 +129,19 @@ class MomentCatalogTests(unittest.TestCase):
         })
         self.assertEqual(rainbow["beats"][1]["rainbow"], {"focus": "split"})
         self.assertIn("many colors", rainbow["beats"][1]["reply"])
-        self.assertEqual(public[5]["demo"]["prompt_audio"], "/static/demo-pompeii-kid.mp3")
-        self.assertEqual(public[5]["demo"]["video"], "/static/demo-pompeii-polished.mp4")
-        self.assertIn('paintings', public[5]['demo']['followup']['prompt'])
-        self.assertEqual(public[5]['demo']['followup']['audio'], "/static/demo-pompeii-kid-followup-user.mp3?v=pompeii1")
-        self.assertEqual(public[5]['demo']['followup']['video'], "/static/demo-pompeii-followup.mp4?v=pompeii1")
-        self.assertEqual(public[5]["demo"]["reply_audio"], "/static/demo-pompeii.wav")
-        self.assertIn("Vesuvius", public[5]["demo"]["reply"])
+        antarctica = public[5]["demo"]
+        self.assertEqual(antarctica["prompt_audio"], "/static/demo-antarctica-kid.mp3?v=antarctica1")
+        self.assertEqual(antarctica["reply_audio"], "/static/demo-antarctica.wav?v=antarctica1")
+        self.assertEqual(antarctica["video"], "/static/demo-antarctica.mp4?v=antarctica1")
+        self.assertIn("South Pole", antarctica["reply"])
+        self.assertIn("penguins", antarctica["reply"])
+        self.assertEqual(public[6]["demo"]["prompt_audio"], "/static/demo-pompeii-kid.mp3")
+        self.assertEqual(public[6]["demo"]["video"], "/static/demo-pompeii-polished.mp4")
+        self.assertIn('paintings', public[6]['demo']['followup']['prompt'])
+        self.assertEqual(public[6]['demo']['followup']['audio'], "/static/demo-pompeii-kid-followup-user.mp3?v=pompeii1")
+        self.assertEqual(public[6]['demo']['followup']['video'], "/static/demo-pompeii-followup.mp4?v=pompeii1")
+        self.assertEqual(public[6]["demo"]["reply_audio"], "/static/demo-pompeii.wav")
+        self.assertIn("Vesuvius", public[6]["demo"]["reply"])
         self.assertTrue(lookup("trex").contract)
         self.assertIsNone(lookup("missing"))
 
