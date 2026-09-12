@@ -313,6 +313,7 @@ void FriendConnection::disconnect() {
   hello_ok_ = false;
   session_ready_ = false;
   session_thinking_ = false;
+  session_talking_ = false;
   glass_seen_ = false;
   speaker_n_ = speaker_r_ = speaker_w_ = 0;
   down_n_ = 0;
@@ -534,6 +535,7 @@ void FriendConnection::accept_session_state(const char* state) {
   session_ready_ = strcmp(state, "listening") == 0 || strcmp(state, "talking") == 0 ||
                    strcmp(state, "thinking") == 0 || strcmp(state, "asleep") == 0;
   session_thinking_ = strcmp(state, "thinking") == 0;
+  session_talking_ = strcmp(state, "talking") == 0;
   if (strcmp(state, "powered_off") == 0) {
     // A new device identity starts powered off. Never cold-boot an already
     // powered session just because the Wi-Fi socket reconnected.
@@ -575,8 +577,9 @@ void FriendConnection::on_message(const char* json, size_t len) {
         Serial.printf("friend speaker: start %u pcm bytes\n", static_cast<unsigned>(decoded_len));
       }
       if (!enqueue_speaker(reinterpret_cast<const int16_t*>(decoded), decoded_len / 2)) {
+        // can_receive() already backpressures the socket for a full ring, so
+        // this is a defensive drop — a lost chunk must never reset the device.
         free(decoded);
-        abort();
         return;
       }
     }
@@ -664,9 +667,11 @@ void FriendConnection::on_message(const char* json, size_t len) {
     }
     glass_seen_ = true;
     if (hello_ok_ && session_ready_) {
+      if (phase_ != FriendPhase::kOnline) {
+        Serial.println("friend: online (hello + glass)");
+      }
       phase_ = FriendPhase::kOnline;
       strncpy(detail_, "ONLINE", sizeof(detail_) - 1);
-      Serial.println("friend: online (hello + glass)");
     }
     return;
   }

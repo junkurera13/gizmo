@@ -56,7 +56,7 @@ class Narration:
 
 class NarrationProvider(ABC):
     @abstractmethod
-    async def narrate(self, text: str) -> Narration | None:
+    async def narrate(self, text: str, *, style: str | None = None) -> Narration | None:
         """Return finished speech for one beat, or nothing when unavailable/late."""
 
     async def close(self) -> None:
@@ -64,8 +64,8 @@ class NarrationProvider(ABC):
 
 
 class NullNarrationProvider(NarrationProvider):
-    async def narrate(self, text: str) -> Narration | None:
-        del text
+    async def narrate(self, text: str, *, style: str | None = None) -> Narration | None:
+        del text, style
         return None
 
 
@@ -94,12 +94,13 @@ class GeminiNarrationProvider(NarrationProvider):
     def __post_init__(self) -> None:
         self._client = httpx.AsyncClient(timeout=self.timeout_seconds, follow_redirects=False)
 
-    async def narrate(self, text: str) -> Narration | None:
+    async def narrate(self, text: str, *, style: str | None = None) -> Narration | None:
         text = " ".join(text.split())[:MAX_NARRATION_CHARS]
         if not text:
             return None
+        delivery = style or self.style
         payload = {
-            "contents": [{"parts": [{"text": f"{self.style}\n\n{text}"}]}],
+            "contents": [{"parts": [{"text": f"{delivery}\n\n{text}"}]}],
             "generationConfig": {
                 "responseModalities": ["AUDIO"],
                 "speechConfig": {"voiceConfig": {"prebuiltVoiceConfig": {"voiceName": self.voice}}},

@@ -86,15 +86,17 @@ class FriendCinema:
             return {"ok": False, "reason": "unavailable"}
         if not await asyncio.to_thread(self.budget.reserve, self.device_id):
             return {"ok": False, "reason": "quiet day"}
-        await self._ensure_session()
-        if self._owns_session and self.session.turns >= 8:
-            await self.session.close()
-            self.session = None
-            self.player = None
-            await self._ensure_session()
-        await self.player.cancel_playback()
+        # Mark active before session setup so the body's wait line can play
+        # while Director is still connecting.
         self._active = True
         try:
+            await self._ensure_session()
+            if self._owns_session and self.session.turns >= 8:
+                await self.session.close()
+                self.session = None
+                self.player = None
+                await self._ensure_session()
+            await self.player.cancel_playback()
             started = await self.session.ask(text, direction=direction)
         except Exception:
             self._active = False

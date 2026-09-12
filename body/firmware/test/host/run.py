@@ -20,6 +20,8 @@ with tempfile.TemporaryDirectory(prefix="gizmo-host-") as temp:
                 sources += [str(root / "src/hardware/friend.cpp"), str(root / "src/hardware/audio.cpp")]
             elif name == "worker":
                 sources += [str(root / "src/hardware/friend_worker.cpp"), str(root / "src/hardware/friend.cpp")]
+            elif name == "show":
+                sources += [str(root / "src/hardware/show.cpp"), str(root / "src/hardware/jpeg_lock.cpp")]
             else:
                 sources.append(str(root / f"src/hardware/{name}.cpp"))
         else:

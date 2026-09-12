@@ -1,178 +1,112 @@
 from __future__ import annotations
 
+import inspect
+import json
 import unittest
+from types import SimpleNamespace
+from unittest.mock import AsyncMock
 
-from gizmo_friend.brain.images import SCENE_ADDENDUM, DIAGRAM_ADDENDUM, still_instruction
+from gizmo_friend.brain.images import DIAGRAM_ADDENDUM, SCENE_ADDENDUM, still_instruction
 from gizmo_friend.brain.visual_director import (
+    DIRECTOR_INSTRUCTIONS,
+    DIRECTOR_SCHEMA,
+    DialogueTurn,
+    GeminiVisualDirector,
+    MAX_CONTEXT_TEXT,
+    MAX_CONTEXT_TURNS,
     VisualDecision,
     decision_from_payload,
-    is_bare_animate_request,
-    is_explicit_visual_request,
-    is_moving_explanation_ask,
-    prefer_film_route,
 )
 from gizmo_friend.transport.gemini_live import live_config
 
 
+def payload(route="words", subject="", **updates):
+    value = {
+        "route": route,
+        "subject": subject,
+        "thread": "new",
+        "story_setting": "",
+        "redraw_requested": False,
+        "kind": "scene",
+        "story_character": "",
+        "new_story": False,
+    }
+    value.update(updates)
+    return value
+
+
 class VisualDecisionTests(unittest.TestCase):
-    def test_invalid_or_incomplete_decisions_degrade_without_spending(self):
+    def test_only_talk_still_and_film_are_valid_routes(self):
+        self.assertEqual(DIRECTOR_SCHEMA["properties"]["route"]["enum"], ["words", "still", "film"])
         self.assertEqual(decision_from_payload(None, has_visual=False), VisualDecision())
-        self.assertEqual(
-            decision_from_payload(
-                {"route": "motion", "subject": "earth layers", "motion": "none"},
-                has_visual=False,
-            ),
-            VisualDecision(route="still", subject="earth layers"),
-        )
-        self.assertEqual(
-            decision_from_payload(
-                {"route": "motion", "subject": "rocket", "motion": ""},
-                has_visual=False,
-            ),
-            VisualDecision(route="still", subject="rocket"),
-        )
+        for invalid in ("motion", "animate", "video", ""):
+            self.assertEqual(
+                decision_from_payload(payload(invalid, "rocket"), has_visual=False),
+                VisualDecision(),
+            )
 
-    def test_animate_payload_stays_words(self):
-        payload = {"route": "animate", "subject": "ignored", "motion": "tentacles drift"}
-        self.assertEqual(decision_from_payload(payload, has_visual=False), VisualDecision())
-        self.assertEqual(decision_from_payload(payload, has_visual=True), VisualDecision())
-
-    def test_bare_make_it_move_is_not_a_moving_explanation(self):
-        for utterance in ("Make it move.", "please animate it", "Move it, please!"):
-            self.assertTrue(is_bare_animate_request(utterance))
-        for utterance in ("Make it move and explain why.", "Can it move?", "Move it to the left"):
-            self.assertFalse(is_bare_animate_request(utterance))
-
-    def test_only_explicit_standalone_visuals_can_start_before_voice(self):
-        for utterance in ("Show me a volcano.", "Can you draw a jellyfish?", "Make a short video of a rocket."):
-            self.assertTrue(is_explicit_visual_request(utterance))
-        for utterance in ("Tell me a story about a fox.", "Show me the next story chapter.", "Then what?", "Why is the sky blue?"):
-            self.assertFalse(is_explicit_visual_request(utterance))
-
-    def test_moving_explanations_are_gated_by_difficulty_not_vocabulary(self):
-        for utterance in (
-            "How does a rocket actually take off?",
-            "What happens when ice melts?",
-            "Why is the sky blue?",
-            "Why do rockets fly?",
-            "How does a heart pump blood?",
-            "Explain how rain forms.",
-            "Show me how the Moon orbits.",
-            "How do airplanes stay up?",
-            "What if I fell into Jupiter?",
-        ):
-            self.assertTrue(is_moving_explanation_ask(utterance), utterance)
-        for utterance in (
-            "Hi.",
-            "Tell me a joke.",
-            "How are you?",
-            "I'm sad.",
-            "Make it move.",
-            "Show me a volcano.",
-            "Make a short video of a jellyfish.",
-            "Make a cinematic film of a rocket.",
-            "Where was the Silk Road?",
-            "What does a trilobite look like?",
-            "What color is the sky?",
-            "How do you spell rocket?",
-            "Tell me a story about a fox.",
-            "How old is the Moon?",
-            "How many hearts does an octopus have?",
-        ):
-            self.assertFalse(is_moving_explanation_ask(utterance), utterance)
-
-    def test_cinema_follows_the_director_and_hard_asks(self):
-        motion = VisualDecision(route="motion", subject="rocket", motion="it lifts")
+    def test_model_judgment_is_authoritative(self):
         self.assertEqual(
-            prefer_film_route(motion, "How does a rocket actually take off?").route,
-            "film",
-        )
-        self.assertEqual(
-            prefer_film_route(
-                VisualDecision(route="still", subject="rocket"),
-                "Why do rockets fly?",
-            ).route,
-            "film",
-        )
-        self.assertEqual(
-            prefer_film_route(motion, "Make a short video of a jellyfish.").route,
-            "film",
-        )
-        self.assertEqual(
-            prefer_film_route(
-                VisualDecision(route="film", subject="rocket"),
-                "Hi.",
-            ).route,
-            "film",
-        )
-        self.assertEqual(
-            prefer_film_route(
-                VisualDecision(route="still", subject="Silk Road map"),
-                "Where was the Silk Road?",
-            ).route,
-            "still",
-        )
-        self.assertEqual(
-            prefer_film_route(
-                VisualDecision(route="still", subject="rocket"),
-                "How do you spell rocket?",
-            ).route,
-            "still",
-        )
-        story = prefer_film_route(
-            VisualDecision(route="motion", subject="castle", motion="clouds drift", story_setting="castle"),
-            "Then what?",
-        )
-        self.assertEqual(story.route, "film")
-        self.assertEqual(story.story_setting, "castle")
-        self.assertEqual(
-            prefer_film_route(
-                VisualDecision(route="still", subject="castle", story_setting="castle"),
-                "How does a rocket work?",
-            ).route,
-            "still",
-        )
-        self.assertEqual(
-            prefer_film_route(
-                VisualDecision(route="animate", motion="bell pulses"),
-                "Make it move.",
-            ).route,
+            decision_from_payload(payload("words"), has_visual=False).route,
             "words",
         )
+        self.assertEqual(
+            decision_from_payload(payload("still", "rocket"), has_visual=False),
+            VisualDecision(route="still", subject="rocket"),
+        )
+        self.assertEqual(
+            decision_from_payload(payload("film", "rocket launch"), has_visual=False),
+            VisualDecision(route="film", subject="rocket launch"),
+        )
 
-    def test_film_route_is_accepted_for_explanations_and_story_scenes(self):
-        self.assertEqual(
-            decision_from_payload(
-                {"route": "film", "subject": "rocket exhaust", "motion": ""},
-                has_visual=False,
+    def test_missing_subject_fails_open_to_talk(self):
+        for route in ("still", "film"):
+            self.assertEqual(
+                decision_from_payload(payload(route), has_visual=False),
+                VisualDecision(),
+            )
+
+    def test_thread_and_story_identity_are_normalized(self):
+        decision = decision_from_payload(
+            payload(
+                "film",
+                "Fen reaches the ocean floor",
+                thread="continue",
+                story_setting="Ocean   Floor",
+                story_character="Fen, small fox, violet scarf",
             ),
-            VisualDecision(route="film", subject="rocket exhaust"),
+            has_visual=False,
         )
+        self.assertEqual(decision.thread, "continue")
+        self.assertEqual(decision.story_setting, "ocean floor")
+        self.assertEqual(decision.story_character, "Fen, small fox, violet scarf")
+
+    def test_same_story_still_reuse_is_an_operational_guard(self):
+        same = payload("still", "castle courtyard", story_setting="castle")
         self.assertEqual(
-            decision_from_payload(
-                {
-                    "route": "film",
-                    "subject": "castle at dusk",
-                    "motion": "clouds drift",
-                    "story_setting": "castle",
-                },
-                has_visual=False,
-            ).route,
-            "film",
+            decision_from_payload(same, has_visual=True, current_story_setting="castle").route,
+            "words",
         )
-    def test_stories_are_scenes_even_if_the_model_asks_for_a_diagram(self):
-        payload = {
-            "route": "motion", "subject": "submarine on the ocean floor",
-            "motion": "bubbles rise", "story_setting": "ocean floor", "kind": "diagram",
-        }
-        self.assertEqual(decision_from_payload(payload, has_visual=False).kind, "scene")
-        payload = {
-            "route": "still", "subject": "heart chambers", "motion": "",
-            "story_setting": "", "kind": "diagram",
-        }
-        self.assertEqual(decision_from_payload(payload, has_visual=False).kind, "diagram")
-        payload["kind"] = "scene"
-        self.assertEqual(decision_from_payload(payload, has_visual=False).kind, "scene")
+        same["redraw_requested"] = True
+        self.assertEqual(
+            decision_from_payload(same, has_visual=True, current_story_setting="castle").route,
+            "still",
+        )
+
+    def test_stories_are_scenes_and_non_story_diagrams_are_allowed(self):
+        story = payload("still", "submarine", story_setting="ocean floor", kind="diagram")
+        self.assertEqual(decision_from_payload(story, has_visual=False).kind, "scene")
+        diagram = payload("still", "heart chambers", kind="diagram")
+        self.assertEqual(decision_from_payload(diagram, has_visual=False).kind, "diagram")
+
+    def test_no_semantic_regex_router_remains(self):
+        source = inspect.getsource(__import__(
+            "gizmo_friend.brain.visual_director", fromlist=["visual_director"]
+        ))
+        self.assertNotIn("is_moving_explanation_ask", source)
+        self.assertNotIn("is_explicit_visual_request", source)
+        self.assertNotIn("prefer_film_route", source)
+        self.assertIn("Never use a keyword or phrase as an automatic trigger", DIRECTOR_INSTRUCTIONS)
 
     def test_scene_instructions_forbid_text_and_diagrams_allow_labels(self):
         scene = still_instruction("scene")
@@ -191,6 +125,29 @@ class VisualDecisionTests(unittest.TestCase):
             for declaration in tool.get("function_declarations", [])
         }
         self.assertEqual(names, {"deep_think"})
+
+
+class DirectorContextTests(unittest.IsolatedAsyncioTestCase):
+    async def test_provider_receives_bounded_context_and_current_medium(self):
+        generate = AsyncMock(return_value=json.dumps(payload("words", thread="continue")))
+        director = GeminiVisualDirector.__new__(GeminiVisualDirector)
+        director.model = "fixture"
+        director._client = SimpleNamespace(complete=generate)
+        decision = await director.decide(
+            "And then?",
+            has_visual=True,
+            current_subject="rocket launch",
+            current_medium="film",
+            recent_dialogue=tuple(DialogueTurn(str(i), "x" * 3000) for i in range(20)),
+        )
+        request = json.loads(generate.call_args.args[1])
+        self.assertEqual(decision.thread, "continue")
+        self.assertEqual(request["current_medium"], "film")
+        self.assertEqual(request["current_subject"], "rocket launch")
+        self.assertEqual(len(request["recent_dialogue"]), MAX_CONTEXT_TURNS)
+        self.assertTrue(
+            all(len(turn["narration"]) == MAX_CONTEXT_TEXT for turn in request["recent_dialogue"])
+        )
 
 
 if __name__ == "__main__":

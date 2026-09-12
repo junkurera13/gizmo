@@ -77,6 +77,7 @@ char caption_drawn[160] = "";   // caption text last pushed to the panel
 bool show_band_painted = false; // caption-zone rows hold this show's pixels
 int boot_slot_drawn = -1;
 bool boot_chimed = false;
+bool body_net_started = false;
 bool dirty = true;
 bool audio_ok = false;
 bool friend_ptt_ = false;
@@ -248,6 +249,13 @@ void load_settings() {
   if (settings.volume > settings.steps) settings.volume = settings.steps;
 }
 
+void start_body_net() {
+  if (body_net_started) return;
+  body_net_started = true;
+  friend_link.begin();
+  show_player.begin();
+}
+
 void enter(State next) {
   if (state == next) return;
   if ((next == State::kSettings || next == State::kPlayback) && show_player.viewing()) {
@@ -322,9 +330,16 @@ void render() {
   const uint32_t now = millis();
   switch (state) {
     case State::kBoot: {
-      int slot = static_cast<int>((now - state_since) / gizmo::assets::kBootFramePeriodMs);
-      if (slot >= gizmo::assets::kBootSlots) slot = gizmo::assets::kBootSlots - 1;
-      if (slot == boot_slot_drawn) {
+      // Play every slot in order. Wall-clock indexing used to skip beats
+      // whenever a decode or blit ran long — missing blink, drop, or wordmark,
+      // then IDLE painted the character over whatever frame was left.
+      if (boot_slot_drawn + 1 >= gizmo::assets::kBootSlots) {
+        dirty = false;
+        return;
+      }
+      const int slot = boot_slot_drawn + 1;
+      const uint32_t due = state_since + uint32_t(slot) * gizmo::assets::kBootFramePeriodMs;
+      if (now < due) {
         dirty = false;
         return;
       }
@@ -731,7 +746,7 @@ void camera_loop() {
       const bool blit_now = !audio.live_playing() || millis() - last_camera_blit >= 250;
       if (blit_now && frame->width == gizmo::assets::kPanelWidth && frame->height == gizmo::assets::kPanelHeight &&
           ensure_framebuffer() &&
-          jpg2rgb565(frame->buf, frame->len, reinterpret_cast<uint8_t*>(framebuffer), JPG_SCALE_NONE)) {
+          show_player.decode_jpeg(frame->buf, frame->len, framebuffer)) {
         camera_status = nullptr;
         paint_camera(true, nullptr);
         last_camera_blit = millis();
@@ -811,8 +826,6 @@ void setup() {
   wifi.begin();
   Serial.printf("wifi begin: %s ap=%s (plug the Sense U.FL antenna)\n", gizmo::wifi_phase_name(wifi.phase()),
                 wifi.ap_ssid());
-  friend_link.begin();
-  show_player.begin();
   vision_jpeg = static_cast<uint8_t*>(heap_caps_malloc(kVisionMax, MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT));
   if (vision_jpeg == nullptr) vision_jpeg = static_cast<uint8_t*>(heap_caps_malloc(kVisionMax, MALLOC_CAP_8BIT));
   Serial.printf("vision jpeg buffer: %s\n", vision_jpeg ? "ready" : "unavailable");
@@ -820,8 +833,9 @@ void setup() {
   Serial.println("      tHH:MM<enter> = set clock, i = input voltages, n = wifi, w = forget wifi / reopen portal,");
   Serial.println("      F<url><enter> / K<token><enter> = Friend brain, f = friend status,");
   Serial.println("      d = camera (same as Down), c/x = camera start/stop, r = rotate, ? = status");
-  // Boot clock starts here. A blocking Wi-Fi scan in setup() used to eat the
-  // 5 s flipbook, so the eyes-between-hands frames never reached the panel.
+  // Boot clock starts here. Friend and show tasks stay down until the last
+  // flipbook slot has actually been drawn — TLS and JPEG-ahead used to land
+  // inside this window and skip beats. STA join can still run in the SDK.
   state_since = millis();
   boot_slot_drawn = -1;
   boot_chimed = false;
@@ -837,6 +851,29 @@ void loop() {
   if (select_pending && millis() - select_armed_at >= kDoubleSelectMs) {
     select_pending = false;
     resolve_single_select();
+  }
+
+  if (state == State::kBoot) {
+    audio.update();
+    const uint32_t now = millis();
+    if (!boot_chimed && audio_ok && now - state_since >= gizmo::assets::kBootChimeAtMs) {
+      boot_chimed = true;
+      if (!audio.start_clip(gizmo::assets::chime(), gizmo::assets::kChimeSamples)) {
+        Serial.println("boot chime: start failed");
+      }
+    }
+    const bool flipbook_done = boot_slot_drawn >= gizmo::assets::kBootSlots - 1;
+    if (flipbook_done && now - state_since >= gizmo::assets::kBootMinimumMs) {
+      wifi.update();
+      start_body_net();
+      enter(State::kIdle);
+      wifi.start_portal_if_unconfigured();
+    } else {
+      dirty = true;
+      render();
+      delay(1);
+      return;
+    }
   }
 
   friend_link.update(wifi.online());
@@ -856,6 +893,7 @@ void loop() {
   gizmo::GlassReady glass_ack;
   while (show_player.take_glass_ready(glass_ack)) friend_link.send_glass_ready(glass_ack);
   if (had_show != show_player.available()) dirty = true;
+  audio.set_live_expecting(friend_link.session_talking() || friend_link.session_thinking());
   audio.update();
   pump_friend_audio();
   // The memo limit also applies while the camera owns the visible state.
@@ -874,18 +912,6 @@ void loop() {
   const uint32_t now = millis();
   switch (state) {
     case State::kBoot:
-      if (!boot_chimed && audio_ok && now - state_since >= gizmo::assets::kBootChimeAtMs) {
-        boot_chimed = true;
-        if (!audio.start_clip(gizmo::assets::chime(), gizmo::assets::kChimeSamples)) {
-          Serial.println("boot chime: start failed");
-        }
-      }
-      if (now - state_since >= gizmo::assets::kBootMinimumMs) {
-        enter(State::kIdle);
-        wifi.start_portal_if_unconfigured();
-      } else {
-        dirty = true;
-      }
       break;
     case State::kRecording:
       if (!audio.recording()) {

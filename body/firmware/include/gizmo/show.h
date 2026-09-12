@@ -2,6 +2,7 @@
 #include <atomic>
 #include <freertos/FreeRTOS.h>
 #include <freertos/queue.h>
+#include <freertos/semphr.h>
 #include "gizmo/show_format.h"
 
 namespace gizmo {
@@ -21,6 +22,9 @@ class ShowPlayer {
   bool available() const { return still_.bytes != nullptr; }
   bool motion_playing() const { return clip_.bytes != nullptr; }
   bool render(uint16_t* pixels, bool force = false);
+  // Decodes under the chip-global gizmo::jpeg_lock (esp_jpg_decode is not
+  // reentrant); the camera preview shares it through this entry point.
+  bool decode_jpeg(const uint8_t* bytes, size_t length, uint16_t* pixels);
   bool take_glass_ready(GlassReady& ack);
   void diagnose() const;
  private:
@@ -37,14 +41,40 @@ class ShowPlayer {
   };
   static void task(void* context);
   void run();
+  static void decode_task(void* context);
+  void decode_run();
   bool download(const Job& job, bool motion, Media& media);
   void publish(Media& media);
   void release(Media& media);
+  bool decode_media_frame(const Media& media, size_t index, uint16_t* pixels);
   void hold(const ShowRequest& request);
   bool swap_held(const ShowRequest& request);
   void drop_held();
   void ack(uint32_t cue, bool motion, bool ok);
+  size_t motion_index(size_t count) const;
+  void arm_clip();
+  void note_presented(size_t index);
   QueueHandle_t jobs_ = nullptr, held_jobs_ = nullptr, results_ = nullptr;
+  SemaphoreHandle_t media_mux_ = nullptr;
+  // Decoded-ahead ring for motion playback. A JPEG frame decode costs ~50 ms
+  // on the body loop — over half the 83 ms frame budget — so a separate task
+  // copies the next frames' JPEG bytes under media_mux_, decodes them into
+  // these SPIRAM buffers, and render() becomes a memcpy. Buffers tagged with
+  // the media generation they came from; a stale generation is skipped.
+  // Six slots is ~500 ms at 12 fps, enough to absorb a TLS burst on core 0
+  // without the playhead running dry.
+  static constexpr int kDecBufs = 6;
+  static constexpr size_t kDecScratch = 40 * 1024;
+  static constexpr size_t kDecPixels = kShowWidth * kShowHeight * sizeof(uint16_t);
+  uint16_t* dec_pixels_[kDecBufs] = {};
+  uint8_t* dec_scratch_ = nullptr;
+  std::atomic<uint32_t> media_gen_{0};
+  std::atomic<int> dec_index_[kDecBufs];
+  std::atomic<uint32_t> dec_gen_[kDecBufs];
+  // Set when the decoder failed on this frame: render skips it (repeats the
+  // previous frame) and the pipeline moves on instead of retrying forever.
+  std::atomic<bool> dec_bad_[kDecBufs];
+  std::atomic<int> dec_w_{0};
   std::atomic<uint32_t> revision_{0};
   std::atomic<uint32_t> held_revision_{0};
   ShowRequest request_;
@@ -55,7 +85,7 @@ class ShowPlayer {
   static constexpr size_t kAckCap = 8;
   GlassReady acks_[kAckCap];
   size_t ack_r_ = 0, ack_w_ = 0;
-  uint32_t started_ = 0;
+  std::atomic<uint32_t> started_{0};
   int drawn_ = -1;
   bool changed_ = false;
 };

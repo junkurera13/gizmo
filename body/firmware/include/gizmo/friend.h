@@ -24,6 +24,7 @@ class FriendLink {
   bool has_token() const { return status_.token; }
   bool hello_ok() const { return status_.hello; }
   bool session_thinking() const { return status_.thinking; }
+  bool session_talking() const { return status_.talking; }
   bool set_url(const char* url);
   bool set_token(const char* token);
   void forget();
@@ -55,6 +56,7 @@ class FriendLink {
     bool token = false;
     bool hello = false;
     bool thinking = false;
+    bool talking = false;
     char detail[56] = "NETWORK STARTING";
     char url[160] = "";
     char device[32] = "";

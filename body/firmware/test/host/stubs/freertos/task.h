@@ -2,12 +2,22 @@
 #include <atomic>
 #include <chrono>
 #include <thread>
+#include <vector>
 #include <freertos/FreeRTOS.h>
 inline std::atomic<bool> mock_task_stop{false};
-inline std::thread mock_task;
+inline std::vector<std::thread> mock_tasks;
 struct StopTask {};
 inline int xTaskCreate(void(*fn)(void*),const char*,int,void* context,int,void*) {
-  mock_task=std::thread([=]{try{fn(context);}catch(const StopTask&) {}});return pdPASS;
+  mock_tasks.emplace_back([=]{try{fn(context);}catch(const StopTask&) {}});return pdPASS;
+}
+inline int xTaskCreatePinnedToCore(void(*fn)(void*),const char* n,int s,void* context,int p,void* h,unsigned) {
+  return xTaskCreate(fn,n,s,context,p,h);
+}
+inline void join_mock_tasks() {
+  mock_task_stop.store(true);
+  for(auto& t:mock_tasks) if(t.joinable()) t.join();
+  mock_tasks.clear();
+  mock_task_stop.store(false);
 }
 inline void vTaskDelay(TickType_t ms) {
   if(mock_task_stop.load())throw StopTask{};
