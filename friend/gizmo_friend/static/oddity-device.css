@@ -117,7 +117,8 @@ html.embedded .moments:not([hidden]){display:flex}
 .device .stage .caption{font-size:3.6cqw;line-height:1.25;font-weight:400;letter-spacing:normal;text-align:center}
 .stage[data-glass=camera] .caption{opacity:1;z-index:8;top:78%;bottom:0;left:8%;right:8%;display:flex;align-items:center;justify-content:center;max-height:none}
 .camera-strip img,.camera-line{display:none}
-.glass-camera .camera-finder{clip-path:inset(0 0 var(--strip) 0 round var(--finder-radius))}
+.glass-camera .camera-finder{clip-path:inset(0)}
+.glass-camera.is-replying .camera-finder{clip-path:inset(0 0 var(--strip) 0 round var(--finder-radius))}
 .demo-math{grid-template-rows:auto auto 1fr 1fr auto;padding:4% 6%;gap:2% 4%}
 .math-kicker{display:none}
 .math-attempt{font-size:6cqw}

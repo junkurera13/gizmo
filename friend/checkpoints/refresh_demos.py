@@ -24,8 +24,10 @@ STYLE = ('Speak warmly and naturally to one curious child, like a friendly conve
 LINES = {
     'birthday': ["Eleven more days. That's close enough to start getting excited.",
                  'Your birthday will be here before you know it.'],
-    'plant': ['Those brown spots and yellow edges could have a few causes.',
-              'Look underneath a leaf for tiny insects or webs.'],
+    'plant': ['Your plant caught a tiny fungal bug, which works just like a cold for plants!',
+              'It covers the leaves with dark spots and yellow circles, making the edges brown and crispy.',
+              'You can help it heal by snipping off the sick leaves and throwing them away in the trash.',
+              'Just make sure to water only the dirt around the base, keeping the remaining leaves dry so the fungus can\'t spread.'],
     'mathcheck': ['Good checking! Your answer is just one away.',
                   'Take three from sixteen and add them to the seven in twenty-seven.',
                   'That turns twenty-seven into thirty.',

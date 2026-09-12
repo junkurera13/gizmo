@@ -33,23 +33,39 @@
     "duration": 7.86
   },
   "plant": {
-    "reply": "Those brown spots and yellow edges could have a few causes. Look underneath a leaf for tiny insects or webs.",
+    "reply": "Your plant caught a tiny fungal bug, which works just like a cold for plants! It covers the leaves with dark spots and yellow circles, making the edges brown and crispy. You can help it heal by snipping off the sick leaves and throwing them away in the trash. Just make sure to water only the dirt around the base, keeping the remaining leaves dry so the fungus can't spread.",
     "reply_audio": "/static/demo-plant-refreshed.wav",
     "reply_timed": [
       [
         0.0,
-        "Those brown spots and yellow edges could have a few causes."
+        "Your plant caught a tiny fungal bug, which works just like a cold for plants!"
       ],
       [
-        4.91,
+        5.3,
         ""
       ],
       [
-        5.13,
-        "Look underneath a leaf for tiny insects or webs."
+        5.52,
+        "It covers the leaves with dark spots and yellow circles, making the edges brown and crispy."
       ],
       [
-        9.22,
+        12.5,
+        ""
+      ],
+      [
+        12.72,
+        "You can help it heal by snipping off the sick leaves and throwing them away in the trash."
+      ],
+      [
+        18.16,
+        ""
+      ],
+      [
+        18.38,
+        "Just make sure to water only the dirt around the base, keeping the remaining leaves dry so the fungus can't spread."
+      ],
+      [
+        25.66,
         ""
       ]
     ],
@@ -59,11 +75,19 @@
         0
       ],
       [
-        5.13,
+        5.52,
         1
+      ],
+      [
+        12.72,
+        2
+      ],
+      [
+        18.38,
+        3
       ]
     ],
-    "duration": 9.44
+    "duration": 25.88
   },
   "mathcheck": {
     "reply": "Good checking! Your answer is just one away. Take three from sixteen and add them to the seven in twenty-seven. That turns twenty-seven into thirty. Sixteen now has thirteen left: one ten and three ones. Add that ten to thirty. Now forty plus three makes forty-three! You were so close. Making a ten helps us keep track.",
