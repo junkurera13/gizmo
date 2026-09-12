@@ -116,7 +116,7 @@ private struct DeviceView: View {
                 if model.cameraOpen {
                     CameraWorldView(model: model)
                 } else if let screenImage = model.screenImage, model.viewingStill {
-                    ZStack {
+                    ZStack(alignment: .bottom) {
                         Image(nsImage: screenImage)
                             .resizable()
                             .scaledToFill()
@@ -128,6 +128,9 @@ private struct DeviceView: View {
                             }
                             .id(clip.id)
                             .frame(width: rect.width, height: rect.height)
+                        }
+                        if !model.screenCaption.isEmpty {
+                            captionBand(screen: rect)
                         }
                     }
                 } else if let spriteName, let animation = spriteStore.animation(for: spriteName) {
@@ -156,6 +159,27 @@ private struct DeviceView: View {
         .opacity(model.screenOn ? 1 : 0)
         .allowsHitTesting(false)
         .accessibilityHidden(true)
+    }
+
+    /// Firmware `render_caption`: the show's bottom 24/240 band is baked dark
+    /// and the body draws the segment's line into it — a faint divider, then
+    /// centered text pinned near the band's top.
+    private func captionBand(screen rect: CGRect) -> some View {
+        let band = rect.height * 24.0 / 240.0
+        return VStack(spacing: 0) {
+            Color.white.opacity(0.15).frame(height: max(1, band * 0.04))
+            Text(model.screenCaption)
+                .font(.system(size: band * 0.36))
+                .foregroundStyle(.white)
+                .lineLimit(1)
+                .truncationMode(.tail)
+                .padding(.horizontal, band * 0.6)
+                .frame(maxWidth: .infinity, alignment: .center)
+                .padding(.top, band * 0.28)
+            Spacer(minLength: 0)
+        }
+        .frame(width: rect.width, height: band)
+        .background(Color.black)
     }
 
     /// Time, battery and the character belong only to home.

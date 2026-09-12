@@ -56,6 +56,9 @@ final class SimulatorModel: ObservableObject {
     @Published private(set) var screenOn = false
     @Published private(set) var viewingStill = false
     @Published private(set) var spokenLine = ""
+    /// Bottom-band caption drawn over shows — mirrors firmware `caption_line`,
+    /// fed by the `text` field on any glass event.
+    @Published private(set) var screenCaption = ""
     @Published private(set) var screenImage: NSImage?
     @Published private(set) var screenImageID: String?
     @Published private(set) var screenClip: ScreenClip?
@@ -863,6 +866,8 @@ final class SimulatorModel: ObservableObject {
             speaker.interrupt()
             spokenLine = ""
         } else if type == "glass" {
+            // friend.cpp: any glass event's text field is the caption line.
+            if let text = object["text"] as? String { screenCaption = text }
             if let cue = object["cue"] as? Int {
                 if object["hold"] as? Bool == true {
                     holdCue(cue, object: object)
@@ -922,6 +927,7 @@ final class SimulatorModel: ObservableObject {
 
     private func clearShow() {
         dropPendingCues()
+        screenCaption = ""
         clearClip()
         screenImageRequest = UUID()
         screenImageTask?.cancel()
@@ -1068,7 +1074,6 @@ final class SimulatorModel: ObservableObject {
             screenImageID = clip.stillPath
             screenClip = clip
             viewingStill = true
-            if let caption = object["text"] as? String { spokenLine = caption }
             appendEvent("film playing", "\(clip.frames.count) frames at \(clip.fps) fps")
         } else {
             // Missed or evicted buffer: degrade to the plain show path.
