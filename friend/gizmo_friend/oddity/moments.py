@@ -2,6 +2,8 @@
 from __future__ import annotations
 
 import os
+import json
+from pathlib import Path
 from collections.abc import Callable
 from dataclasses import dataclass
 from datetime import datetime, timedelta
@@ -46,11 +48,18 @@ def birthday_seed() -> str:
 
 
 MOMENTS: dict[str, Moment] = {}
+_RECORDINGS = json.loads((Path(__file__).resolve().parents[1] / 'static' / 'demo-refresh-timing.json').read_text())
+
+
+def _recording(name: str) -> dict:
+    return {key: _RECORDINGS[name][key] for key in ('reply', 'reply_audio', 'reply_timed')}
+
 ORDER: tuple[str, ...] = (
     "birthday",
     "plant",
     "draw",
     "mathcheck",
+    "rainbow",
     "ants",
     "homework",
     "trex",
@@ -89,6 +98,7 @@ _register(
                 "Your birthday will be here before you know it."
             ),
             "reply_audio": "/static/demo-birthday-gizmo.wav?v=days1",
+            **_recording('birthday'),
         },
     ),
     Moment(
@@ -107,9 +117,12 @@ _register(
             "reply": "Brown spots and yellow edges mean this leaf needs more shade.",
             "reply_audio": "/static/demo-plant-gizmo.wav?v=plant8",
             "reply_audio_rate": 1.0,
+            **_recording('plant'),
             "camera": {
                 "video": "/static/demo-plant-camera.mp4?v=plant5",
                 "start_at": 2.6,
+                "reply_wait_ms": 1000,
+                "loop": True,
                 "cues": [
                     {
                         "at": 3.05,
@@ -142,6 +155,7 @@ _register(
             "reply_audio": "/static/demo-draw-gizmo.wav?v=draw1",
             "image": "/static/demo-draw-jake.png?v=draw1",
             "subject": "Jake the Dog from Adventure Time",
+            "keep_scene": True,
         },
     ),
     Moment(
@@ -166,6 +180,7 @@ _register(
                 "Great job checking your answer!"
             ),
             "reply_audio": "/static/demo-math-gizmo.wav?v=math1",
+            **_recording('mathcheck'),
             "reply_audio_rate": 1.0,
             "camera": {
                 "video": "/static/demo-math-camera.mp4?v=math3",
@@ -182,6 +197,7 @@ _register(
                 ],
             },
             "math": {
+                "visual_timed": _RECORDINGS['mathcheck']['visual_timed'],
                 "attempt": "27 + 16 = 42",
                 "make_ten": "7 + 3 = 10",
                 "left": "3 left",
@@ -191,6 +207,47 @@ _register(
                     "the ones into a new ten, with three ones left."
                 ),
             },
+        },
+    ),
+    Moment(
+        id="rainbow",
+        line="How does a rainbow happen?",
+        seed="",
+        contract=(
+            "Explain how sunlight makes a rainbow inside raindrops with a simple animated visual: "
+            "light bends as it enters, reflects inside, then bends again and separates into colors. "
+            "If the kid interrupts to ask why the light splits, pause the first explanation, zoom in "
+            "on the outgoing light, and explain that white light contains many colors that bend by "
+            "slightly different amounts. Keep the language warm and suitable for ages 6 to 10."
+        ),
+        demo={
+            "prompt": "Gizmo, how does a rainbow happen?",
+            "prompt_audio": "/static/demo-rainbow-kid.mp3?v=rainbow2",
+            "beats": [
+                {
+                    "reply": (
+                        "Sunlight enters a raindrop and bends. It reflects off the back of the drop, "
+                        "then bends again as it comes out. That spreading light makes a rainbow."
+                    ),
+                    "reply_audio": "/static/demo-rainbow-gizmo-intro.wav?v=rainbow2",
+                    "rainbow": {"focus": "overview"},
+                    "interruption": {
+                        "after_ms": 12600,
+                        "prompt": "Wait, why does the light split?",
+                        "audio": "/static/demo-rainbow-kid-followup.mp3?v=rainbow2",
+                        "think_wait_ms": 1200,
+                    },
+                },
+                {
+                    "reply": (
+                        "White sunlight is actually many colors traveling together. Each color bends "
+                        "by a slightly different amount, so they spread apart like a fan opening—red "
+                        "through violet."
+                    ),
+                    "reply_audio": "/static/demo-rainbow-gizmo-split.wav?v=rainbow2",
+                    "rainbow": {"focus": "split"},
+                },
+            ],
         },
     ),
     Moment(
@@ -259,7 +316,13 @@ _register(
                 "there."
             ),
             "reply_audio": "/static/demo-pompeii.wav",
-            "video": "/static/demo-pompeii.mp4",
+            "video": "/static/demo-pompeii-polished.mp4",
+            "followup": {
+                "prompt": _RECORDINGS['pompeii-kid-followup']['reply'],
+                "audio": _RECORDINGS['pompeii-kid-followup']['reply_audio'],
+                "reply_wait_ms": 800,
+                **_recording('pompeii-followup'),
+            },
         },
     ),
 )

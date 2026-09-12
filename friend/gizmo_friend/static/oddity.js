@@ -56,6 +56,7 @@ let momentId = stored(MOMENT_KEY);
 let demoController, demoRunning = false, demoPlayedMoment = '', demoOwnsScene = false, demoOwnsCamera = false;
 let demoCaptions = [];
 let demoTimed = null;
+let demoMathCues = null;
 voice.addEventListener('timeupdate', () => {
   if (!playing || !currentBeat?.audio || voice.paused) return;
   setCaption(filmTimed.length
@@ -63,6 +64,7 @@ voice.addEventListener('timeupdate', () => {
     : captionAt(captions, voice.currentTime, voice.duration));
 });
 demoAudio.addEventListener('timeupdate', () => {
+  if (demoRunning && demoMathCues && !demoAudio.paused) syncDemoMath(demoAudio.currentTime);
   if (demoRunning && (demoTimed || demoCaptions.length) && !demoAudio.paused) {
     setCaption(demoTimed
       ? timedCaptionAt(demoTimed, demoAudio.currentTime)
@@ -247,15 +249,35 @@ async function selectMoment(index) {
   await connect(undefined, {fresh: true});
 }
 async function playDemoRecording(src, signal, text = '', timed = null, playbackRate = 1) {
+  setCaption();
   demoCaptions = captionChunks(text);
-  demoTimed = timed;
-  if (text) setCaption(timed ? timedCaptionAt(timed, 0) : demoCaptions[0] || text);
+  demoTimed = text ? timed : null;
   demoAudio.src = src; demoAudio.muted = muted; demoAudio.load();
   demoAudio.defaultPlaybackRate = playbackRate;
   demoAudio.playbackRate = playbackRate;
   const ended = mediaEnded(demoAudio, signal); ended.catch(() => {});
+  try {
+    await startMedia(demoAudio, signal);
+    if (text) setCaption(timed ? timedCaptionAt(timed, demoAudio.currentTime) : demoCaptions[0] || text);
+    await ended;
+  } finally { demoCaptions = []; demoTimed = null; setCaption(); }
+}
+async function playDemoRecordingFor(src, signal, text, milliseconds, playbackRate = 1) {
+  demoCaptions = captionChunks(text);
+  demoTimed = null;
+  if (text) setCaption(demoCaptions[0] || text);
+  demoAudio.src = src; demoAudio.muted = muted; demoAudio.load();
+  demoAudio.defaultPlaybackRate = playbackRate;
+  demoAudio.playbackRate = playbackRate;
   await startMedia(demoAudio, signal);
-  await ended;
+  await delay(Math.max(0, Number(milliseconds) || 0), signal);
+  demoAudio.pause();
+  demoCaptions = []; demoTimed = null; setCaption();
+}
+async function playKidRecording(src, signal) {
+  demoCaptions = []; demoTimed = null; setCaption();
+  try { await playDemoRecording(src, signal); }
+  finally { setCaption(); }
 }
 function waitForAwake(signal) {
   return new Promise((resolve, reject) => {
@@ -269,6 +291,13 @@ function waitForAwake(signal) {
     check();
   });
 }
+function hideDemoVisuals() {
+  demoMathCues = null;
+  $('demo-math')?.classList.remove('is-active');
+  if ($('demo-math')) $('demo-math').hidden = true;
+  $('demo-rainbow')?.classList.remove('is-active', 'is-focus-split');
+  if ($('demo-rainbow')) $('demo-rainbow').hidden = true;
+}
 function stopDemo() {
   demoController?.abort(); demoController = null;
   demoAudio.pause(); demoAudio.removeAttribute('src'); demoAudio.load();
@@ -276,8 +305,7 @@ function stopDemo() {
   demoTimed = null;
   if (demoOwnsScene) {
     film.pause(); film.classList.remove('is-demo-question'); film.removeAttribute('src'); film.load();
-    $('demo-math')?.classList.remove('is-active');
-    if ($('demo-math')) $('demo-math').hidden = true;
+    hideDemoVisuals();
     stage.classList.remove('has-scene'); $('home').hidden = true;
     demoOwnsScene = false;
   }
@@ -301,13 +329,11 @@ function dissolveScene() {
     stage.classList.remove('scene-ending');
     if (playing || queue.length || demoRunning || invitation?.active) return;
     stage.classList.remove('has-scene'); $('home').hidden = true; setCaption();
-    $('demo-math')?.classList.remove('is-active');
-    if ($('demo-math')) $('demo-math').hidden = true;
+    hideDemoVisuals();
   }, 800);
 }
 async function showDemoVideo(src, signal) {
-  $('demo-math')?.classList.remove('is-active');
-  if ($('demo-math')) $('demo-math').hidden = true;
+  hideDemoVisuals();
   orbitView?.hide(); screenOrbit = false; $('still').classList.remove('is-demo-reference'); $('still').hidden = true;
   film.pause(); film.classList.remove('is-demo-question'); swapFilm(src); film.muted = true; film.loop = false;
   stage.classList.remove('scene-ending');
@@ -315,8 +341,7 @@ async function showDemoVideo(src, signal) {
   await startMedia(film, signal);
 }
 async function playDemoQuestionVideo(src, signal) {
-  $('demo-math')?.classList.remove('is-active');
-  if ($('demo-math')) $('demo-math').hidden = true;
+  hideDemoVisuals();
   orbitView?.hide(); screenOrbit = false; $('still').classList.remove('is-demo-reference'); $('still').hidden = true;
   film.pause(); film.classList.add('is-demo-question'); swapFilm(src);
   film.muted = muted; film.loop = false; film.playbackRate = 1;
@@ -332,8 +357,7 @@ async function showDemoImage(src, subject, signal) {
   await preload.decode();
   if (signal.aborted) throw new DOMException('Stopped', 'AbortError');
   orbitView?.hide(); screenOrbit = false;
-  $('demo-math')?.classList.remove('is-active');
-  if ($('demo-math')) $('demo-math').hidden = true;
+  hideDemoVisuals();
   film.pause(); film.classList.remove('is-demo-question'); film.hidden = true; film.removeAttribute('src'); film.load();
   $('still').src = src; $('still').alt = subject || 'Drawing reference';
   $('still').classList.add('is-demo-reference'); $('still').hidden = false;
@@ -346,19 +370,47 @@ function showDemoMath(math, signal) {
   orbitView?.hide(); screenOrbit = false;
   film.pause(); film.classList.remove('is-demo-question'); film.hidden = true; film.removeAttribute('src'); film.load();
   $('still').classList.remove('is-demo-reference'); $('still').hidden = true;
+  hideDemoVisuals();
   const visual = $('demo-math');
-  const attempt = String(math.attempt || '8 + 5 = 12');
+  const attempt = String(math.attempt || '27 + 16 = 42');
   const wrong = attempt.match(/^(.*?=\s*)(\S+)$/);
   $('math-attempt').replaceChildren(document.createTextNode(wrong?.[1] || attempt));
   if (wrong) {
     const value = document.createElement('span'); value.className = 'math-wrong'; value.textContent = wrong[2];
     $('math-attempt').append(value);
   }
-  $('math-make-ten').textContent = math.make_ten || '8 + 2 = 10';
+  $('math-make-ten').textContent = '27 + 3 = 30';
   $('math-left').textContent = math.left || '3 left';
-  $('math-answer').textContent = math.answer || '10 + 3 = 13';
-  visual.setAttribute('aria-label', math.description || 'A visual correction showing eight plus five equals thirteen.');
+  $('math-answer').textContent = math.answer || '40 + 3 = 43';
+  demoMathCues = math.visual_timed || [[0,0],[3,1],[8,2],[11,3],[16,4]];
+  syncDemoMath(0);
+  visual.setAttribute('aria-label', math.description || 'A visual correction showing twenty-seven plus sixteen equals forty-three.');
   visual.hidden = false; visual.classList.remove('is-active'); void visual.offsetWidth; visual.classList.add('is-active');
+  stage.classList.remove('scene-ending'); stage.classList.add('has-scene'); $('home').hidden = false;
+  $('scene').classList.remove('scene-enter'); void $('scene').offsetWidth; $('scene').classList.add('scene-enter');
+  demoOwnsScene = true;
+}
+function syncDemoMath(seconds) {
+  let step = 0;
+  for (const [at, value] of demoMathCues || []) { if (seconds >= at) step = value; }
+  $('demo-math').dataset.step = String(step);
+  $('math-base').textContent = step >= 2 ? '30' : '27';
+  $('math-rest').textContent = step >= 1 ? '13' : '16';
+}
+function showDemoRainbow(rainbow, signal) {
+  if (signal.aborted) throw new DOMException('Stopped', 'AbortError');
+  orbitView?.hide(); screenOrbit = false;
+  film.pause(); film.classList.remove('is-demo-question'); film.hidden = true; film.removeAttribute('src'); film.load();
+  $('still').classList.remove('is-demo-reference'); $('still').hidden = true;
+  hideDemoVisuals();
+  const visual = $('demo-rainbow');
+  const split = rainbow?.focus === 'split';
+  visual.setAttribute('aria-label', split
+    ? 'A close view of white sunlight separating into red, orange, yellow, green, blue, and violet rays as it leaves a raindrop.'
+    : 'An animated diagram of sunlight bending into a raindrop, reflecting inside it, and leaving as separate rainbow colors.');
+  visual.hidden = false;
+  visual.classList.toggle('is-focus-split', split);
+  visual.classList.remove('is-active'); void visual.offsetWidth; visual.classList.add('is-active');
   stage.classList.remove('scene-ending'); stage.classList.add('has-scene'); $('home').hidden = false;
   $('scene').classList.remove('scene-enter'); void $('scene').offsetWidth; $('scene').classList.add('scene-enter');
   demoOwnsScene = true;
@@ -420,24 +472,28 @@ async function playCameraDemo(item, signal) {
       status('Listen to the question…', 'listening');
       setTalkPressed(true); $('talk').classList.add('recording');
       try {
-        await playDemoRecording(cue.audio, signal);
+        await playKidRecording(cue.audio, signal);
       } finally {
         setTalkPressed(false); $('talk').classList.remove('recording');
       }
       history.push({role:'user', text:cue.prompt}); renderNotes();
     }
     setCaption();
+    if (item.demo.math) {
+      feed.pause(); glass?.closeCamera?.(); demoOwnsCamera = false;
+    }
     const replyWaitMs = Math.max(0, Number(camera.reply_wait_ms) || 0);
     if (replyWaitMs) {
       status('Gizmo is thinking…', 'thinking');
       await delay(replyWaitMs, signal);
     }
     status('Gizmo is answering…', 'playing');
-    await playDemoRecording(item.demo.reply_audio, signal, item.demo.reply, null, item.demo.reply_audio_rate || 1);
+    if (item.demo.math) showDemoMath(item.demo.math, signal);
+    await playDemoRecording(item.demo.reply_audio, signal, item.demo.reply, item.demo.reply_timed, item.demo.reply_audio_rate || 1);
   } finally {
     feed.pause();
     setCaption();
-    glass?.closeCamera?.();
+    if (demoOwnsCamera) glass?.closeCamera?.();
     demoOwnsCamera = false;
   }
   history.push({role:'assistant', text:item.demo.reply}); renderNotes();
@@ -466,7 +522,7 @@ async function sayMoment() {
         await playDemoQuestionVideo(item.demo.question_video, signal);
       } else {
         await delay(260, signal);
-        await playDemoRecording(item.demo.prompt_audio, signal, item.demo.prompt, item.demo.prompt_timed);
+        await playKidRecording(item.demo.prompt_audio, signal);
       }
       setTalkPressed(false); $('talk').classList.remove('recording');
       setCaption(); status('Gizmo is thinking…', 'thinking');
@@ -476,18 +532,51 @@ async function sayMoment() {
       for (let index = 0; index < beats.length; index += 1) {
         const beat = beats[index];
         if (beat.math) showDemoMath(beat.math, signal);
+        else if (beat.rainbow) showDemoRainbow(beat.rainbow, signal);
         else if (beat.image) await showDemoImage(beat.image, beat.subject, signal);
         else if (beat.video) await showDemoVideo(beat.video, signal);
         status('Gizmo is answering…', 'playing');
-        await playDemoRecording(beat.reply_audio, signal, beat.reply);
+        if (beat.interruption) {
+          await playDemoRecordingFor(beat.reply_audio, signal, beat.reply, beat.interruption.after_ms, beat.reply_audio_rate || 1);
+        } else {
+          await playDemoRecording(beat.reply_audio, signal, beat.reply, beat.reply_timed, beat.reply_audio_rate || 1);
+        }
         history.push({role:'assistant', text:beat.reply}); renderNotes();
+        if (beat.interruption) {
+          status('Listen to the question…', 'listening');
+          setTalkPressed(true); $('talk').classList.add('recording');
+          try {
+            await playKidRecording(beat.interruption.audio, signal);
+          } finally {
+            setTalkPressed(false); $('talk').classList.remove('recording');
+          }
+          history.push({role:'user', text:beat.interruption.prompt}); renderNotes();
+          setCaption(); status('Gizmo is thinking…', 'thinking');
+          await delay(Math.max(0, Number(beat.interruption.think_wait_ms) || 0), signal);
+        }
         if (index < beats.length - 1) await delay(180, signal);
       }
     }
     if (demoOwnsScene) film.pause();
+    if (item.demo.followup) {
+      const followup = item.demo.followup;
+      setCaption();
+      await delay(500, signal);
+      status('Listen to the question…', 'listening');
+      setTalkPressed(true); $('talk').classList.add('recording');
+      try { await playKidRecording(followup.audio, signal); }
+      finally { setTalkPressed(false); $('talk').classList.remove('recording'); }
+      history.push({role:'user', text:followup.prompt});
+      status('Gizmo is thinking…', 'thinking');
+      await delay(followup.reply_wait_ms ?? 650, signal);
+      status('Gizmo is answering…', 'playing');
+      await playDemoRecording(followup.reply_audio, signal, followup.reply, followup.reply_timed);
+      history.push({role:'assistant', text:followup.reply}); renderNotes();
+    }
+    setCaption();
     demoPlayedMoment = item.id;
     status('Demo finished. Press replay to watch it again.', 'idle');
-    dissolveScene();
+    if (!item.demo.keep_scene) dissolveScene();
   } catch (error) {
     if (error.name !== 'AbortError') notice(error.message || 'The demo could not be played. Try again.');
   } finally {
@@ -818,8 +907,7 @@ async function startMedia(media, signal) {
   }
 }
 async function showScene(beat, signal) {
-  $('demo-math')?.classList.remove('is-active');
-  if ($('demo-math')) $('demo-math').hidden = true;
+  hideDemoVisuals();
   if (beat.visual === 'orbit' || beat.kind === 'orbit') {
     $('still').hidden = true; film.hidden = true; film.removeAttribute('src'); film.load();
     screenOrbit = true; stage.classList.remove('scene-ending'); stage.classList.add('has-scene'); $('home').hidden = false;

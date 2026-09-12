@@ -101,7 +101,7 @@ test('the recorded kid question is followed by the real Gizmo voice', async () =
     '/static/demo-birthday-kid.mp3',
     '/static/demo-birthday-gizmo.wav',
   ]);
-  assert.equal(ui.element('caption').textContent, "Eleven more days. That's close enough to start getting excited. Your birthday will be here before you know it.");
+  assert.equal(ui.element('caption').textContent, '');
   assert.match(ui.element('status').textContent, /Demo finished/);
   assert.equal(ui.element('device').dataset.ptt, 'false');
 });
@@ -113,7 +113,7 @@ test('Pompeii plays three synchronized narrated videos', async () => {
   await ui.run('sayMoment()');
   assert.deepEqual([...ui.context.recorded], ['kid.mp3', 'one.wav', 'two.wav', 'three.wav']);
   assert.deepEqual([...ui.context.videos], ['one.mp4', 'two.mp4', 'three.mp4']);
-  assert.equal(ui.element('caption').textContent, 'Three');
+  assert.equal(ui.element('caption').textContent, '');
   assert.match(ui.element('status').textContent, /Demo finished/);
 });
 
@@ -133,7 +133,7 @@ test('drawing demo shows Jake before Umbriel recommends the easy drawing', async
   await ui.run('sayMoment()');
   assert.deepEqual([...ui.context.recorded], ['kid.mp3', 'umbriel.wav']);
   assert.equal(JSON.stringify(ui.context.images), JSON.stringify([['jake.png', 'Jake the Dog from Adventure Time']]));
-  assert.match(ui.element('caption').textContent, /Jake the Dog/);
+  assert.equal(ui.element('caption').textContent, '');
   assert.match(ui.element('status').textContent, /Demo finished/);
 });
 
@@ -183,7 +183,7 @@ test('plant demo keeps Camera moving while the single kid recording and Umbriel 
   assert.match(ui.element('status').textContent, /Demo finished/);
 });
 
-test('math-check demo keeps its fitted camera video moving through the delayed kid line and reply', async () => {
+test('math-check closes camera before thinking and reveals math before narration', async () => {
   const ui = await app();
   ui.context.events = [];
   ui.element('camera-feed').pause = () => ui.context.events.push('pause:video');
@@ -203,23 +203,69 @@ test('math-check demo keeps its fitted camera video moving through the delayed k
     moments = [{id:'mathcheck', line:'Did I get this right?', demo:{
       prompt:'Gizmo, did I get this right?', prompt_audio:'kid.mp3',
       reply:'Nice work—you were only one away! Twenty-seven plus sixteen is forty-three, not forty-two.',
-      reply_audio:'umbriel.wav', reply_audio_rate:1,
+      reply_audio:'umbriel.wav', reply_audio_rate:1, math:{attempt:'27 + 16 = 42'},
       camera:{video:'math.mp4', start_at:0, home_wait_ms:1000, reply_wait_ms:2000, loop:true, cues:[
         {at:1, prompt:'Gizmo, did I get this right?', audio:'kid.mp3'},
       ]},
     }}]; syncMoment('mathcheck');
   `);
+  ui.run("showDemoMath = () => events.push('math')");
   await ui.run('sayMoment()');
   assert.deepEqual([...ui.context.events], [
     'wait:1000', 'wait:120', 'open:math.mp4', 'wait:100', 'video',
     'cue:1', 'audio:kid.mp3',
-    'wait:2000', 'audio:umbriel.wav', 'reply-video-loop:true', 'pause:video', 'home',
+    'pause:video', 'home', 'wait:2000', 'math', 'audio:umbriel.wav', 'reply-video-loop:true', 'pause:video',
   ]);
   assert.equal(ui.element('camera-feed').loop, true);
   assert.equal(ui.element('camera-feed').currentTime, 0);
   assert.deepEqual([...ui.run('history.map(item => item.text)')], [
     'Gizmo, did I get this right?',
     'Nice work—you were only one away! Twenty-seven plus sixteen is forty-three, not forty-two.',
+  ]);
+  assert.equal(ui.element('caption').textContent, '');
+  assert.match(ui.element('status').textContent, /Demo finished/);
+});
+
+test('rainbow demo animates, gets interrupted, then zooms in for the simpler answer', async () => {
+  const ui = await app();
+  ui.context.events = [];
+  ui.run(`
+    delay = async (milliseconds) => events.push('wait:' + milliseconds);
+    showDemoRainbow = (rainbow) => { events.push('rainbow:' + rainbow.focus); demoOwnsScene = true; };
+    playDemoRecordingFor = async (src, signal, text, milliseconds) => {
+      events.push('partial:' + src + ':' + milliseconds);
+      setCaption(text);
+    };
+    playDemoRecording = async (src, signal, text) => {
+      events.push('audio:' + src);
+      if (text) setCaption(text);
+    };
+    moments = [{id:'rainbow', line:'How does a rainbow happen?', demo:{
+      prompt:'Gizmo, how does a rainbow happen?', prompt_audio:'rainbow-kid.mp3',
+      beats:[
+        {
+          reply:'Sunlight enters a raindrop and bends.', reply_audio:'rainbow-intro.wav',
+          rainbow:{focus:'overview'},
+          interruption:{after_ms:12600, prompt:'Wait, why does the light split?', audio:'rainbow-followup.mp3', think_wait_ms:1200},
+        },
+        {
+          reply:'White sunlight is actually many colors traveling together.', reply_audio:'rainbow-split.wav',
+          rainbow:{focus:'split'},
+        },
+      ],
+    }}]; syncMoment('rainbow');
+  `);
+  await ui.run('sayMoment()');
+  assert.deepEqual([...ui.context.events], [
+    'wait:260', 'audio:rainbow-kid.mp3', 'wait:650',
+    'rainbow:overview', 'partial:rainbow-intro.wav:12600', 'audio:rainbow-followup.mp3',
+    'wait:1200', 'wait:180', 'rainbow:split', 'audio:rainbow-split.wav',
+  ]);
+  assert.deepEqual([...ui.run('history.map(item => item.text)')], [
+    'Gizmo, how does a rainbow happen?',
+    'Sunlight enters a raindrop and bends.',
+    'Wait, why does the light split?',
+    'White sunlight is actually many colors traveling together.',
   ]);
   assert.equal(ui.element('caption').textContent, '');
   assert.match(ui.element('status').textContent, /Demo finished/);

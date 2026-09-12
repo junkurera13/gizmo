@@ -1,0 +1,203 @@
+{
+  "birthday": {
+    "reply": "Eleven more days. That's close enough to start getting excited. Your birthday will be here before you know it.",
+    "reply_audio": "/static/demo-birthday-refreshed.wav",
+    "reply_timed": [
+      [
+        0.0,
+        "Eleven more days. That's close enough to start getting excited."
+      ],
+      [
+        5.01,
+        ""
+      ],
+      [
+        5.23,
+        "Your birthday will be here before you know it."
+      ],
+      [
+        7.64,
+        ""
+      ]
+    ],
+    "visual_timed": [
+      [
+        0.0,
+        0
+      ],
+      [
+        5.23,
+        1
+      ]
+    ],
+    "duration": 7.86
+  },
+  "plant": {
+    "reply": "Those brown spots and yellow edges could have a few causes. Look underneath a leaf for tiny insects or webs.",
+    "reply_audio": "/static/demo-plant-refreshed.wav",
+    "reply_timed": [
+      [
+        0.0,
+        "Those brown spots and yellow edges could have a few causes."
+      ],
+      [
+        4.91,
+        ""
+      ],
+      [
+        5.13,
+        "Look underneath a leaf for tiny insects or webs."
+      ],
+      [
+        9.22,
+        ""
+      ]
+    ],
+    "visual_timed": [
+      [
+        0.0,
+        0
+      ],
+      [
+        5.13,
+        1
+      ]
+    ],
+    "duration": 9.44
+  },
+  "mathcheck": {
+    "reply": "Good checking! Your answer is just one away. Take three from sixteen and add them to the seven in twenty-seven. That turns twenty-seven into thirty. Sixteen now has thirteen left: one ten and three ones. Add that ten to thirty. Now forty plus three makes forty-three! You were so close. Making a ten helps us keep track.",
+    "reply_audio": "/static/demo-mathcheck-refreshed.wav",
+    "reply_timed": [
+      [
+        0.0,
+        "Good checking! Your answer is just one away."
+      ],
+      [
+        3.66,
+        ""
+      ],
+      [
+        3.88,
+        "Take three from sixteen and add them to the seven in twenty-seven."
+      ],
+      [
+        9.88,
+        ""
+      ],
+      [
+        10.1,
+        "That turns twenty-seven into thirty."
+      ],
+      [
+        13.03,
+        ""
+      ],
+      [
+        13.25,
+        "Sixteen now has thirteen left: one ten and three ones."
+      ],
+      [
+        19.62,
+        ""
+      ],
+      [
+        19.84,
+        "Add that ten to thirty. Now forty plus three makes forty-three!"
+      ],
+      [
+        25.17,
+        ""
+      ],
+      [
+        25.39,
+        "You were so close. Making a ten helps us keep track."
+      ],
+      [
+        29.63,
+        ""
+      ]
+    ],
+    "visual_timed": [
+      [
+        0.0,
+        0
+      ],
+      [
+        3.88,
+        1
+      ],
+      [
+        10.1,
+        2
+      ],
+      [
+        13.25,
+        3
+      ],
+      [
+        19.84,
+        4
+      ],
+      [
+        25.39,
+        5
+      ]
+    ],
+    "duration": 29.85
+  },
+  "pompeii-followup": {
+    "reply": "The ash covered the buildings and helped protect many walls and paintings. Archaeologists carefully uncovered them, so we can learn about life there.",
+    "reply_audio": "/static/demo-pompeii-followup-refreshed.wav",
+    "reply_timed": [
+      [
+        0.0,
+        "The ash covered the buildings and helped protect many walls and paintings."
+      ],
+      [
+        5.63,
+        ""
+      ],
+      [
+        5.85,
+        "Archaeologists carefully uncovered them, so we can learn about life there."
+      ],
+      [
+        11.26,
+        ""
+      ]
+    ],
+    "visual_timed": [
+      [
+        0.0,
+        0
+      ],
+      [
+        5.85,
+        1
+      ]
+    ],
+    "duration": 11.48
+  },
+  "pompeii-kid-followup": {
+    "reply": "How were the paintings still there?",
+    "reply_audio": "/static/demo-pompeii-kid-followup-refreshed.wav",
+    "reply_timed": [
+      [
+        0.0,
+        "How were the paintings still there?"
+      ],
+      [
+        2.22,
+        ""
+      ]
+    ],
+    "visual_timed": [
+      [
+        0.0,
+        0
+      ]
+    ],
+    "duration": 2.44
+  }
+}

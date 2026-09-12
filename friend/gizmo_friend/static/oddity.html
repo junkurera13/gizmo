@@ -7,7 +7,7 @@
   <link rel="icon" href="data:,">
   <link rel="stylesheet" href="/static/oddity-boot.css?v=gate14">
   <link rel="stylesheet" href="/static/oddity.css">
-  <link rel="stylesheet" href="/static/oddity-device.css?v=gate56">
+  <link rel="stylesheet" href="/static/oddity-device.css?v=gate60">
   <link rel="stylesheet" href="/static/oddity-experience.css">
   <link rel="preload" as="image" href="/static/device-reference-ptt-pressed.png">
   <link rel="preload" as="image" href="/static/oddity-character-half.png?v=char3">
@@ -43,7 +43,7 @@
       document.documentElement.classList.add('oddity-locked');
     }
   </script>
-  <script type="module" src="/static/oddity.js?v=gate71"></script>
+  <script type="module" src="/static/oddity.js?v=gate75"></script>
 </head>
 <body>
   <header class="masthead">
@@ -126,6 +126,7 @@
               <div id="demo-math" class="demo-math" role="img" hidden>
                 <p class="math-kicker">LET'S CHECK</p>
                 <p id="math-attempt" class="math-attempt"></p>
+                <div class="math-transfer"><b id="math-base">27</b><span>+</span><b id="math-rest">16</b><span class="math-moving">← 3</span></div>
                 <div class="math-make-ten">
                   <div class="math-ten-dots" aria-hidden="true">
                     <i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i>
@@ -134,6 +135,42 @@
                 </div>
                 <div class="math-leftover"><span aria-hidden="true"><i></i><i></i><i></i></span><b id="math-left"></b></div>
                 <p id="math-answer" class="math-answer"></p>
+              </div>
+              <div id="demo-rainbow" class="demo-rainbow" role="img" hidden>
+                <div class="rainbow-atmosphere" aria-hidden="true"><i></i><i></i><i></i><i></i><i></i><i></i></div>
+                <svg viewBox="0 0 760 430" aria-hidden="true">
+                  <defs>
+                    <filter id="rainbow-glow"><feGaussianBlur stdDeviation="5" result="blur"/><feMerge><feMergeNode in="blur"/><feMergeNode in="SourceGraphic"/></feMerge></filter>
+                    <filter id="drop-shadow"><feDropShadow dx="0" dy="8" stdDeviation="12" flood-color="#031a37" flood-opacity=".72"/></filter>
+                    <radialGradient id="drop-fill" cx="34%" cy="23%" r="78%"><stop stop-color="#fff" stop-opacity=".92"/><stop offset=".3" stop-color="#a8efff" stop-opacity=".72"/><stop offset=".72" stop-color="#238fc9" stop-opacity=".34"/><stop offset="1" stop-color="#063b72" stop-opacity=".66"/></radialGradient>
+                    <linearGradient id="drop-shine" x1="0" y1="0" x2="1" y2="1"><stop stop-color="#fff" stop-opacity=".88"/><stop offset="1" stop-color="#fff" stop-opacity="0"/></linearGradient>
+                  </defs>
+                  <g class="rainbow-sun"><circle class="sun-halo" cx="78" cy="207" r="60"/><circle class="sun-core" cx="78" cy="207" r="34"/><g class="sun-rays"><path d="M78 151v-22M78 285v-22M22 207H2M154 207h-20M39 168l-16-16M117 246l16 16M117 168l16-16M39 246l-16 16"/></g></g>
+                  <g class="incoming-light"><path class="beam beam-white-glow" d="M115 207 L282 207"/><path class="beam beam-white" d="M115 207 L282 207"/><circle class="light-runner" r="7"/></g>
+                  <g class="drop-system" filter="url(#drop-shadow)">
+                    <path class="rainbow-drop" d="M368 58 C368 58 268 193 268 265 C268 334 313 371 368 371 C423 371 468 334 468 265 C468 193 368 58 368 58Z"/>
+                    <path class="drop-shine" d="M337 104 C300 161 287 197 286 225 C286 239 289 246 295 246 C303 246 308 229 317 204 C326 178 339 150 356 123 C363 112 360 101 352 98 C347 96 342 98 337 104Z"/>
+                    <path class="beam beam-enter" d="M282 207 L418 288"/>
+                    <path class="beam beam-reflect" d="M418 288 L337 329"/>
+                    <path class="beam beam-exit" d="M337 329 L447 224"/>
+                    <g class="entry-marker"><circle cx="282" cy="207" r="15"/><circle cx="282" cy="207" r="5"/></g>
+                    <g class="reflection-marker"><circle cx="418" cy="288" r="16"/><path d="M409 291l9-9 9 9"/></g>
+                  </g>
+                  <g class="spectrum" filter="url(#rainbow-glow)">
+                    <path class="ray red" d="M447 224 L744 126"/><path class="ray orange" d="M447 224 L744 151"/>
+                    <path class="ray yellow" d="M447 224 L744 177"/><path class="ray green" d="M447 224 L744 205"/>
+                    <path class="ray blue" d="M447 224 L744 235"/><path class="ray violet" d="M447 224 L744 267"/>
+                  </g>
+                  <g class="spectrum-particles">
+                    <circle class="photon red" r="6"><animateMotion dur="1.8s" repeatCount="indefinite" path="M447 224 L744 126"/></circle>
+                    <circle class="photon yellow" r="6"><animateMotion dur="1.8s" begin="-.6s" repeatCount="indefinite" path="M447 224 L744 177"/></circle>
+                    <circle class="photon blue" r="6"><animateMotion dur="1.8s" begin="-1.2s" repeatCount="indefinite" path="M447 224 L744 235"/></circle>
+                    <circle class="photon violet" r="6"><animateMotion dur="1.8s" begin="-.25s" repeatCount="indefinite" path="M447 224 L744 267"/></circle>
+                  </g>
+                  <g class="rainbow-callout callout-one"><circle cx="214" cy="164" r="14"/><text x="214" y="169">1</text><text class="callout-copy" x="235" y="169">BENDS IN</text></g>
+                  <g class="rainbow-callout callout-two"><circle cx="390" cy="350" r="14"/><text x="390" y="355">2</text><text class="callout-copy" x="411" y="355">REFLECTS</text></g>
+                  <g class="rainbow-callout callout-three"><circle cx="560" cy="300" r="14"/><text x="560" y="305">3</text><text class="callout-copy" x="581" y="305">COLORS SPREAD</text></g>
+                </svg>
               </div>
             </div>
             <div id="caption" class="caption" aria-live="polite"></div>
