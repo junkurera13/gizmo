@@ -157,13 +157,11 @@ class FilmMaker:
         return DirectedFilmPlan.model_validate_json(raw)
 
     async def synthesize(self, plan: FilmPlan) -> PreparedFilm:
-        # Short sentences synthesize concurrently. Their actual PCM lengths,
-        # not word-count estimates, define the director's audio timeline.
-        voices = await asyncio.gather(
-            *(self.voice.narrate(beat.narration) for beat in plan.beats)
-        )
-        # One flaky narration call must not sink the whole film: retry the
-        # misses once, serially this time.
+        # One Gemini TTS call at a time. Firing every beat together 429s the
+        # quota and aborts the film before Director ever sees a WAV.
+        voices = []
+        for beat in plan.beats:
+            voices.append(await self.voice.narrate(beat.narration))
         for i, voice in enumerate(voices):
             if voice is None:
                 voices[i] = await self.voice.narrate(plan.beats[i].narration)

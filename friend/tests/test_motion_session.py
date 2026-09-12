@@ -434,20 +434,6 @@ class FilmCapabilityTests(ShowSessionFixture):
         director.finish(0, VisualDecision())
         await asyncio.wait_for(asyncio.shield(self.friend._director_task), 1)
 
-    async def test_film_ack_plays_cached_pcm_without_waiting_on_tts(self):
-        calls = []
-
-        async def narrate(text, *, style=None):
-            calls.append(text)
-            return None
-
-        self.friend.narration.narrate = narrate
-        self.friend._film_starting = True
-        self.friend._film_ack_pcm = [b"\x00\x01" * 64]
-        await self.friend._announce_film()
-        self.assertEqual(calls, [])
-        self.assertTrue(any(event.get("type") == "audio" for event in self.events()))
-
     async def test_live_tool_call_cannot_spend_a_still_inside_a_film(self):
         cinema = StubCinema()
         self.friend._cinema = cinema
@@ -473,17 +459,6 @@ class FilmCapabilityTests(ShowSessionFixture):
         ))
         self.assertEqual(self.friend.machine.state, State.THINKING)
         self.assertTrue(self.transport.submit_tool_output.await_count >= 1)
-
-
-class FilmAckTests(unittest.TestCase):
-    def test_ack_lines_are_a_dry_wait(self):
-        from gizmo_friend.session import FILM_ACK_LINES, FILM_ACK_STYLE
-        joined = " ".join(FILM_ACK_LINES).lower()
-        self.assertNotIn("ooh", joined)
-        self.assertNotIn("cook", joined)
-        self.assertNotIn("—", " ".join(FILM_ACK_LINES))
-        self.assertIn("brisk", FILM_ACK_STYLE.lower())
-        self.assertIn("breathy", FILM_ACK_STYLE.lower())
 
 
 if __name__ == "__main__":

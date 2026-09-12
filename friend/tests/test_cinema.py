@@ -456,7 +456,7 @@ class DeviceEncodingTests(unittest.TestCase):
 
 
 class AudioTimelineTests(unittest.IsolatedAsyncioTestCase):
-    async def test_parallel_beats_keep_exact_audio_and_measured_boundaries(self):
+    async def test_serial_beats_keep_exact_audio_and_measured_boundaries(self):
         import io
         import wave
         from types import SimpleNamespace
@@ -465,14 +465,17 @@ class AudioTimelineTests(unittest.IsolatedAsyncioTestCase):
         from gizmo_friend.cinema.plan import FilmMaker
 
         maker = object.__new__(FilmMaker)
-        entered = []
-        barrier = asyncio.Event()
+        inflight = 0
+        peak = 0
+        order = []
 
         async def narrate(text):
-            entered.append(text)
-            if len(entered) == 3:
-                barrier.set()
-            await barrier.wait()
+            nonlocal inflight, peak
+            inflight += 1
+            peak = max(peak, inflight)
+            order.append(text)
+            await asyncio.sleep(0)
+            inflight -= 1
             return Narration(
                 text=text, pcm=b"\x01\x00" * 2400, model="test", latency_seconds=0
             )
@@ -488,6 +491,8 @@ class AudioTimelineTests(unittest.IsolatedAsyncioTestCase):
         )
         async with asyncio.timeout(1):
             prepared = await maker.prepare(plan)
+        self.assertEqual(peak, 1)
+        self.assertEqual(order, ["0", "1", "2"])
         self.assertEqual(prepared.duration, 0.3)
         self.assertEqual([row["start"] for row in prepared.timings], [0, 0.1, 0.2])
         with wave.open(io.BytesIO(prepared.wav), "rb") as audio:

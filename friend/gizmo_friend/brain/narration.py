@@ -32,6 +32,8 @@ NARRATION_MODEL = "gemini-3.1-flash-tts-preview"
 NARRATION_ENDPOINT = "https://generativelanguage.googleapis.com/v1beta/models"
 NARRATION_TIMEOUT_SECONDS = 20.0
 NARRATION_RATE = 24_000
+NARRATION_ATTEMPTS = 4
+RETRYABLE_STATUS = {429, 503}
 MAX_NARRATION_CHARS = 1200
 MAX_RESPONSE_BYTES = 16 * 1024 * 1024
 # The delivery note is fixed. The planner writes what he says; this is how.
@@ -67,6 +69,16 @@ class NullNarrationProvider(NarrationProvider):
     async def narrate(self, text: str, *, style: str | None = None) -> Narration | None:
         del text, style
         return None
+
+
+def retry_wait_seconds(response: httpx.Response | None, attempt: int) -> float:
+    raw = response.headers.get("retry-after") if response is not None else None
+    if raw:
+        try:
+            return min(max(float(raw), 0.0), 8.0)
+        except ValueError:
+            pass
+    return min(0.5 * (2 ** attempt), 8.0)
 
 
 def pcm_from_part(mime_type: str, data: bytes) -> bytes:
@@ -107,18 +119,34 @@ class GeminiNarrationProvider(NarrationProvider):
             },
         }
         started = time.perf_counter()
-        try:
-            async with asyncio.timeout(self.timeout_seconds):
-                raw = bytearray()
-                async with self._client.stream(
-                    "POST", f"{NARRATION_ENDPOINT}/{self.model}:generateContent", json=payload,
-                    headers={"x-goog-api-key": self.api_key},
-                ) as response:
-                    response.raise_for_status()
-                    async for chunk in response.aiter_bytes():
-                        raw.extend(chunk)
-                        if len(raw) > MAX_RESPONSE_BYTES:
-                            raise ValueError("Narration response exceeds size limit")
+        for attempt in range(NARRATION_ATTEMPTS):
+            wait = None
+            retry_status = None
+            try:
+                async with asyncio.timeout(self.timeout_seconds):
+                    raw = bytearray()
+                    async with self._client.stream(
+                        "POST", f"{NARRATION_ENDPOINT}/{self.model}:generateContent", json=payload,
+                        headers={"x-goog-api-key": self.api_key},
+                    ) as response:
+                        if response.status_code in RETRYABLE_STATUS:
+                            retry_status = response.status_code
+                            wait = retry_wait_seconds(response, attempt)
+                            if attempt + 1 >= NARRATION_ATTEMPTS:
+                                response.raise_for_status()
+                        else:
+                            response.raise_for_status()
+                            async for chunk in response.aiter_bytes():
+                                raw.extend(chunk)
+                                if len(raw) > MAX_RESPONSE_BYTES:
+                                    raise ValueError("Narration response exceeds size limit")
+                if wait is not None:
+                    logger.warning(
+                        "Narration %s, retry in %.1fs attempt=%s",
+                        retry_status, wait, attempt + 1,
+                    )
+                    await asyncio.sleep(wait)
+                    continue
                 result = json.loads(raw)
                 parts = result["candidates"][0]["content"]["parts"]
                 inline = next(part["inlineData"] for part in parts if "inlineData" in part)
@@ -131,15 +159,28 @@ class GeminiNarrationProvider(NarrationProvider):
                     self.model, self.voice, elapsed, len(pcm) / 2 / NARRATION_RATE,
                 )
                 return Narration(text=text, pcm=pcm, model=self.model, latency_seconds=elapsed)
-        except asyncio.CancelledError:
-            raise
-        except TimeoutError:
-            logger.warning("Narration dropped: model=%s exceeded %.1f seconds", self.model, self.timeout_seconds)
-        except Exception as error:  # noqa: BLE001 - narration must fail soft; the story falls back
-            logger.warning(
-                "Narration failed: model=%s error=%s status=%s", self.model, type(error).__name__,
-                error.response.status_code if isinstance(error, httpx.HTTPStatusError) else None,
-            )
+            except asyncio.CancelledError:
+                raise
+            except TimeoutError:
+                logger.warning("Narration dropped: model=%s exceeded %.1f seconds", self.model, self.timeout_seconds)
+                return None
+            except httpx.HTTPStatusError as error:
+                status = error.response.status_code
+                if status in RETRYABLE_STATUS and attempt + 1 < NARRATION_ATTEMPTS:
+                    wait = retry_wait_seconds(error.response, attempt)
+                    logger.warning("Narration %s, retry in %.1fs attempt=%s", status, wait, attempt + 1)
+                    await asyncio.sleep(wait)
+                    continue
+                logger.warning(
+                    "Narration failed: model=%s error=%s status=%s", self.model, type(error).__name__, status,
+                )
+                return None
+            except Exception as error:  # noqa: BLE001 - narration must fail soft; the story falls back
+                logger.warning(
+                    "Narration failed: model=%s error=%s status=%s", self.model, type(error).__name__,
+                    error.response.status_code if isinstance(error, httpx.HTTPStatusError) else None,
+                )
+                return None
         return None
 
     async def close(self) -> None:

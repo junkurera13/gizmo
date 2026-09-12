@@ -213,7 +213,10 @@ class CinemaSession:
             raise
         except Exception as error:  # noqa: BLE001 - report a failed film and close its peer
             logger.warning(
-                "Cinema failed: revision=%s error=%s", revision, type(error).__name__
+                "Cinema failed: revision=%s error=%s detail=%s",
+                revision,
+                type(error).__name__,
+                error,
             )
             self._mark_undelivered()
             if self.current(revision):
