@@ -273,13 +273,50 @@ class TurnRoutingTests(ShowSessionFixture):
         self.friend.visual_director = director
         with patch("gizmo_friend.session.TURN_ROUTE_GRACE_SECONDS", 0.001):
             await self.friend.handle(TextLine(text="Tell me something."))
+            timer = self.friend._hold_timer
             await director.wait_for_calls(1)
             await self.friend._on_transport(TransportEvent(kind="audio", pcm=b"\x01\x00" * 20))
-            timer = self.friend._hold_timer
             await timer
         self.assertTrue(director.calls[0][3].cancelled())
         self.assertIsNone(self.friend._hold)
         self.assertTrue(any(event.get("type") == "audio" for event in self.events()))
+
+    async def test_deadline_does_not_fail_open_after_film_is_judged(self):
+        cinema = StubCinema()
+        self.friend._cinema = cinema
+        self.friend._ask_revision += 1
+        self.friend._begin_visual_turn("Show how a rocket launches")
+        self.friend._begin_hold()
+        self.friend._director_committed = True
+        self.friend._director_decision = VisualDecision(route="film", subject="rocket launch")
+        await self.friend._on_transport(TransportEvent(kind="audio", pcm=b"\x01\x00" * 20))
+        with patch("gizmo_friend.session.TURN_ROUTE_GRACE_SECONDS", 0.001):
+            self.friend._arm_committed_route_deadline()
+            await self.friend._hold_timer
+        self.assertIsNotNone(self.friend._hold)
+        self.assertEqual(self.friend._directed_ask_revision, -1)
+        self.assertEqual(cinema.started, [])
+
+    async def test_live_audio_before_transcript_does_not_spend_the_route_deadline(self):
+        director = ControlledDirector()
+        cinema = StubCinema()
+        self.friend._cinema = cinema
+        self.friend.visual_director = director
+        self.friend._ask_revision += 1
+        self.friend._begin_visual_turn("")
+        self.friend._begin_hold()
+        await self.friend._on_transport(TransportEvent(kind="audio", pcm=b"\x01\x00" * 20))
+        self.assertIsNone(self.friend._hold_timer)
+        self.assertEqual(self.friend._directed_ask_revision, -1)
+        await self.friend._on_transport(
+            TransportEvent(kind="user_transcript", text="Show how a rocket launches")
+        )
+        self.assertIsNotNone(self.friend._hold_timer)
+        await director.wait_for_calls(1)
+        director.finish(0, VisualDecision(route="film", subject="rocket launch"))
+        await asyncio.wait_for(asyncio.shield(self.friend._director_task), 1)
+        self.assertEqual(cinema.started, ["Show how a rocket launches"])
+        self.assertTrue(self.friend._suppress_live_output)
 
     async def test_new_ask_cancels_stale_judgment(self):
         director = ControlledDirector()

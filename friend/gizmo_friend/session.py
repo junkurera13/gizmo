@@ -22,6 +22,7 @@ from gizmo_friend.brain.show_budget import ShowBudget
 from gizmo_friend.brain.shows import ShowStore, StoredShow
 from gizmo_friend.brain.transcripts import TranscriptStore
 from gizmo_friend.brain.visual_director import (
+    DIRECTOR_TIMEOUT_SECONDS,
     DialogueTurn,
     MAX_CONTEXT_TEXT,
     MAX_CONTEXT_TURNS,
@@ -54,10 +55,11 @@ logger = logging.getLogger(__name__)
 EXPRESSIONS = {"idle", "curious", "thinking", "happy", "concerned", "surprised"}
 # Placeholder vocabulary for set_expression. Not the character. Glass ignores it.
 
-# Every answer is held only long enough for the single turn director to commit.
-# The timer starts when Live first answers, so work overlapped with the kid's
-# speech is free. A late or failed director always degrades to talk.
-TURN_ROUTE_GRACE_SECONDS = 1.5
+# Live's reply is held until the committed ask is judged. Speculative work
+# during speech is free. The deadline starts when the final transcript is
+# known, not when Live first answers — on PTT that reply often precedes the
+# transcript. A late or failed director degrades to talk.
+TURN_ROUTE_GRACE_SECONDS = DIRECTOR_TIMEOUT_SECONDS
 GLASS_NO_ACK_GRACE_SECONDS = 1.0 # a body that never acks gets this long to fetch a cued picture
 AUDIO_CHUNK_BYTES = 11_520       # 240 ms of 24 kHz PCM16 per audio event to the body
 # Film turns announce the wait, not the story: one short line while the
@@ -899,7 +901,6 @@ class GizmoSession:
             self._hold.append(event)
             if self._hold_started_at is None:
                 self._hold_started_at = asyncio.get_running_loop().time()
-                self._arm_hold_timer()
             return
         if self._film_live_fallback is not None and kind in {
             "audio", "transcript_delta", "transcript", "done", "cancelled",
@@ -1075,13 +1076,6 @@ class GizmoSession:
         ):
             return
 
-        # A committing turn restarts the route deadline from "the ask is known":
-        # on voice turns the final transcript lands after Live has already begun
-        # answering, so anchoring the deadline to the first buffered event spent
-        # the director's whole window before it ever ran.
-        if commit and self._hold is not None:
-            self._arm_hold_timer()
-
         # The final transcript commonly equals the last preview. Reuse that
         # in-flight/result judgment; only a changed transcript starts over.
         if cleaned == self._director_text:
@@ -1095,12 +1089,17 @@ class GizmoSession:
                 self._director_task = task
                 self._director_tasks.add(task)
                 task.add_done_callback(self._director_tasks.discard)
+                return
+            if commit:
+                self._arm_committed_route_deadline()
             return
 
         self._cancel_visual_direction()
         self._director_text = cleaned
         self._director_decision = None
         self._director_committed = commit
+        if commit:
+            self._arm_committed_route_deadline()
         has_visual = self.current_show is not None
         current_subject = self.current_show_subject if has_visual else ""
         current_story_setting = self.current_story_setting if has_visual else ""
@@ -1121,6 +1120,7 @@ class GizmoSession:
                     current_character=self.story_character,
                     current_medium=current_medium,
                 )
+                self._director_decision = decision
                 logger.info(
                     "Turn latency: stage=director route=%s seconds=%.3f turn_seconds=%.3f",
                     decision.route, asyncio.get_running_loop().time() - started, self._visual_elapsed(),
@@ -1132,7 +1132,6 @@ class GizmoSession:
                     or cleaned != self._director_text
                 ):
                     return
-                self._director_decision = decision
                 if self._director_committed:
                     await self._apply_visual_decision(decision, cleaned, ask_revision)
             except asyncio.CancelledError:
@@ -1532,6 +1531,12 @@ class GizmoSession:
     def _hold_has_audio(self) -> bool:
         return self._hold is not None and any(event.kind == "audio" for event in self._hold)
 
+    def _arm_committed_route_deadline(self) -> None:
+        """Fail open only after a committed ask has had the director's timeout."""
+        if self._hold is None:
+            return
+        self._arm_hold_timer()
+
     def _arm_hold_timer(self) -> None:
         self._cancel_hold_timer()
         ask_revision = self._ask_revision
@@ -1542,6 +1547,11 @@ class GizmoSession:
             except asyncio.CancelledError:
                 return
             if self._hold is None or ask_revision != self._ask_revision:
+                return
+            # Production chose film in ~0.9s and then talked anyway: expire
+            # marked the ask directed in the gap between decide() returning
+            # and _apply_visual_decision() running, so Cinema never started.
+            if self._director_decision is not None:
                 return
             logger.warning("Turn director late; failing open to talk")
             self._directed_ask_revision = ask_revision
