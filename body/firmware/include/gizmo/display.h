@@ -10,6 +10,10 @@ class Display {
   esp_err_t begin();
   void fill(uint16_t color);
   void blit_rgb565(const uint16_t* pixels, int width, int height);
+  // Pushes only rows [y0, y0+rows) — film playback repaints the video area
+  // without re-sending the static caption band, so writes finish faster than
+  // the panel scan and tear less.
+  void blit_rgb565_rows(const uint16_t* pixels, int width, int y0, int rows);
   void set_rotation(uint8_t rotation);
   // 0–255 software pixel gain applied at blit time. Used because the
   // current panel LED is tied to 3V3 (no backlight PWM pin).

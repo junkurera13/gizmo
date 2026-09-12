@@ -19,6 +19,7 @@ class ShowPlayer {
   void update();
   bool viewing() const { return request_.viewing; }
   bool available() const { return still_.bytes != nullptr; }
+  bool motion_playing() const { return clip_.bytes != nullptr; }
   bool render(uint16_t* pixels, bool force = false);
   bool take_glass_ready(GlassReady& ack);
   void diagnose() const;
