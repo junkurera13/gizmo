@@ -33,7 +33,9 @@ NARRATION_MODEL = "gemini-3.1-flash-tts-preview"
 # still looks empty. Oddity already voices on 2.5 with this same key.
 NARRATION_FALLBACK_MODELS = ("gemini-2.5-flash-preview-tts",)
 NARRATION_ENDPOINT = "https://generativelanguage.googleapis.com/v1beta/models"
-NARRATION_TIMEOUT_SECONDS = 20.0
+# A directed film is 35–45s of speech. 2.5 TTS routinely needs longer than
+# the old 20s deadline; cutting it off aborts Cinema before Director starts.
+NARRATION_TIMEOUT_SECONDS = 60.0
 NARRATION_RATE = 24_000
 NARRATION_ATTEMPTS = 4
 NARRATION_FALLBACK_ATTEMPTS = 2
@@ -113,6 +115,11 @@ def narration_error_detail(body: bytes) -> str:
     return " ".join(text.split())[:400]
 
 
+def daily_quota_exhausted(detail: str) -> bool:
+    text = detail.lower()
+    return "per_day" in text or "requests_per_day" in text
+
+
 def pcm_from_part(mime_type: str, data: bytes) -> bytes:
     """Normalize a TTS inline part to the 24 kHz mono PCM16 the body plays."""
     if not mime_type.lower().startswith(("audio/l16", "audio/pcm")):
@@ -181,6 +188,8 @@ class GeminiNarrationProvider(NarrationProvider):
                             "Narration %s, retry in %.1fs attempt=%s model=%s detail=%s",
                             retry_status, wait, attempt + 1, model, detail,
                         )
+                        if daily_quota_exhausted(detail):
+                            break
                         if attempt + 1 < attempts:
                             await asyncio.sleep(wait)
                         continue
@@ -212,6 +221,8 @@ class GeminiNarrationProvider(NarrationProvider):
                             "Narration %s, retry in %.1fs attempt=%s model=%s detail=%s",
                             status, wait, attempt + 1, model, detail,
                         )
+                        if daily_quota_exhausted(detail):
+                            break
                         await asyncio.sleep(wait)
                         continue
                     logger.warning(
