@@ -285,10 +285,11 @@ def is_moving_explanation_ask(utterance: str) -> bool:
 
 
 def prefer_film_route(decision: VisualDecision, utterance: str) -> VisualDecision:
-    """Cinema only when motion would help a hard ask or a moving story scene.
+    """Cinema whenever the director picked motion, or a hard ask needs it.
 
-    Easy talk, a thing merely existing, and "make it move" never become film
-    or a short clip.
+    A still the director chose stays a still; the upgrade path is the
+    moving-explanation ask. But once the director commits to film the route
+    is honored — downgrading it to a still just makes the body lie.
     """
     if decision.route == "animate":
         return VisualDecision()
@@ -299,22 +300,12 @@ def prefer_film_route(decision: VisualDecision, utterance: str) -> VisualDecisio
         story_character=decision.story_character,
         new_story=decision.new_story,
     )
+    if decision.route in {"film", "motion"}:
+        return VisualDecision(route="film", **film_fields)
     if decision.story_setting:
-        if decision.route in {"film", "motion"}:
-            return VisualDecision(route="film", **film_fields)
         return decision
     if is_moving_explanation_ask(utterance):
         return VisualDecision(route="film", **film_fields)
-    if decision.route in {"film", "motion"}:
-        if decision.subject:
-            return VisualDecision(
-                route="still",
-                subject=decision.subject,
-                kind=decision.kind,
-                story_character=decision.story_character,
-                new_story=decision.new_story,
-            )
-        return VisualDecision()
     return decision
 
 

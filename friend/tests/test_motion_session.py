@@ -176,17 +176,15 @@ class MotionSessionTests(ShowSessionFixture):
         director = FixedDirector(VisualDecision(route="motion", subject="jellyfish", motion="bell pulses"))
         self.friend.visual_director = director
         await self.friend.handle(TextLine(text="Make a short video of a jellyfish."))
-        await self.images.wait_for_calls(1)
+        await asyncio.wait_for(asyncio.shield(self.friend._director_task), 1)
         self.assertEqual(len(director.calls), 1)
         self.assertEqual(director.contexts[0][0], "")
-        self.assertEqual(cinema.started, [])
-        await self.finish_show()
+        self.assertEqual(cinema.started, ["Make a short video of a jellyfish."])
+        self.assertEqual(self.images.calls, [])
         await self.friend._on_transport(TransportEvent(kind="transcript", text="A jellyfish pushes water to swim."))
         await self.friend._on_transport(TransportEvent(kind="done"))
         self.assertEqual(len(director.calls), 1)
-        self.assertEqual(len(self.images.calls), 1)
-        metadata = json.loads(self.friend.current_show.metadata_path.read_text())
-        self.assertIsNone(metadata["motion"])
+        self.assertEqual(self.images.calls, [])
 
     async def test_explicit_voice_request_starts_at_final_input_transcript(self):
         director = FixedDirector(VisualDecision(route="still", subject="volcano"))
@@ -417,7 +415,7 @@ class FilmCapabilityTests(ShowSessionFixture):
         self.assertEqual(self.images.calls, [])
         self.assertFalse(self.friend.film_active())
 
-    async def test_easy_ask_does_not_keep_a_film_decision(self):
+    async def test_easy_ask_keeps_the_directors_film_decision(self):
         cinema = StubCinema()
         self.friend._cinema = cinema
         self.friend.visual_director = FixedDirector(
@@ -427,10 +425,8 @@ class FilmCapabilityTests(ShowSessionFixture):
         await self.friend._on_transport(TransportEvent(kind="transcript", text="R-O-C-K-E-T."))
         await self.friend._on_transport(TransportEvent(kind="done"))
         await asyncio.wait_for(asyncio.shield(self.friend._director_task), 1)
-        self.assertEqual(cinema.started, [])
-        await self.images.wait_for_calls(1)
-        self.assertEqual(self.images.calls[0][0], "rocket")
-        await self.finish_show()
+        self.assertEqual(cinema.started, ["How do you spell rocket?"])
+        self.assertEqual(self.images.calls, [])
 
     async def test_make_it_move_keeps_the_still_without_a_clip_or_film(self):
         cinema = StubCinema()
