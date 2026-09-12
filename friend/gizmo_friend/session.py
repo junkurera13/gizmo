@@ -57,7 +57,7 @@ EXPRESSIONS = {"idle", "curious", "thinking", "happy", "concerned", "surprised"}
 # Every answer is held only long enough for the single turn director to commit.
 # The timer starts when Live first answers, so work overlapped with the kid's
 # speech is free. A late or failed director always degrades to talk.
-TURN_ROUTE_GRACE_SECONDS = 1.0
+TURN_ROUTE_GRACE_SECONDS = 1.5
 GLASS_NO_ACK_GRACE_SECONDS = 1.0 # a body that never acks gets this long to fetch a cued picture
 AUDIO_CHUNK_BYTES = 11_520       # 240 ms of 24 kHz PCM16 per audio event to the body
 # Film turns announce the wait, not the story: one short line while the
@@ -1074,6 +1074,13 @@ class GizmoSession:
             or not self._ready_for_input()
         ):
             return
+
+        # A committing turn restarts the route deadline from "the ask is known":
+        # on voice turns the final transcript lands after Live has already begun
+        # answering, so anchoring the deadline to the first buffered event spent
+        # the director's whole window before it ever ran.
+        if commit and self._hold is not None:
+            self._arm_hold_timer()
 
         # The final transcript commonly equals the last preview. Reuse that
         # in-flight/result judgment; only a changed transcript starts over.
