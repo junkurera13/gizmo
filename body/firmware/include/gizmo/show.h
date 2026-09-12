@@ -6,8 +6,9 @@
 #include "gizmo/show_format.h"
 
 namespace gizmo {
-// Body loop owns playback and the display. A separate, low-priority task owns
-// media HTTP/TLS, so slow cache creation/download never stalls voice sockets.
+// Body loop owns playback and the display. Download sits above decode-ahead
+// so the next cue's file arrives during the current segment. friend-net stays
+// higher so spoken PCM still wins the core.
 //
 // Two slots: the picture on the glass, and one held picture for a story cue
 // that is fetched and indexed ahead of its words. "go" swaps the held slot in

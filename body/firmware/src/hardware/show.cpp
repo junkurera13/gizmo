@@ -30,7 +30,7 @@ void ShowPlayer::begin() {
   // preempt loopTask — mid-boot that froze the flipbook; mid-film it stalls
   // the blit and the speaker pump.
   if (!jobs_ || !held_jobs_ || !results_ ||
-      xTaskCreatePinnedToCore(task, "show-download", 16384, this, 1, nullptr, 0) != pdPASS) {
+      xTaskCreatePinnedToCore(task, "show-download", 16384, this, 2, nullptr, 0) != pdPASS) {
     if (jobs_) vQueueDelete(jobs_);
     if (held_jobs_) vQueueDelete(held_jobs_);
     if (results_) vQueueDelete(results_);
@@ -38,11 +38,11 @@ void ShowPlayer::begin() {
     Serial.println("show: download task unavailable");
   }
   // Decode-ahead pins to core 0 so JPEG work runs parallel to the body loop
-  // instead of stealing the core that blits and pumps audio. Priority 2 sits
-  // above show-download (1) so the next-clip GET cannot starve the playhead,
-  // and below friend-net (3) so spoken PCM still wins the core.
+  // instead of stealing the core that blits and pumps audio. Priority 2 is the
+  // next-clip GET: a starved download ends the film after one 5s segment.
+  // Decode-ahead is 1 — the ring already holds ~500 ms. friend-net stays 3.
   if (!buffers_ok ||
-      xTaskCreatePinnedToCore(decode_task, "show-decode", 24576, this, 2, nullptr, 0) != pdPASS) {
+      xTaskCreatePinnedToCore(decode_task, "show-decode", 24576, this, 1, nullptr, 0) != pdPASS) {
     Serial.println("show: decode-ahead unavailable; sync decoding only");
   }
 }
@@ -380,7 +380,7 @@ bool ShowPlayer::download(const Job& job, bool motion, Media& media) {
   auto* stream = http.getStreamPtr();
   while (ok && received < size_t(length)) {
     if (job.revision != current.load() || uint32_t(millis() - started) > 30000 ||
-        uint32_t(millis() - progress) > 5000) { ok = false; break; }
+        uint32_t(millis() - progress) > 12000) { ok = false; break; }
     const int available = stream->available();
     if (available > 0) {
       const size_t chunk = min(size_t(4096), min(size_t(available), size_t(length) - received));
@@ -389,7 +389,7 @@ bool ShowPlayer::download(const Job& job, bool motion, Media& media) {
       received += size_t(read);
       progress = millis();
     } else if (!http.connected()) { ok = false; break; }
-    vTaskDelay(pdMS_TO_TICKS(1));
+    else vTaskDelay(1);
   }
   http.end();
   // Reuse the socket only after a clean fetch; a torn connection reopens.
@@ -398,7 +398,8 @@ bool ShowPlayer::download(const Job& job, bool motion, Media& media) {
   ok = ok && received == size_t(length) && show_index(media.bytes, received, media.frames, count);
   if (!ok) {
     release(media);
-    Serial.printf("show: %s unavailable (http=%d); retaining current picture\n", motion ? "motion" : "still", status);
+    Serial.printf("show: %s unavailable (http=%d length=%d got=%u count=%d); retaining current picture\n",
+                  motion ? "motion" : "still", status, length, unsigned(received), count);
     return false;
   }
   media.length = received;

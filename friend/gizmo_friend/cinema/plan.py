@@ -71,12 +71,12 @@ DIRECTED_INSTRUCTIONS = """
 DIRECTED FILM — this film is the whole answer on a screen that shows nothing else.
 A director has already decided the turn deserves a film and supplies a brief below.
 Follow the brief's angle, arc and exclusions; the question is still what you answer.
-Choose four or five connected beats, 30–45 seconds of speech in total, in the
+Choose five connected beats, 35–45 seconds of speech in total, in the
 explanatory spirit of Kurzgesagt or Crash Course: a hook in the first sentence,
 then cause and effect made visible, then one idea to leave with. The film must
 reach the end of its arc: a story or history shows the event itself and what it
 left behind, a mechanism shows the effect, never only the setup. Each beat is one
-spoken sentence of 10–18 words with a concrete visible action. Every shot is
+spoken sentence of 16–24 words with a concrete visible action. Every shot is
 gentle, colorful and kid-friendly; pictures never include people, faces or
 children — crowds and figures belong in narration only.
 """
@@ -111,7 +111,7 @@ class FilmPlan(BaseModel):
 class DirectedFilmPlan(FilmPlan):
     """A directed film carries a longer arc than a `/cinema` reply."""
 
-    beats: list[FilmBeat] = Field(min_length=1, max_length=5)
+    beats: list[FilmBeat] = Field(min_length=4, max_length=5)
 
 
 def soundtrack_timings(plan: FilmPlan, pcm: bytes) -> list[dict]:
