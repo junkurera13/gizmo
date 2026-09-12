@@ -27,6 +27,10 @@ class ShowPlayer {
   // reentrant); the camera preview shares it through this entry point.
   bool decode_jpeg(const uint8_t* bytes, size_t length, uint16_t* pixels);
   bool take_glass_ready(GlassReady& ack);
+  // Record the panel transfer that follows a successful render(). Together
+  // with the decode and cadence counters this makes physical film timing
+  // visible in serial logs instead of relying on subjective "choppy" reports.
+  void note_display(uint32_t elapsed_us);
   void diagnose() const;
  private:
   struct Job { ShowRequest request; uint32_t revision; bool still; bool held; };
@@ -54,7 +58,8 @@ class ShowPlayer {
   void ack(uint32_t cue, bool motion, bool ok);
   size_t motion_index(size_t count) const;
   void arm_clip();
-  void note_presented(size_t index);
+  void note_presented(size_t index, size_t count);
+  void report_perf(const char* reason);
   QueueHandle_t jobs_ = nullptr, held_jobs_ = nullptr, results_ = nullptr;
   SemaphoreHandle_t media_mux_ = nullptr;
   // Decoded-ahead ring for motion playback. A JPEG frame decode costs ~50 ms
@@ -89,5 +94,17 @@ class ShowPlayer {
   std::atomic<uint32_t> started_{0};
   int drawn_ = -1;
   bool changed_ = false;
+  bool perf_active_ = false;
+  uint32_t perf_cue_ = 0;
+  uint32_t perf_started_ms_ = 0;
+  uint32_t perf_last_presented_ms_ = 0;
+  uint32_t perf_presented_ = 0;
+  uint32_t perf_dropped_ = 0;
+  uint32_t perf_repeats_ = 0;
+  int perf_missed_index_ = -1;
+  std::atomic<uint32_t> perf_decode_failed_{0};
+  std::atomic<uint32_t> perf_decode_max_ms_{0};
+  uint32_t perf_blit_max_us_ = 0;
+  uint32_t perf_present_gap_max_ms_ = 0;
 };
 }

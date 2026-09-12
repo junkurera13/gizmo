@@ -712,6 +712,7 @@ void command(char value) {
       break;
     case '?':
       show_player.diagnose();
+      audio.diagnose_live();
       Serial.printf("state=%s camera=%s audio=%s memo=%ums wifi=%s friend=%s display=%s rotation=%u heap=%u "
                     "psram_free=%u backlight=%s pixel_gain=%u brightness=%u volume=%u clock_wght=%d\n",
                     state_name(state), camera.running() ? "running" : "off",
@@ -977,6 +978,7 @@ void loop() {
       gizmo::render_caption(canvas, caption_line);
       const bool motion = show_player.motion_playing();
       const bool caption_changed = strncmp(caption_drawn, caption_line, sizeof(caption_drawn)) != 0;
+      const uint32_t blit_started = micros();
       if (motion && show_band_painted) {
         // A film's bottom band is baked dark; only repaint it when the
         // caption text changes, so each frame's write stays under one scan.
@@ -989,6 +991,7 @@ void loop() {
         display.blit_rgb565(framebuffer, canvas.width, canvas.height);
         show_band_painted = motion;
       }
+      show_player.note_display(micros() - blit_started);
       strlcpy(caption_drawn, caption_line, sizeof(caption_drawn));
       last_redraw = now;
     }

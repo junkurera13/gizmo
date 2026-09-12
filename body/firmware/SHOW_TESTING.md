@@ -4,6 +4,52 @@ Software implementation is complete; physical display, decode speed, PSRAM
 headroom, and simultaneous voice playback still need a flashed XIAO test.
 The existing panel wiring and peripheral ownership are unchanged.
 
+## Checkpoint 1: deterministic 30-second local film
+
+Run this before any provider or Railway test. It exercises the production
+WebSocket/audio/held-cue/HTTP/MJPEG path over local Wi-Fi, but removes Gemini,
+Fal, H3, and Railway from the experiment. The picture has a moving scan bar and
+whole-second counter; the soundtrack ticks on those same boundaries.
+
+In terminal 1, start the fixture from the repository root:
+
+```sh
+.venv/bin/python body/firmware/test/local_film_fixture.py
+```
+
+It prints an `Fhttp://<mac-ip>:8765` command. Keep that process running. Flash
+the exact checkout under test, then open a timestamped monitor in terminal 2:
+
+```sh
+body/firmware/.venv/bin/pio run -d body/firmware -t upload --upload-port <XIAO-port>
+body/firmware/.venv/bin/pio device monitor -b 115200 --port <XIAO-port> --filter time
+```
+
+Send the printed `Fhttp://...` command over serial. Do not change `K`; the local
+fixture ignores the stored production token. Wait for `friend: online`, then
+press and release PTT (`p`, then `p` over serial also works). No speech is
+required. Record the whole display and audible soundtrack at 60 fps if the
+phone permits it. Repeat ten times without rebooting the board.
+
+Each run must show six `HOLD -> READY -> GO` cues on the fixture console and six
+`show perf: end` records on serial. Acceptance is:
+
+- no reboot, Guru Meditation, watchdog, JPEG error, `motion unavailable`, or
+  audio overflow;
+- `decode_failed=0`, `dropped=0`, and ideally `repeats=0` for every cue;
+- `present_gap_max_ms` stays below 170 ms and `blit_max_us` below 25000;
+- the final `audio perf: end` reports `queued_ms` near 30000, `starts=1`, and
+  `starvations=0`;
+- motion never races through missed frames, and the audible tick stays aligned
+  with each displayed second without accumulating visible drift;
+- no horizontal tear is visible in the moving scan bar.
+
+Send `?` during cue 3 and again after completion. Return the full timestamped
+serial log, fixture-console log, and uncut phone video. If 12 fps misses this
+bar, stop here: retest the identical fixture at a lower fixed cadence before
+reintroducing the cloud, Fal, H3, or Railway. Restore the production URL afterward
+with `Fhttps://gizmo-brain-production.up.railway.app`.
+
 ## Build and flash
 
 From the checkout containing these changes, build and identify the XIAO's
