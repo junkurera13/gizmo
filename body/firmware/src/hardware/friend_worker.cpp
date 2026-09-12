@@ -17,8 +17,10 @@ void FriendLink::begin() {
       jpeg_slot_[i] = static_cast<uint8_t*>(heap_caps_malloc(kJpegMax, MALLOC_CAP_8BIT));
     }
   }
+  // Pinned to core 0 with the radio stack: TLS crypto bursts there can never
+  // preempt loopTask on core 1 (the boot flipbook and film blits live there).
   if (!commands_ || !speaker_ || !statuses_ || !shows_ || jpeg_slot_[0] == nullptr || jpeg_slot_[1] == nullptr ||
-      xTaskCreate(task, "friend-net", 16384, this, 3, nullptr) != pdPASS) {
+      xTaskCreatePinnedToCore(task, "friend-net", 16384, this, 3, nullptr, 0) != pdPASS) {
     if (commands_) vQueueDelete(commands_);
     if (speaker_) vQueueDelete(speaker_);
     if (statuses_) vQueueDelete(statuses_);

@@ -25,17 +25,21 @@ void ShowPlayer::begin() {
   }
   bool buffers_ok = media_mux_ != nullptr && dec_scratch_ != nullptr;
   for (int b = 0; b < kDecBufs; ++b) buffers_ok = buffers_ok && dec_pixels_[b] != nullptr;
-  if (!jobs_ || !held_jobs_ || !results_ || xTaskCreate(task, "show-download", 16384, this, 1, nullptr) != pdPASS) {
+  // Both media tasks pin to core 0: unpinned they float onto core 1 and
+  // preempt loopTask — mid-boot that froze the flipbook; mid-film it stalls
+  // the blit and the speaker pump.
+  if (!jobs_ || !held_jobs_ || !results_ ||
+      xTaskCreatePinnedToCore(task, "show-download", 16384, this, 1, nullptr, 0) != pdPASS) {
     if (jobs_) vQueueDelete(jobs_);
     if (held_jobs_) vQueueDelete(held_jobs_);
     if (results_) vQueueDelete(results_);
     jobs_ = held_jobs_ = results_ = nullptr;
     Serial.println("show: download task unavailable");
   }
-  // Decode-ahead floats unpinned so it scavenges whichever core is idle —
-  // the loop's SPI DMA waits on one side, network stalls on the other.
+  // Decode-ahead pins to core 0 so JPEG work runs parallel to the body loop
+  // instead of stealing the core that blits and pumps audio.
   if (!buffers_ok ||
-      xTaskCreate(decode_task, "show-decode", 24576, this, 1, nullptr) != pdPASS) {
+      xTaskCreatePinnedToCore(decode_task, "show-decode", 24576, this, 1, nullptr, 0) != pdPASS) {
     Serial.println("show: decode-ahead unavailable; sync decoding only");
   }
 }
@@ -468,6 +472,10 @@ void ShowPlayer::decode_run() {
     dec_bad_[w].store(!ok);
     dec_index_[w].store(static_cast<int>(target));
     dec_gen_[w].store(gen);
+    // The busy path has no blocking call: while a clip decodes continuously
+    // this loop never yields, starving the core-0 idle task the watchdog
+    // checks — a mid-film reboot with no panic dump. One tick feeds it.
+    vTaskDelay(pdMS_TO_TICKS(1));
   }
 }
 }

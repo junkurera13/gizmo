@@ -10,6 +10,9 @@ struct StopTask {};
 inline int xTaskCreate(void(*fn)(void*),const char*,int,void* context,int,void*) {
   mock_tasks.emplace_back([=]{try{fn(context);}catch(const StopTask&) {}});return pdPASS;
 }
+inline int xTaskCreatePinnedToCore(void(*fn)(void*),const char* n,int s,void* context,int p,void* h,unsigned) {
+  return xTaskCreate(fn,n,s,context,p,h);
+}
 inline void join_mock_tasks() {
   mock_task_stop.store(true);
   for(auto& t:mock_tasks) if(t.joinable()) t.join();
