@@ -1,10 +1,13 @@
-"""Deterministic 30-second film server for physical XIAO acceptance.
+"""Deterministic film server for physical XIAO acceptance and demo playback.
 
 This deliberately speaks the production Friend wire contract while using no
 Gemini, Fal, H3, or Railway. Point the device's F URL at this Mac, press and
 release PTT, and the fixture sends six held five-second MJPEG cues plus paced
 24 kHz PCM. A moving scan bar and an audible tick share each whole-second
 boundary so a phone video can reveal drift, tearing, stalls, or catch-up.
+
+Pass --demo-pompeii to replace the diagnostic pattern with the bundled,
+finished 37-second Pompeii film and narration.
 """
 
 from __future__ import annotations
@@ -16,14 +19,19 @@ import io
 import math
 import socket
 import sys
+import tempfile
 import time
+import wave
 from array import array
 from dataclasses import dataclass
+from pathlib import Path
 
 import uvicorn
 from fastapi import FastAPI, HTTPException, Query, WebSocket, WebSocketDisconnect
 from fastapi.responses import JSONResponse, Response
 from PIL import Image, ImageDraw, ImageFont
+
+from gizmo_friend.brain.show_media import encode_mjpeg
 
 
 WIDTH = 320
@@ -33,6 +41,9 @@ SECONDS = 30
 SEGMENT_SECONDS = 5
 WIRE_RATE = 24_000
 PCM_CHUNK_BYTES = 11_520
+ROOT = Path(__file__).resolve().parents[3]
+POMPEII_VIDEO = ROOT / "friend/gizmo_friend/static/demo-pompeii-polished.mp4"
+POMPEII_AUDIO = ROOT / "friend/gizmo_friend/static/demo-pompeii.wav"
 
 
 @dataclass(frozen=True)
@@ -47,9 +58,11 @@ class Segment:
 @dataclass(frozen=True)
 class Fixture:
     fps: int
-    seconds: int
+    seconds: float
     segment_seconds: int
     segments: tuple[Segment, ...]
+    label: str
+    caption: str
 
 
 def _font(size: int):
@@ -145,15 +158,111 @@ def build_fixture(*, fps: int = FPS, seconds: int = SECONDS) -> Fixture:
                 pcm=soundtrack[index * pcm_per_segment : (index + 1) * pcm_per_segment],
             )
         )
-    return Fixture(fps, seconds, SEGMENT_SECONDS, tuple(segments))
+    return Fixture(
+        fps,
+        float(seconds),
+        SEGMENT_SECONDS,
+        tuple(segments),
+        "30-second diagnostic",
+        "LOCAL FILM",
+    )
+
+
+def _split_mjpeg(data: bytes) -> list[bytes]:
+    frames = []
+    cursor = 0
+    while cursor < len(data):
+        start = data.find(b"\xff\xd8", cursor)
+        if start < 0:
+            break
+        end = data.find(b"\xff\xd9", start + 2)
+        if end < 0:
+            raise ValueError("prebuilt video ends inside a JPEG frame")
+        frames.append(data[start : end + 2])
+        cursor = end + 2
+    if cursor != len(data):
+        raise ValueError("prebuilt MJPEG contains bytes outside JPEG frames")
+    return frames
+
+
+def build_prebuilt_fixture(
+    video: Path,
+    audio: Path,
+    *,
+    label: str,
+    caption: str = "",
+    fps: int = FPS,
+) -> Fixture:
+    """Convert a finished film once, then serve it in device-sized held cues."""
+    if not video.is_file() or not audio.is_file():
+        raise FileNotFoundError(f"missing prebuilt demo media: {video} / {audio}")
+    with tempfile.TemporaryDirectory(prefix="gizmo-demo-") as temporary:
+        encoded = Path(temporary) / "film.mjpeg"
+        encoded_count = encode_mjpeg(video, encoded, width=WIDTH, height=HEIGHT, fps=fps)
+        frames = _split_mjpeg(encoded.read_bytes())
+    if encoded_count != len(frames):
+        raise ValueError(
+            f"FFmpeg reported {encoded_count} frames but {len(frames)} were parsed"
+        )
+
+    with wave.open(str(audio), "rb") as source:
+        if (
+            source.getnchannels() != 1
+            or source.getsampwidth() != 2
+            or source.getframerate() != WIRE_RATE
+            or source.getcomptype() != "NONE"
+        ):
+            raise ValueError("prebuilt narration must be mono 16-bit 24 kHz PCM WAV")
+        pcm = source.readframes(source.getnframes())
+
+    sample_count = len(pcm) // 2
+    usable_frames = min(len(frames), round(sample_count * fps / WIRE_RATE))
+    if usable_frames < 1:
+        raise ValueError("prebuilt demo has no overlapping audio and video")
+    frames = frames[:usable_frames]
+    frames_per_segment = fps * SEGMENT_SECONDS
+    segments = []
+    for index, first in enumerate(range(0, len(frames), frames_per_segment)):
+        selected = frames[first : first + frames_per_segment]
+        sample_first = round(first * WIRE_RATE / fps)
+        sample_last = min(
+            sample_count,
+            round((first + len(selected)) * WIRE_RATE / fps),
+        )
+        segments.append(
+            Segment(
+                show_id=f"{index + 1:032x}",
+                still=selected[0],
+                motion=b"".join(selected),
+                frame_count=len(selected),
+                pcm=pcm[sample_first * 2 : sample_last * 2],
+            )
+        )
+    return Fixture(
+        fps,
+        sample_count / WIRE_RATE,
+        SEGMENT_SECONDS,
+        tuple(segments),
+        label,
+        caption,
+    )
 
 
 def check_fixture(fixture: Fixture) -> None:
     expected_frames = fixture.fps * fixture.segment_seconds
     expected_pcm = WIRE_RATE * 2 * fixture.segment_seconds
-    for segment in fixture.segments:
-        assert segment.frame_count == expected_frames
-        assert len(segment.pcm) == expected_pcm
+    for index, segment in enumerate(fixture.segments):
+        is_last = index == len(fixture.segments) - 1
+        assert 0 < segment.frame_count <= expected_frames
+        assert 0 < len(segment.pcm) <= expected_pcm and not len(segment.pcm) % 2
+        if not is_last:
+            assert segment.frame_count == expected_frames
+            assert len(segment.pcm) == expected_pcm
+        duration_error = abs(
+            segment.frame_count / fixture.fps
+            - len(segment.pcm) / (WIRE_RATE * 2)
+        )
+        assert duration_error <= 1 / fixture.fps
         assert segment.still.startswith(b"\xff\xd8") and segment.still.endswith(b"\xff\xd9")
         cursor = 0
         decoded = 0
@@ -166,7 +275,7 @@ def check_fixture(fixture: Fixture) -> None:
                 assert image.mode == "RGB"
             decoded += 1
             cursor = end + 2
-        assert decoded == expected_frames
+        assert decoded == segment.frame_count
 
 
 def _local_ip() -> str:
@@ -188,6 +297,8 @@ class FixtureSession:
         self.send_lock = asyncio.Lock()
         self.ready: dict[tuple[int, str], asyncio.Future[bool]] = {}
         self.film: asyncio.Task | None = None
+        self.prepare_task: asyncio.Task | None = None
+        self.prepared: tuple[Segment, int, str, str] | None = None
         self.epoch = time.monotonic()
 
     def log(self, message: str) -> None:
@@ -206,10 +317,33 @@ class FixtureSession:
         if film and film is not asyncio.current_task():
             film.cancel()
             await asyncio.gather(film, return_exceptions=True)
+        prepare, self.prepare_task = self.prepare_task, None
+        if prepare and prepare is not asyncio.current_task():
+            prepare.cancel()
+            await asyncio.gather(prepare, return_exceptions=True)
+        self.prepared = None
         for future in self.ready.values():
             if not future.done():
                 future.cancel()
         self.ready.clear()
+
+    def prepare_first(self) -> None:
+        if self.prepare_task is not None or self.prepared is not None:
+            return
+
+        async def prepare() -> None:
+            try:
+                self.log("PREPARE first cue while PTT is held")
+                self.prepared = await self.preload(0)
+            except asyncio.CancelledError:
+                raise
+            except Exception as error:
+                self.log(f"PREPARE FAILED {type(error).__name__}: {error}")
+            finally:
+                if self.prepare_task is asyncio.current_task():
+                    self.prepare_task = None
+
+        self.prepare_task = asyncio.create_task(prepare())
 
     def paths(self, segment: Segment) -> tuple[str, str]:
         base = f"/shows/{self.device}/{segment.show_id}"
@@ -232,7 +366,7 @@ class FixtureSession:
                 "frames": motion,
                 "cue": cue,
                 "hold": True,
-                "text": f"LOCAL FILM {index + 1}/{len(self.fixture.segments)}",
+                "text": self.fixture.caption,
             }
         )
         ok = await asyncio.wait_for(future, timeout=20)
@@ -267,9 +401,19 @@ class FixtureSession:
     async def play(self) -> None:
         try:
             self.epoch = time.monotonic()
-            self.log(f"START seconds={self.fixture.seconds} fps={self.fixture.fps}")
+            self.log(
+                f"START label={self.fixture.label!r} seconds={self.fixture.seconds:.2f} "
+                f"fps={self.fixture.fps}"
+            )
             await self.state("thinking")
-            item = await self.preload(0)
+            item = self.prepared
+            if item is None and self.prepare_task is not None:
+                prepare = self.prepare_task
+                await prepare
+                item = self.prepared
+            self.prepared = None
+            if item is None:
+                item = await self.preload(0)
             index = 0
             while item is not None:
                 segment, cue, still, motion = item
@@ -282,7 +426,7 @@ class FixtureSession:
                         "frames": motion,
                         "cue": cue,
                         "go": True,
-                        "text": f"LOCAL FILM {index + 1}/{len(self.fixture.segments)}",
+                        "text": self.fixture.caption,
                     }
                 )
                 await self.state("talking")
@@ -313,7 +457,15 @@ def create_app(fixture: Fixture) -> FastAPI:
 
     @app.get("/health")
     async def health():
-        return JSONResponse({"ok": True, "fixture": True})
+        return JSONResponse(
+            {
+                "ok": True,
+                "fixture": True,
+                "label": fixture.label,
+                "seconds": fixture.seconds,
+                "fps": fixture.fps,
+            }
+        )
 
     def media(show_id: str) -> Segment:
         segment = by_id.get(show_id)
@@ -374,6 +526,7 @@ def create_app(fixture: Fixture) -> FastAPI:
                         await session.send({"type": "interrupted"})
                         await session.send({"type": "glass", "viewing": False, "text": ""})
                         await session.state("listening")
+                        session.prepare_first()
                     elif session.film is None:
                         session.film = asyncio.create_task(session.play())
                 elif kind == "select":
@@ -416,13 +569,18 @@ def check_app(fixture: Fixture) -> None:
         ) as websocket:
             assert websocket.receive_json()["type"] == "hello"
             assert websocket.receive_json()["type"] == "glass"
-            websocket.send_json({"type": "ptt", "active": False})
-            assert websocket.receive_json() == {"type": "state", "state": "thinking"}
+            websocket.send_json({"type": "ptt", "active": True})
+            assert websocket.receive_json() == {"type": "interrupted"}
+            hidden = websocket.receive_json()
+            assert hidden["type"] == "glass" and hidden["viewing"] is False
+            assert websocket.receive_json() == {"type": "state", "state": "listening"}
             hold = websocket.receive_json()
             assert hold["type"] == "glass" and hold["hold"] is True and hold["cue"] == 1
             websocket.send_json(
                 {"type": "glass_ready", "cue": 1, "kind": "motion", "ok": True}
             )
+            websocket.send_json({"type": "ptt", "active": False})
+            assert websocket.receive_json() == {"type": "state", "state": "thinking"}
             go = websocket.receive_json()
             assert go["type"] == "glass" and go["go"] is True and go["cue"] == 1
             assert websocket.receive_json() == {"type": "state", "state": "talking"}
@@ -436,23 +594,44 @@ def main() -> None:
     parser.add_argument("--port", type=int, default=8765)
     parser.add_argument("--fps", type=int, default=FPS)
     parser.add_argument("--seconds", type=int, default=SECONDS)
+    parser.add_argument(
+        "--demo-pompeii",
+        action="store_true",
+        help="play the bundled 37-second Pompeii film instead of the diagnostic pattern",
+    )
     parser.add_argument("--check", action="store_true", help="validate generated bytes and exit")
     args = parser.parse_args()
 
-    fixture = build_fixture(fps=args.fps, seconds=args.seconds)
+    if args.demo_pompeii:
+        fixture = build_prebuilt_fixture(
+            POMPEII_VIDEO,
+            POMPEII_AUDIO,
+            label="The Day the Mountain Woke",
+            fps=args.fps,
+        )
+    else:
+        fixture = build_fixture(fps=args.fps, seconds=args.seconds)
     check_fixture(fixture)
     check_app(fixture)
     total_bytes = sum(len(segment.motion) for segment in fixture.segments)
+    total_frames = sum(segment.frame_count for segment in fixture.segments)
     print(
-        f"fixture: verified {args.seconds}s, {args.fps}fps, {len(fixture.segments)} cues, "
-        f"{args.seconds * args.fps} frames, {total_bytes} MJPEG bytes",
+        f"fixture: verified {fixture.label!r}, {fixture.seconds:.2f}s, {fixture.fps}fps, "
+        f"{len(fixture.segments)} cues, {total_frames} frames, {total_bytes} MJPEG bytes",
         flush=True,
     )
     if args.check:
         return
     address = _local_ip()
     print(f"fixture: set Gizmo serial URL to Fhttp://{address}:{args.port}", flush=True)
-    print("fixture: then press and release PTT; no speech is required", flush=True)
+    if args.demo_pompeii:
+        print(
+            "fixture: hold PTT and ask, 'Gizmo, what happened to Pompeii a long time ago?'",
+            flush=True,
+        )
+        print("fixture: the first cue preloads while PTT is held; release to play", flush=True)
+    else:
+        print("fixture: then press and release PTT; no speech is required", flush=True)
     uvicorn.run(create_app(fixture), host=args.host, port=args.port, log_level="warning")
 
 

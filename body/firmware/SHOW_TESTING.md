@@ -4,6 +4,33 @@ Software implementation is complete; physical display, decode speed, PSRAM
 headroom, and simultaneous voice playback still need a flashed XIAO test.
 The existing panel wiring and peripheral ownership are unchanged.
 
+## Demo-only Pompeii shortcut
+
+For the application recording, the local fixture can serve the bundled,
+prebuilt 37-second Pompeii film. This is deliberately isolated from the real
+agent: it makes no transcription, planner, TTS, Gemini, Fal, H3, or Railway
+request, and it does not change production behavior. Gizmo still performs the
+real HTTP download, MJPEG decoding, panel playback, PCM buffering, and A/V
+timing.
+
+Start it from the repository root on a laptop connected to the same Wi-Fi as
+Gizmo:
+
+```sh
+.venv/bin/python body/firmware/test/local_film_fixture.py --demo-pompeii
+```
+
+Send the printed `Fhttp://<mac-ip>:8765` command over serial. After
+`friend: online`, hold PTT and ask exactly, "Gizmo, what happened to Pompeii a
+long time ago?" The first cue downloads while PTT is held. On release, expect
+the finished film and narration to begin without a cloud-generation wait.
+
+Keep the fixture terminal and laptop awake for the entire take. Film one
+uncut rehearsal before the application take, and retain the serial log. After
+recording, restore the real backend with
+`Fhttps://gizmo-brain-production.up.railway.app`. Describe this honestly as a
+curated prototype demo of the intended interaction, not live generation.
+
 ## Checkpoint 1: deterministic 30-second local film
 
 Run this before any provider or Railway test. It exercises the production
