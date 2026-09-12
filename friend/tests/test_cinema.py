@@ -2,9 +2,11 @@ import asyncio
 import tempfile
 import unittest
 from pathlib import Path
-from unittest.mock import AsyncMock, patch
+from types import SimpleNamespace
+from unittest.mock import AsyncMock, Mock, patch
 
 from fastapi.testclient import TestClient
+from gizmo_friend.cinema.device import DeviceFilmPlayer
 from gizmo_friend.cinema.plan import FilmBeat, FilmPlan, PreparedFilm
 from gizmo_friend.cinema.runtime import CinemaSession
 from gizmo_friend.server import app_factory
@@ -49,6 +51,58 @@ class FakeStream:
         self.audio_ready.set()
         if self._hold is not None:
             self._hold.set()
+
+
+class DevicePlayerTests(unittest.IsolatedAsyncioTestCase):
+    async def test_failed_go_does_not_discard_the_live_fallback(self):
+        track = object()
+        stream = SimpleNamespace(
+            video_ready=None,
+            closed=False,
+            tracks={"video": track},
+            relay=SimpleNamespace(subscribe=Mock(return_value=track)),
+        )
+        cinema = SimpleNamespace(
+            stream=stream,
+            prepared=SimpleNamespace(
+                plan=SimpleNamespace(title="Rocket"),
+                timings=[],
+            ),
+            revision=4,
+            mark_presented=Mock(),
+            interrupt=AsyncMock(),
+            finish=AsyncMock(),
+        )
+        acks = {}
+
+        async def send(event):
+            if event.get("hold"):
+                acks[(event["cue"], "motion")].set_result(True)
+            elif event.get("go"):
+                raise RuntimeError("device disconnected before playback")
+
+        player = DeviceFilmPlayer(
+            cinema,
+            store=None,
+            send=send,
+            acks=acks,
+            on_failed=AsyncMock(),
+        )
+        segment = SimpleNamespace(
+            show=SimpleNamespace(still_url="/still.jpg", frames_url="/film.mjpeg"),
+            pcm=b"\0\0",
+        )
+
+        async def capture(_track, queue, _prepared, _revision):
+            await queue.put(segment)
+            await queue.put(None)
+
+        player.capture = capture
+        await player.play(4)
+
+        cinema.mark_presented.assert_not_called()
+        cinema.interrupt.assert_awaited_once()
+        player.on_failed.assert_awaited_once()
 
 
 class RuntimeTests(unittest.IsolatedAsyncioTestCase):
@@ -299,9 +353,26 @@ class RuntimeTests(unittest.IsolatedAsyncioTestCase):
             any("completed_narration" in row for row in self.session.context)
         )
 
+    async def test_exhausted_session_rejects_the_ask_before_starting_work(self):
+        self.session.turns = 8
+        self.assertIs(await self.session.ask("Rocket"), False)
+        self.assertIsNone(self.session.work)
+
+    async def test_prepared_but_unplayed_film_is_not_future_context(self):
+        await self.session.ask("Rocket")
+        await self.until(lambda: self.session.prepared is not None)
+        await self.session.interrupt()
+        self.assertTrue(any("undelivered" in row for row in self.session.context))
+        self.assertFalse(any("interrupted_plan" in row for row in self.session.context))
+        await self.session.ask("A completely different question")
+        await self.until(lambda: self.maker.plan.await_count == 2)
+        context = self.maker.plan.await_args_list[-1].args[1]
+        self.assertFalse(any("undelivered" in row for row in context))
+
     async def test_only_finished_narration_is_recorded_as_heard(self):
         await self.session.ask("Rocket")
         await self.until(lambda: self.session.prepared is not None)
+        self.assertTrue(self.session.mark_presented(self.session.revision))
         await self.session.interrupt()
         self.assertTrue(any("interrupted_plan" in row for row in self.session.context))
         self.assertFalse(

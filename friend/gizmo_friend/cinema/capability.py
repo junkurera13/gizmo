@@ -37,6 +37,7 @@ class FriendCinema:
         on_segment=None,
         on_talking=None,
         on_preparing=None,
+        on_presenting=None,
         on_idle=None,
         on_failed=None,
         session=None,
@@ -53,9 +54,11 @@ class FriendCinema:
         self.on_segment = on_segment
         self.on_talking = on_talking
         self.on_preparing = on_preparing
+        self.on_presenting = on_presenting
         self.on_idle = on_idle
         self.on_failed = on_failed
         self.session = session
+        self._owns_session = session is None
         self.player = None
         self.acks: dict[tuple[int, str], asyncio.Future] = {}
         self._active = False
@@ -84,13 +87,21 @@ class FriendCinema:
         if not await asyncio.to_thread(self.budget.reserve, self.device_id):
             return {"ok": False, "reason": "quiet day"}
         await self._ensure_session()
+        if self._owns_session and self.session.turns >= 8:
+            await self.session.close()
+            self.session = None
+            self.player = None
+            await self._ensure_session()
         await self.player.cancel_playback()
         self._active = True
         try:
-            await self.session.ask(text, direction=direction)
+            started = await self.session.ask(text, direction=direction)
         except Exception:
             self._active = False
             raise
+        if started is False:
+            self._active = False
+            return {"ok": False, "reason": "session unavailable"}
         return {"ok": True, "status": "preparing"}
 
     async def stop(self) -> None:
@@ -129,6 +140,7 @@ class FriendCinema:
                 next_cue=self.next_cue,
                 on_segment=self.on_segment,
                 on_talking=self.on_talking,
+                on_presenting=self.on_presenting,
                 on_failed=self._failed,
             )
 

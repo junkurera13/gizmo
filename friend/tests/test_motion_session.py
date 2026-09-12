@@ -504,6 +504,22 @@ class FilmCapabilityTests(ShowSessionFixture):
             self.events(),
         )
 
+    async def test_failed_film_replays_the_live_answer_it_replaced(self):
+        cinema = StubCinema()
+        self.friend._cinema = cinema
+        await self.friend._start_film("Why do rockets fly?")
+        self.events()
+        pcm = b"\x01\x00" * 240
+        await self.friend._on_transport(TransportEvent(kind="audio", pcm=pcm))
+        await self.friend._on_transport(TransportEvent(kind="transcript", text="Gas goes down; the rocket goes up."))
+        await self.friend._on_transport(TransportEvent(kind="done"))
+        self.assertFalse(any(event.get("type") == "audio" for event in self.events()))
+        cinema.active = False
+        await self.friend._on_film_idle()
+        events = self.events()
+        self.assertTrue(any(event.get("type") == "audio" for event in events))
+        self.assertTrue(any(event.get("type") == "transcript" and event.get("role") == "gizmo" for event in events))
+
     async def test_film_audio_moves_from_thinking_to_talking(self):
         await self.friend._on_film_preparing()
         self.assertEqual(self.friend.machine.state, State.THINKING)

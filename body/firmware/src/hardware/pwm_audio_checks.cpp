@@ -63,11 +63,11 @@ constexpr bool quantizer_bounds() {
   uint32_t previous = 0;
   for (int32_t sample = -32768; sample <= 32767; ++sample) {
     const auto duty = gizmo::pwm_duty(static_cast<int16_t>(sample));
-    if (duty > 511 || duty < previous) return false;
+    if (duty > 1023 || duty < previous) return false;
     previous = duty;
   }
-  return gizmo::pwm_duty(0) == 256 && gizmo::pwm_duty(-32768) == 0 &&
-         gizmo::pwm_duty(32767) == 511;
+  return gizmo::pwm_duty(0) == 512 && gizmo::pwm_duty(-32768) == 0 &&
+         gizmo::pwm_duty(32767) == 1023;
 }
 static_assert(exact_rate(), "PWM conversion must preserve the 16 kHz input rate");
 static_assert(resampled_ramp(), "Fractional interpolation must preserve time order");

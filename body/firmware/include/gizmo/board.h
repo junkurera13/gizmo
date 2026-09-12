@@ -38,7 +38,7 @@ constexpr int display_height = 240;
 // panel and MISO (GPIO8) with the speaker PWM pin, so it is held HIGH forever.
 constexpr int sd_cs = 21;
 
-// Adafruit STEMMA Speaker 3885 (TS2012 Class-D + 1 W / 8 Ω). Analog IN only:
+// Adafruit STEMMA Speaker 3885 (PAM8302A Class-D + 1 W / 8 Ω). Analog IN only:
 // STEMMA white → D9/GPIO8 (LEDC PWM), red → 3V3, black → GND. GPIO8 is also
 // Sense microSD MISO; SD CS stays HIGH. On-board trim pot is analog gain.
 constexpr int amp_out = 8;

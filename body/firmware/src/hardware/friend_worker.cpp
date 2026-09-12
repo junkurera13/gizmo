@@ -37,6 +37,12 @@ void FriendLink::update(bool wifi_online) {
 bool FriendLink::take_show(ShowRequest& request) {
   return shows_ && xQueueReceive(shows_, &request, 0) == pdTRUE;
 }
+bool FriendLink::take_line(char* dest, size_t cap) {
+  if (!dest || cap == 0 || seen_line_revision_ == status_.line_revision) return false;
+  seen_line_revision_ = status_.line_revision;
+  strlcpy(dest, status_.line, cap);
+  return true;
+}
 
 bool FriendLink::configure(Kind kind, const char* value) {
   if (!commands_ || !value || strlen(value) >= sizeof(Command::data.text)) return false;
@@ -180,6 +186,8 @@ void FriendLink::run() {
     connection.update(wifi_online_.load());
     ShowRequest show;
     if (connection.take_show(show)) xQueueOverwrite(shows_, &show);
+    if (connection.take_line(status.line, sizeof(status.line))) ++status.line_revision;
+    status.thinking = connection.session_thinking();
     if (connection.ready() != was_ready) {
       ++status.generation;
       was_ready = connection.ready();

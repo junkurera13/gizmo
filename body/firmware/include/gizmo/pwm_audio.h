@@ -3,6 +3,8 @@
 #include <stdint.h>
 
 namespace gizmo {
+constexpr uint8_t kPwmAudioBits = 10;
+constexpr uint32_t kPwmAudioLevels = 1u << kPwmAudioBits;
 // Condition 16 kHz PCM boundaries before interpolating onto the PWM clock.
 // Only stream boundaries are faded; continuous PCM retains its full amplitude.
 struct PwmAudio {
@@ -56,10 +58,10 @@ struct PwmClock {
   }
 };
 
-// Rounded 9-bit quantization without periodic error-feedback patterns.
+// Rounded 10-bit quantization without periodic error-feedback patterns.
 // Exact digital silence always produces a constant half-duty carrier.
 __attribute__((always_inline)) inline constexpr uint32_t pwm_duty(int16_t sample) {
-  const uint32_t rounded = (static_cast<int32_t>(sample) + 32768 + 64) >> 7;
-  return rounded > 511 ? 511 : rounded;
+  const uint32_t rounded = (static_cast<int32_t>(sample) + 32768 + 32) >> 6;
+  return rounded >= kPwmAudioLevels ? kPwmAudioLevels - 1 : rounded;
 }
 }  // namespace gizmo

@@ -113,6 +113,7 @@ class DeviceFilmPlayer:
         next_cue=None,
         on_segment=None,
         on_talking=None,
+        on_presenting=None,
         on_failed=None,
     ):
         self.cinema = cinema
@@ -122,6 +123,7 @@ class DeviceFilmPlayer:
         self.next_cue = next_cue
         self.on_segment = on_segment
         self.on_talking = on_talking
+        self.on_presenting = on_presenting
         self.on_failed = on_failed
         self.playback = None
 
@@ -239,6 +241,11 @@ class DeviceFilmPlayer:
                         caption = str(timing.get("narration", ""))[:150]
                         break
                 await self.send({**event, "go": True, "text": caption})
+                # Do not discard the buffered Live fallback until the device has
+                # actually accepted the command that starts the prepared film.
+                self.cinema.mark_presented(revision)
+                if self.on_presenting:
+                    await self.on_presenting()
                 position += len(segment.pcm) / 48000
                 # The next held cue downloads during this segment's narration.
                 pending = asyncio.create_task(preload(index + 1))

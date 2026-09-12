@@ -145,6 +145,11 @@ class GeminiLiveTransport:
         self._audio_active = False
         self._activity_open = False
         self._audio_received = False
+        self._response_active = False
+        self._new_turn_pending = False
+        self._replacement_pending = False
+        self._new_output_seen = False
+        self._input_committed = False
         self._pre_gate: list[bytes] = []
         self._pre_gate_bytes = 0
         self._voiced_bytes = 0
@@ -186,7 +191,11 @@ class GeminiLiveTransport:
             await self._require_session().send_realtime_input(activity_end=types.ActivityEnd())
             self._activity_open = False
             self._audio_active = False
-        self._suppress_audio = False
+        self._new_turn_pending = True
+        self._replacement_pending = self._response_active
+        self._new_output_seen = False
+        self._input_committed = True
+        self._suppress_audio = self._replacement_pending
         self._output_transcript = ""
         parts = []
         if self._pending_image is not None:
@@ -220,6 +229,10 @@ class GeminiLiveTransport:
         self._input_transcript = ""
         self._output_transcript = ""
         self._audio_received = False
+        self._new_turn_pending = False
+        self._replacement_pending = False
+        self._new_output_seen = False
+        self._input_committed = False
         self._pre_gate.clear()
         self._pre_gate_bytes = 0
         self._voiced_bytes = 0
@@ -249,6 +262,9 @@ class GeminiLiveTransport:
         # Someone is talking. Open the turn and replay what we held.
         session = self._require_session()
         await session.send_realtime_input(activity_start=types.ActivityStart())
+        self._new_turn_pending = True
+        self._replacement_pending = self._response_active
+        self._new_output_seen = False
         self._activity_open = True
         self._audio_received = True
         if self._pending_image is not None:
@@ -269,11 +285,15 @@ class GeminiLiveTransport:
             return
         # A hold with no speech in it is dropped whole: no activity pair, no
         # reply. Gizmo stays quiet, which is what a silent press means.
-        self._suppress_audio = not self._audio_received
         if self._activity_open:
             await self._require_session().send_realtime_input(activity_end=types.ActivityEnd())
         self._audio_active = False
         self._activity_open = False
+        self._input_committed = self._audio_received
+        self._suppress_audio = not self._audio_received or self._replacement_pending
+        if not self._audio_received:
+            self._new_turn_pending = False
+            self._replacement_pending = False
         # A silent hold must not lend pending visual input to a later
         # voice/text turn. Spoken turns have already consumed their image.
         self._pending_image = None
@@ -290,6 +310,10 @@ class GeminiLiveTransport:
         self._output_transcript = ""
         self._audio_received = False
         self._audio_active = False
+        self._new_turn_pending = False
+        self._replacement_pending = False
+        self._new_output_seen = False
+        self._input_committed = False
         self._pre_gate.clear()
         self._pre_gate_bytes = 0
         self._voiced_bytes = 0
@@ -362,8 +386,35 @@ class GeminiLiveTransport:
         if message.go_away:
             events.append(TransportEvent(kind="reconnect_required", raw=raw))
 
+        content = message.server_content
         tool_call = message.tool_call
+        stale_terminal = False
+        if content and content.interrupted:
+            if self._new_turn_pending and self._replacement_pending:
+                stale_terminal = True
+                self._response_active = False
+            else:
+                self._response_active = False
+                events.append(TransportEvent(kind="cancelled", raw=raw))
+
+        has_output = bool(tool_call and tool_call.function_calls)
+        if content:
+            has_output = has_output or bool(
+                content.output_transcription and content.output_transcription.text
+            ) or bool(content.model_turn and content.model_turn.parts)
+        if (
+            has_output
+            and self._new_turn_pending
+            and self._input_committed
+            and self._replacement_pending
+            and not stale_terminal
+        ):
+            self._replacement_pending = False
+            self._suppress_audio = False
+
         if tool_call and not self._suppress_audio:
+            self._response_active = True
+            self._new_output_seen = True
             for call in tool_call.function_calls or []:
                 call_id = call.id or ""
                 name = call.name or ""
@@ -379,12 +430,8 @@ class GeminiLiveTransport:
                     )
                 )
 
-        content = message.server_content
         if not content:
             return events
-        if content.interrupted:
-            events.append(TransportEvent(kind="cancelled", raw=raw))
-
         if content.input_transcription and content.input_transcription.text:
             self._input_transcript += content.input_transcription.text
             if content.input_transcription.finished:
@@ -406,6 +453,8 @@ class GeminiLiveTransport:
             and content.output_transcription
             and content.output_transcription.text
         ):
+            self._response_active = True
+            self._new_output_seen = True
             text = content.output_transcription.text
             self._output_transcript += text
             events.append(TransportEvent(kind="transcript_delta", text=text, raw=raw))
@@ -416,6 +465,9 @@ class GeminiLiveTransport:
                 self._output_transcript = ""
 
         if content.model_turn:
+            if not self._suppress_audio and content.model_turn.parts:
+                self._response_active = True
+                self._new_output_seen = True
             for part in content.model_turn.parts or []:
                 blob = part.inline_data
                 if blob and blob.data and (blob.mime_type or "").startswith("audio/pcm"):
@@ -436,6 +488,17 @@ class GeminiLiveTransport:
                     TransportEvent(kind="user_transcript", text=self._input_transcript.strip(), raw=raw)
                 )
                 self._input_transcript = ""
+            stale_done = stale_terminal or (
+                self._new_turn_pending
+                and self._replacement_pending
+                and not self._new_output_seen
+            )
+            if stale_done:
+                self._response_active = False
+                self._replacement_pending = False
+                if self._input_committed:
+                    self._suppress_audio = False
+                return events
             if self._output_transcript.strip() and not self._suppress_audio:
                 events.append(
                     TransportEvent(kind="transcript", text=self._output_transcript.strip(), raw=raw)
@@ -444,6 +507,11 @@ class GeminiLiveTransport:
             elif self._suppress_audio:
                 self._output_transcript = ""
             events.append(TransportEvent(kind="done", raw=raw))
+            self._response_active = False
+            self._new_turn_pending = False
+            self._replacement_pending = False
+            self._new_output_seen = False
+            self._input_committed = False
         return events
 
     def __aiter__(self) -> GeminiLiveTransport:

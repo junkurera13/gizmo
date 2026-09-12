@@ -5,7 +5,7 @@
 #include <stdint.h>
 
 // Voice memo path: Sense PDM microphone (I2S_NUM_0) into a PSRAM buffer, out
-// as 9-bit / 62.5 kHz LEDC PWM on D9 (Adafruit STEMMA analog IN). PDM TX is I2S0-only,
+// as 10-bit / 62.5 kHz LEDC PWM on D9 (Adafruit STEMMA analog IN). PDM TX is I2S0-only,
 // so the speaker cannot share that peripheral with the mic. update() pumps
 // samples from loop(). PWM stops when idle so D9 sits low.
 namespace gizmo {

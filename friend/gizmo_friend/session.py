@@ -214,6 +214,7 @@ class GizmoSession:
         self._glass_ready_timeout = 6.0
         self._story_audio_lead = STORY_AUDIO_LEAD_SECONDS
         self._cinema = None
+        self._film_live_fallback: list[TransportEvent] | None = None
         self._prefers_device_film = os.environ.get("GIZMO_DIRECTOR_DEVICE", "") == self.user_id
 
     @property
@@ -934,6 +935,11 @@ class GizmoSession:
                 # The voice model has begun, so its transcript of the kid is settled.
                 await self._consider_scout(self._hold_utterance, final=False, voice_started=True)
             return
+        if self._film_live_fallback is not None and kind in {
+            "audio", "transcript_delta", "transcript", "done", "cancelled",
+        }:
+            self._film_live_fallback.append(event)
+            return
         if kind == "audio":
             if self._suppress_live_output:
                 return
@@ -1254,6 +1260,7 @@ class GizmoSession:
                 on_segment=self._on_film_segment,
                 on_talking=self._start_talking,
                 on_preparing=self._on_film_preparing,
+                on_presenting=self._on_film_presenting,
                 on_idle=self._on_film_idle,
                 on_failed=self._on_film_failed,
             )
@@ -1270,14 +1277,21 @@ class GizmoSession:
         if not result.get("ok"):
             logger.info("Friend cinema skipped: %s", result.get("reason"))
             return result
+        self._film_live_fallback = []
         self._suppress_live_output = True
-        await self._interrupt()
+        await self._clear_line()
+        self.mouth.cancel()
+        await self.emit({"type": "interrupted", "reason": "film"})
         logger.info("Friend cinema started device=%s", self.user_id)
         return result
 
     async def _stop_film(self, *, reason: str = "interrupt", announce: bool = True) -> bool:
         cinema = self._cinema
+        had_fallback = self._film_live_fallback is not None
+        self._film_live_fallback = None
         if cinema is None or not cinema.active:
+            if had_fallback:
+                self._suppress_live_output = False
             return False
         await cinema.stop()
         if not cinema.active:
@@ -1323,6 +1337,14 @@ class GizmoSession:
         self.current_show_subject = title
         self._show_visible_at = asyncio.get_running_loop().time()
 
+    async def _on_film_presenting(self) -> None:
+        self._film_live_fallback = None
+        if self._transport:
+            try:
+                await self._transport.interrupt()
+            except Exception as error:
+                logger.warning("Live film handoff failed: error=%s", type(error).__name__)
+
     async def _on_film_failed(self) -> None:
         if self.machine.state in {State.TALKING, State.THINKING} and self.machine.can("select"):
             self.machine.apply("select")
@@ -1335,6 +1357,8 @@ class GizmoSession:
         )
 
     async def _on_film_idle(self) -> None:
+        fallback = self._film_live_fallback
+        self._film_live_fallback = None
         if self.machine.state in {State.TALKING, State.THINKING} and self.machine.can("done"):
             self.machine.apply("done")
         if not self.film_active():
@@ -1342,6 +1366,8 @@ class GizmoSession:
         self._device_line = False
         await self.emit({"type": "glass", "viewing": False, "reason": "film", "text": ""})
         await self.emit({"type": "state", "reason": "film"})
+        for event in fallback or ():
+            await self._on_transport(event)
 
     async def _dismiss_show(self, reason: str, *, cancel_pending: bool = True) -> None:
         # Invalidate before any await: a late image cannot overtake a local

@@ -16,18 +16,19 @@ constexpr i2s_port_t kAmpPort = I2S_NUM_1;  // host tests only; device speaker i
 constexpr int kDmaBuffers = 12;
 constexpr int kDmaFrames = 256;
 constexpr int32_t kMicGain = 3;
-constexpr int kMaxChunksPerUpdate = 16;
+constexpr int kMaxRecordChunksPerUpdate = 16;
+constexpr int kMaxPlaybackChunksPerUpdate = 32;
 constexpr uint32_t kVuDecayMs = 60;
 
 #ifdef ARDUINO
-// Exact XTAL divider: 40 MHz / (512 * 1.25) = 62.5 kHz. Two carrier
-// periods per update avoid the former 39.0625 kHz vs 32 kHz clock mismatch.
-// Keep XTAL as the LEDC source so the camera's separate timer is unaffected.
-constexpr size_t kAmpRingSamples = kDmaBuffers * kDmaFrames;
+constexpr size_t kAmpRingSamples = Audio::kSampleRate / 2;
+// Exact APB divider: 80 MHz / (1024 * 1.25) = 62.5 kHz. The 10-bit duty
+// reduces quantization while preserving two carrier periods per sample update.
+// The camera uses a separate LEDC timer.
 constexpr uint8_t kPwmChannel = 4;  // LEDC_TIMER_2; camera XCLK keeps TIMER_0
-constexpr uint8_t kPwmBits = 9;
+constexpr uint8_t kPwmBits = kPwmAudioBits;
 constexpr uint32_t kPwmFreq = 62500;
-constexpr uint32_t kPwmIdleDuty = 1u << (kPwmBits - 1);
+constexpr uint32_t kPwmIdleDuty = kPwmAudioLevels / 2;
 constexpr uint8_t kPwmTimerIndex = 0;
 constexpr uint16_t kPwmTimerDivider = 80;  // 80 MHz / 80 = 1 MHz
 constexpr uint64_t kPwmTimerAlarm = 32;    // 1 MHz / 32 = 31.25 kHz ISR
@@ -173,6 +174,17 @@ esp_err_t amp_write(const int16_t* samples, size_t count, size_t* written) {
 #endif
 }
 
+size_t amp_pending_samples() {
+#ifdef ARDUINO
+  portENTER_CRITICAL(&amp_mux);
+  const size_t pending = amp_n;
+  portEXIT_CRITICAL(&amp_mux);
+  return pending;
+#else
+  return kDmaBuffers * kDmaFrames;
+#endif
+}
+
 i2s_config_t base_config(i2s_mode_t mode, i2s_channel_fmt_t channels) {
   i2s_config_t config{};
   config.mode = mode;
@@ -263,7 +275,8 @@ void Audio::set_volume(uint8_t step, uint8_t steps) {
 
 bool Audio::start_recording() {
   if (!ready_ || recording_) return false;
-  if (playing_) stop_playback();
+  if (playing_ || live_armed_ || live_playing_ || live_n_ > 0) stop_playback();
+  else amp_stop();
   memo_samples_ = 0;
   warmup_left_ = kWarmupSamples;
   peak_ = 0;
@@ -382,7 +395,7 @@ void Audio::track_level(const int16_t* samples, size_t count) {
 
 void Audio::pump_recording() {
   int16_t pdm_stereo[kChunkSamples * 2];
-  for (int chunk = 0; chunk < kMaxChunksPerUpdate && recording_; ++chunk) {
+  for (int chunk = 0; chunk < kMaxRecordChunksPerUpdate && recording_; ++chunk) {
     size_t bytes = 0;
     if (i2s_read(kMicPort, pdm_stereo, sizeof(pdm_stereo), &bytes, 0) != ESP_OK || bytes == 0) return;
     size_t count = 0;
@@ -451,12 +464,13 @@ void Audio::pump_playback() {
     if (static_cast<int32_t>(millis() - drain_until_) >= 0) stop_playback();
     return;
   }
-  for (int chunk = 0; chunk < kMaxChunksPerUpdate && playing_; ++chunk) {
+  for (int chunk = 0; chunk < kMaxPlaybackChunksPerUpdate && playing_; ++chunk) {
     const size_t remaining = source_samples_ - play_cursor_;
     if (remaining == 0) {
       // Let I2S DMA finish the queued tail before cutting the bitstream.
       draining_ = true;
-      drain_until_ = millis() + (kDmaBuffers * kDmaFrames * 1000UL) / kSampleRate + 10;
+      drain_until_ = millis() +
+          (amp_pending_samples() * 1000UL + kSampleRate - 1) / kSampleRate + 10;
       return;
     }
     const size_t count = remaining < kChunkSamples ? remaining : kChunkSamples;
@@ -490,7 +504,7 @@ void Audio::pump_live() {
     live_playing_ = true;
     playing_ = true;
   }
-  for (int chunk = 0; chunk < kMaxChunksPerUpdate && live_n_ > 0; ++chunk) {
+  for (int chunk = 0; chunk < kMaxPlaybackChunksPerUpdate && live_n_ > 0; ++chunk) {
     const size_t count = live_n_ < kChunkSamples ? live_n_ : kChunkSamples;
     for (size_t i = 0; i < count; ++i) chunk_[i] = live_[(live_r_ + i) % live_cap_];
     apply_volume(chunk_, count, volume_step_, volume_steps_);
@@ -501,8 +515,8 @@ void Audio::pump_live() {
     live_n_ -= consumed;
     if (consumed) {
       track_level(chunk_, consumed);
-      constexpr uint32_t drain_ms =
-          (kDmaBuffers * kDmaFrames * 1000 + kSampleRate - 1) / kSampleRate + 2;
+      const uint32_t drain_ms =
+          (amp_pending_samples() * 1000UL + kSampleRate - 1) / kSampleRate + 2;
       // Keep the bitstream running across Gemini chunk gaps so the tail does
       // not restart the speaker (that restart is the late-reply “glitch”).
       live_drain_until_ = millis() + drain_ms + 300;

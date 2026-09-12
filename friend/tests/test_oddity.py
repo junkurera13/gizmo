@@ -182,6 +182,21 @@ class OddityTests(unittest.IsolatedAsyncioTestCase):
         await self.session.event("beat", old_turn, beat={})
         self.assertEqual(before, len(self.events))
 
+    async def test_failed_question_is_not_planning_context_for_the_next_turn(self):
+        original_plan = self.director.plan
+
+        async def fail(*args, **kwargs):
+            raise RuntimeError("planner unavailable")
+
+        self.director.plan = fail
+        await self.session.begin("Why did the old request fail?")
+        await self.session.task
+        self.director.plan = original_plan
+        await self.session.begin("What color is the moon?")
+        await self.session.task
+        history = self.director.requests[-1][1]
+        self.assertFalse(any(row.get("text") == "Why did the old request fail?" for row in history))
+
     async def test_acknowledgements_ignore_forgery_duplicates_and_stale_turns(self):
         await self.session.begin("Jupiter"); await self.session.task
         one = next(e["beat"] for e in self.events if e["type"] == "beat")

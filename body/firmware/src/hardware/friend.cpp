@@ -312,6 +312,7 @@ void FriendConnection::disconnect() {
   held_changed_ = false;
   hello_ok_ = false;
   session_ready_ = false;
+  session_thinking_ = false;
   glass_seen_ = false;
   speaker_n_ = speaker_r_ = speaker_w_ = 0;
   down_n_ = 0;

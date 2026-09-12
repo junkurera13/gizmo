@@ -92,6 +92,12 @@ class ExperienceSession:
         if turn == self.turn:
             await self.send({"type": kind, "turn": turn, **values})
 
+    def planning_history(self) -> list[dict]:
+        history = list(self.history[:-1])
+        while history and history[-1].get("role") == "user":
+            history.pop()
+        return history[-24:]
+
     async def stop(self, *, preserve_invitation=False):
         invitation_turn = self.turn
         self.turn = ""
@@ -261,7 +267,7 @@ class ExperienceSession:
             journey = {key: self.journey[key] for key in ("last_presented", "observations")
                        if self.journey.get(key)}
             context = {**self.current, "journey": journey}
-            plan = await self.director.plan(text, self.history[:-1], context, self.memory_context,
+            plan = await self.director.plan(text, self.planning_history(), context, self.memory_context,
                                            contract=self.director_addendum)
             if plan.thread == "new":
                 self.journey = {"goal": plan.goal or text[:240], "observations": []}
@@ -316,9 +322,14 @@ class ExperienceSession:
             if not self.current.get("playing") and (previous_visual or {}).get("kind") == "film":
                 previous_visual = None
             screen = self._screen_for(beat, previous_visual)
-            self.current = {"id": beat["id"], "narration": beat["narration"], "screen": screen,
+            self.current = {"id": beat["id"], "utterance": self.utterance,
+                            "narration": beat["narration"], "screen": screen,
                             "playing": True, "title": beat["title"], "elapsed": 0,
                             "interaction": beat.get("interaction"), "awaiting": False}
+            if beat.get("film"):
+                mark_presented = getattr(self.cinema, "mark_presented", None)
+                if mark_presented:
+                    mark_presented(beat["film"]["revision"])
             archived = dict(beat)
             if beat["visual"] == "keep" and screen:
                 archived.update(screen)

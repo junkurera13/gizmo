@@ -23,11 +23,16 @@ returned as physical evidence. Local USB access is not required for development.
   2.8-inch **ILI9341**, **320 × 240** landscape, 4-wire SPI. Includes a touch
   controller and SD slot; their use is not selected. Module power is listed as
   3.3–5 V; this does not establish that every signal accepts 5 V.
-- Speaker: **Adafruit STEMMA Speaker** (PID **3885**), TS2012 Class-D plus a
+- Speaker: **Adafruit STEMMA Speaker** (PID **3885**), PAM8302A Class-D plus a
   1 W / 8 Ω speaker. Analog input only (STEMMA white = IN, red = 3–5 V,
-  black = GND). Signal on **D9** (GPIO8) as 9-bit / 62.5 kHz LEDC PWM. Replaces the earlier
-  Youmile MAX98357 I2S breadboard amp (BCLK/LRC/DIN). On-board trim pot is
-  analog gain; firmware volume still scales PCM before PWM.
+  black = GND). Signal on **D9** (GPIO8) as 10-bit / 62.5 kHz LEDC PWM. The
+  GPIO-to-SIGNAL path requires an external audio low-pass filter; the STEMMA
+  board AC-couples its input but does not turn an unfiltered GPIO PWM carrier
+  into a clean line-level waveform. The direct jumper is prototype-only and is
+  the primary suspect for carrier noise, squeaks at PWM start/stop, and muffled
+  speech. Replaces the earlier Youmile MAX98357 I2S breadboard amp
+  (BCLK/LRC/DIN). On-board trim pot is analog gain; firmware volume still
+  scales PCM before PWM.
 
 ## Confirmed ILI9341 wiring (2026-09-06)
 
@@ -66,7 +71,7 @@ the source of truth; this table mirrors it.
 | D6 | 43 | ILI9341 `DC` | UART0 TX at ROM boot; harmless |
 | D7 | 44 | ILI9341 `CS` | Keep as a real chip select; do not tie to GND |
 | D8 | 7 | ILI9341 `SCK` | Shared with the Sense microSD SCK (4.7k pull-up via J3) |
-| D9 | 8 | STEMMA Speaker IN (LEDC PWM) | Adafruit 3885 analog IN (white). Also Sense microSD MISO; SD CS is held HIGH |
+| D9 | 8 | STEMMA Speaker IN (LEDC PWM) | GPIO8 → external audio low-pass → Adafruit 3885 SIGNAL (white). Also Sense microSD MISO; SD CS is held HIGH |
 | D10 | 9 | ILI9341 `SDI/MOSI` | Shared with the Sense microSD MOSI. Never route audio here |
 | B2B | 21 | Sense microSD `CS` | Firmware drives HIGH at boot; leave the slot empty |
 | B2B | 41 / 42 | PDM mic `DATA` / `CLK` | I2S_NUM_0, the only PDM-capable controller |
@@ -100,8 +105,9 @@ shows `NO BAT`.
 ### Bus isolation rules (unchanged)
 
 - Display SPI: D7 CS, D6 DC, D8 SCK, D10 MOSI at 40 MHz. No audio on D10.
-- Speaker PWM lives on D9 (GPIO8, LEDC channel 4 / timer 2). PDM RX lives on
-  I2S_NUM_0 (GPIO41/42). PWM is detached when idle so D9 sits LOW (no carrier).
+- Speaker PWM lives on D9 (GPIO8, LEDC channel 4 / timer 2) and must be
+  low-pass filtered before the STEMMA analog input. PDM RX lives on I2S_NUM_0
+  (GPIO41/42). PWM is detached when idle so D9 sits LOW (no carrier).
 - GPIO21 (microSD CS) is set HIGH before any SPI or PWM starts because
   the slot's MISO pad is the speaker signal.
 
@@ -110,7 +116,7 @@ shows `NO BAT`.
 | Part | Required before implementation |
 | --- | --- |
 | Display rotation / mount | Physical 320×240 landscape orientation on the assembled shell; `r` cycles firmware rotation |
-| Speaker and amplifier | Adafruit STEMMA Speaker 3885 on D9; analog IN + onboard TS2012, not I2S |
+| Speaker and amplifier | Adafruit STEMMA Speaker 3885 on D9; select and scope the required PWM low-pass, confirm local decoupling/grounding and trim gain; analog IN + onboard PAM8302A, not I2S |
 | Select, Up, Down | Ladder above is designed, not yet soldered; confirm decoded mV with the `i` serial key |
 | Power and battery | Switch circuit, battery/charging arrangement; divider moves to D5 |
 | Storage | Sense microSD slot is reserved but unused; GPIO8 is the speaker PWM pin so the slot cannot be used with audio |

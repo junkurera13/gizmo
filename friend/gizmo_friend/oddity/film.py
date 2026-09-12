@@ -49,6 +49,7 @@ class OddityCinema:
         self._maker = maker
         self._stream_factory = stream_factory
         self.session = session
+        self._owns_session = session is None
         self._ready = asyncio.Event()
         self._payload: dict | None = None
         self._failed: dict | None = None
@@ -79,7 +80,13 @@ class OddityCinema:
         self._failed = None
         try:
             await self._ensure_session()
-            await self.session.ask(text, direction=direction)
+            if self._owns_session and self.session.turns >= 8:
+                await self.session.close()
+                self.session = None
+                await self._ensure_session()
+            started = await self.session.ask(text, direction=direction)
+            if started is False:
+                return None
             if on_pending is not None:
                 await on_pending(self.session.revision)
             async with asyncio.timeout(90):
@@ -122,6 +129,11 @@ class OddityCinema:
         if self.session is None:
             return False
         return self.session.watch(revision)
+
+    def mark_presented(self, revision) -> bool:
+        if self.session is None:
+            return False
+        return self.session.mark_presented(revision)
 
     async def finish(self, revision) -> None:
         if self.session is None:

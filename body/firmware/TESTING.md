@@ -71,7 +71,10 @@ f
 - Hold PTT for over 20 seconds in both home and Camera: the memo limit must close
   the turn; releasing afterward must not leave the brain's mic open.
 - When idle, the speaker should become silent with no persistent clock whine.
-  PTT never sends a camera frame to Friend; Camera is local preview only.
+  Hold PTT with Volume at 0: GPIO8 must remain LOW. If the speaker still squeaks,
+  scope the 16 kHz PDM clock, 3V3 rail, grounds, and the filtered STEMMA SIGNAL
+  node; that noise is coupling outside the PCM volume path. PTT never sends a
+  camera frame to Friend; Camera is local preview only.
 
 ## 4. Failure and recovery
 
