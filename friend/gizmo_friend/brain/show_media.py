@@ -12,7 +12,13 @@ MAX_FRAME_DIMENSION = 1024
 MAX_FRAME_FPS = 24
 TRANSCODE_TIMEOUT_SECONDS = 30
 MAX_MEDIA_BYTES = 64 * 1024 * 1024
-MJPEG_ENCODING_VERSION = 2
+# The XIAO downloads the next five-second cue while decoding the current one.
+# FFmpeg q=4 produced 550-620 KiB cues for illustrated film, which took about
+# seven seconds on the physical device and stalled both picture and narration.
+# q=14 keeps the same 320x240/4:2:0 format while bringing the measured worst
+# cue below 300 KiB. Bump the cache version so deployed Shows are regenerated.
+DEVICE_MJPEG_QSCALE = 14
+MJPEG_ENCODING_VERSION = 3
 _WORKERS = threading.BoundedSemaphore(2)
 
 
@@ -84,5 +90,6 @@ def encode_mjpeg(source: Path, target: Path, *, width: int, height: int, fps: in
     return _run(source, target, [
         # FFmpeg's 4:4:4 JPEGs use 1x2 sampling for every component. The ESP32
         # ROM TJpgDec rejects that layout; 4:2:0 emits supported 2x2/1x1/1x1.
-        "-vf", filters, "-c:v", "mjpeg", "-q:v", "4", "-pix_fmt", "yuvj420p", "-f", "mjpeg",
+        "-vf", filters, "-c:v", "mjpeg", "-q:v", str(DEVICE_MJPEG_QSCALE),
+        "-pix_fmt", "yuvj420p", "-f", "mjpeg",
     ])

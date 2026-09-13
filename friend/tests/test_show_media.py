@@ -79,6 +79,19 @@ class ShowMediaTests(unittest.TestCase):
             data = data[end:]
         self.assertEqual(decoded, count)
 
+    def test_device_mjpeg_uses_the_bandwidth_bounded_quality(self):
+        with patch.object(show_media, '_run', return_value=1) as run:
+            self.assertEqual(
+                show_media.encode_mjpeg(
+                    self.source, self.target, width=320, height=240, fps=8,
+                ),
+                1,
+            )
+        arguments = run.call_args.args[2]
+        quality = arguments.index('-q:v')
+        self.assertEqual(arguments[quality + 1], str(show_media.DEVICE_MJPEG_QSCALE))
+        self.assertEqual(show_media.DEVICE_MJPEG_QSCALE, 14)
+
     def test_put_mjpeg_is_served_without_an_mp4(self):
         store = ShowStore(self.root / 'device', device_id='fixture')
         still = Image.new('RGB', (320, 240), (20, 40, 60))
