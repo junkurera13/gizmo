@@ -134,6 +134,12 @@ ODDITY_PUBLIC_ASSETS = {
     "/static/oddity-boot.css",
     "/static/oddity.css",
     "/static/oddity.js",
+    "/static/demo-troy-kid.wav",
+    "/static/demo-troy-gizmo.wav",
+    "/static/demo-troy-story.mp4",
+    "/static/demo-troy-followup-kid.wav",
+    "/static/demo-troy-followup.mp4",
+    "/static/demo-troy-followup-gizmo.wav",
 }
 
 
