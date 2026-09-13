@@ -19,15 +19,10 @@ constexpr uint8_t kMadctlMy = 0x80;
 constexpr uint8_t kMadctlMx = 0x40;
 constexpr uint8_t kMadctlMv = 0x20;
 constexpr uint8_t kMadctlBgr = 0x08;
-// ILI9341 has no wired TE pin, so a panel scan can overtake an in-progress
-// write. The physical Gizmo takes 33-37 ms to push its 320x192 film band; at
-// the controller's previous ~79 Hz scan rate, that produced the three distinct
-// horizontal pieces visible in the diagnostic bar. DIVA=1 / RTNA=0x1f makes
-// the panel scan at roughly 30 Hz, close to one measured band transfer. This
-// changes only the LCD scanout; film decode/presentation remains fixed at 8 fps.
+// ILI9341 has no wired TE pin, so writes race the panel's ~14ms scan; the
+// faster a frame lands, the smaller the tear. 80MHz is the standard ESP32
+// clock for this panel (TFT_eSPI's default) — a full frame arrives in ~15ms.
 constexpr uint32_t kSpiHz = 80000000;
-constexpr uint8_t kPanelClockDiv = 0x01;
-constexpr uint8_t kPanelRateAdjust = 0x1F;
 }  // namespace
 
 void Display::command(uint8_t value) {
@@ -138,8 +133,8 @@ esp_err_t Display::begin() {
   command(kColmod);
   data(0x55);
   command(0xB1);
-  data(kPanelClockDiv);
-  data(kPanelRateAdjust);
+  data(0x00);
+  data(0x18);
   command(0xB6);
   data(0x08);
   data(0x82);

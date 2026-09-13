@@ -802,9 +802,8 @@ void setup() {
   }
   Serial.println("Gizmo / XIAO ESP32S3 Sense / terminal OS");
   Serial.printf("flash=%u psram=%u\n", ESP.getFlashChipSize(), ESP.getPsramSize());
-  Serial.printf("display begin: %s ILI9341 %dx%d scan_target=%uHz sck=%d mosi=%d cs=%d dc=%d rst=tied_3v3 bl=%s pixel_gain=%u\n",
+  Serial.printf("display begin: %s ILI9341 %dx%d sck=%d mosi=%d cs=%d dc=%d rst=tied_3v3 bl=%s pixel_gain=%u\n",
                 esp_err_to_name(panel), display.width(), display.height(),
-                gizmo::Display::kNominalPanelScanHz,
                 gizmo::board::display_sck, gizmo::board::display_mosi,
                 gizmo::board::display_cs, gizmo::board::display_dc, backlight_wiring(),
                 display.pixel_gain());
