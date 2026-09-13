@@ -64,7 +64,6 @@ ORDER: tuple[str, ...] = (
     "homework",
     "trex",
     "antarctica",
-    "troy",
     "pompeii",
 )
 
@@ -347,57 +346,6 @@ _register(
                     "video": "/static/demo-antarctica-followup.mp4?v=penguin1",
                 },
             ],
-        },
-    ),
-    Moment(
-        id="troy",
-        line="What happened in the story of Troy?",
-        seed="",
-        contract=(
-            "Tell the story of Troy as a short, child-friendly mythology film. Focus on the "
-            "wooden horse, the soldiers hidden inside it, and how the Trojans brought it through "
-            "their city gates. Keep the story gentle and non-violent, and distinguish the famous "
-            "myth from what historians can prove."
-        ),
-        demo={
-            "prompt": "Gizmo, what happened in the story of Troy?",
-            "prompt_audio": "/static/demo-troy-kid.wav?v=troy1",
-            "reply": (
-                "Long ago, the Greeks and Trojans were fighting around the walled city of Troy. "
-                "The Greeks finally pretended to sail away, leaving behind a giant wooden horse. "
-                "The Trojans thought it was a victory gift and pulled it through their gates. "
-                "But Greek soldiers were hidden inside. That night, they climbed out and opened "
-                "the city gates for the returning Greek army. It is one of mythology's most famous "
-                "tales, although historians still debate how much of it really happened."
-            ),
-            "reply_audio": "/static/demo-troy-gizmo.wav?v=troy1",
-            "reply_timed": [
-                [0.25, "Long ago,"],
-                [2.0, "the Greeks and Trojans were fighting around the walled city of Troy."],
-                [7.55, "The Greeks finally pretended to sail away, leaving behind a giant wooden horse."],
-                [15.25, "The Trojans thought it was a victory gift and pulled it through their gates."],
-                [20.7, "But Greek soldiers were hidden inside."],
-                [24.35, "That night, they climbed out and opened the city gates for the returning Greek army."],
-                [30.85, "It is one of mythology's most famous tales,"],
-                [34.55, "although historians still debate how much of it really happened."],
-            ],
-            "video": "/static/demo-troy-story.mp4?v=troy3",
-            "followup": {
-                "prompt": "Why did the Trojans trust the wooden horse?",
-                "audio": "/static/demo-troy-followup-kid.wav?v=troy1",
-                "video": "/static/demo-troy-followup.mp4?v=troy3",
-                "fullscreen_during_prompt": True,
-                "reply_wait_ms": 700,
-                "reply": (
-                    "They believed the horse was a sacred victory gift, and the quiet shore made it "
-                    "look as though the Greek army had truly sailed home."
-                ),
-                "reply_audio": "/static/demo-troy-followup-gizmo.wav?v=troy1",
-                "reply_timed": [
-                    [0.25, "They believed the horse was a sacred victory gift,"],
-                    [5.05, "and the quiet shore made it look as though the Greek army had truly sailed home."],
-                ],
-            },
         },
     ),
     Moment(

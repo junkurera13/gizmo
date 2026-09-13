@@ -14,12 +14,12 @@ from gizmo_friend.cinema.stream import DirectorStream
 
 
 ROOT = Path(__file__).resolve().parents[2]
-STATIC = ROOT / "friend" / "gizmo_friend" / "static"
+OUT = Path(__file__).resolve().parent / "troy"
 
-STORY_AUDIO = STATIC / "demo-troy-gizmo.wav"
-STORY_VIDEO = STATIC / "demo-troy-story.mp4"
-FOLLOWUP_AUDIO = STATIC / "demo-troy-followup-gizmo.wav"
-FOLLOWUP_VIDEO = STATIC / "demo-troy-followup.mp4"
+STORY_AUDIO = OUT / "demo-troy-gizmo.wav"
+STORY_VIDEO = OUT / "demo-troy-story.mp4"
+FOLLOWUP_AUDIO = OUT / "demo-troy-followup-gizmo.wav"
+FOLLOWUP_VIDEO = OUT / "demo-troy-followup.mp4"
 
 STORY_PROMPT = """
 Create a continuous 16:9 children's educational animation about the famous
