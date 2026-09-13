@@ -151,6 +151,56 @@ int main(int argc,char** argv) {
   player.publish(media);player.update();
   assert(player.clip_.count==2&&player.clip_.cue==5); // adopted by the picture that already went
   assert(player.take_glass_ready(ack)&&ack.cue==5&&ack.motion&&ack.ok);
+  // A held cue's first frames pre-decode into the ring under the held clip's
+  // own generation while cue 5 plays, so "go" renders them with no decode stall.
+  ShowRequest held7=held;held7.cue=7;held7.still[20]='7';
+  strcpy(held7.frames,held7.still);memcpy(held7.frames+strlen(held7.frames)-4,".mjpeg",7);
+  player.submit(held7);
+  assert(xQueueReceive(player.held_jobs_,&job,0)&&job.held&&job.still&&job.request.cue==7);
+  response(false);assert(player.download(job,false,media));
+  player.publish(media);player.update();
+  assert(player.take_glass_ready(ack)&&ack.cue==7&&!ack.motion&&ack.ok);
+  response(true);assert(player.download(job,true,media)); // the same job carries frames
+  player.publish(media);player.update();
+  assert(player.take_glass_ready(ack)&&ack.cue==7&&ack.motion&&ack.ok);
+  assert(player.held_clip_.count==2&&player.held_gen_.load()!=0&&player.held_gen_.load()!=player.media_gen_.load());
+  bool held_decoded=false;
+  for(int i=0;i<300 && !held_decoded;++i){
+    for(int b=0;b<ShowPlayer::kDecBufs;++b)
+      if(player.dec_gen_[b].load()==player.held_gen_.load()&&player.dec_index_[b].load()==0&&!player.dec_bad_[b].load())held_decoded=true;
+    std::this_thread::sleep_for(std::chrono::milliseconds(4));
+  }
+  assert(held_decoded);
+  bool clip_kept=false;
+  for(int b=0;b<ShowPlayer::kDecBufs;++b)
+    if(player.dec_gen_[b].load()==player.media_gen_.load())clip_kept=true;
+  assert(clip_kept); // pre-decoding never evicts the playing clip's window
+  ShowRequest go7=held7;go7.hold=false;go7.go=true;
+  const uint32_t hg=player.held_gen_.load();
+  player.submit(go7);
+  assert(player.media_gen_.load()==hg&&player.held_gen_.load()==0&&player.clip_.cue==7&&player.request_.cue==7);
+  assert(player.render(pixels)&&player.drawn_==0); // pre-decoded frame 0 presents on the first call
+  // Cancelling mid-hold releases the held clip and clears its generation.
+  ShowRequest held8=held7;held8.cue=8;held8.still[20]='8';
+  strcpy(held8.frames,held8.still);memcpy(held8.frames+strlen(held8.frames)-4,".mjpeg",7);
+  player.submit(held8);
+  assert(xQueueReceive(player.held_jobs_,&job,0)&&job.held&&job.still&&job.request.cue==8);
+  response(false);assert(player.download(job,false,media));
+  player.publish(media);player.update();
+  response(true);assert(player.download(job,true,media));
+  player.publish(media);player.update();
+  assert(player.take_glass_ready(ack)&&ack.cue==8&&!ack.motion&&ack.ok);
+  assert(player.take_glass_ready(ack)&&ack.cue==8&&ack.motion&&ack.ok);
+  assert(player.held_clip_.count==2&&player.held_gen_.load()!=0);
+  held_decoded=false;
+  for(int i=0;i<300 && !held_decoded;++i){
+    for(int b=0;b<ShowPlayer::kDecBufs;++b)
+      if(player.dec_gen_[b].load()==player.held_gen_.load()&&player.dec_index_[b].load()==0&&!player.dec_bad_[b].load())held_decoded=true;
+    std::this_thread::sleep_for(std::chrono::milliseconds(4));
+  }
+  assert(held_decoded);
+  player.cancel();
+  assert(player.held_gen_.load()==0&&player.held_clip_.bytes==nullptr);
   // A held fetch that fails reports so; the brain speaks over the picture it has.
   ShowPlayer::Media failed;failed.failed=true;failed.held=true;failed.cue=6;failed.revision=player.held_revision_.load();
   player.publish(failed);player.update();

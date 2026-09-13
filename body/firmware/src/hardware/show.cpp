@@ -123,10 +123,13 @@ void ShowPlayer::cancel(bool dismiss) {
   ++revision_;
   request_ = ShowRequest{};
   if (media_mux_) xSemaphoreTake(media_mux_, portMAX_DELAY);
-  ++media_gen_;
+  media_gen_.store(next_gen());
   release(still_);
   release(clip_);
   if (media_mux_) xSemaphoreGive(media_mux_);
+  // Clearing held_gen_ must precede the drain so a copied-but-not-started held
+  // decode skips the decoder, same as the clip decodes the bump invalidated.
+  drop_held();
   // esp_jpg_decode is chip-global and not reentrant. The generation bump makes
   // a copied-but-not-started decode skip inside the shared jpeg lock; this
   // drain waits out one already holding it, so no ShowPlayer decode outlives
@@ -136,14 +139,16 @@ void ShowPlayer::cancel(bool dismiss) {
   started_.store(0);
   drawn_ = -1;
   if (jobs_) xQueueReset(jobs_);
-  drop_held();
   ack_r_ = ack_w_ = 0;
 }
 void ShowPlayer::drop_held() {
   ++held_revision_;
   held_request_ = ShowRequest{};
+  if (media_mux_) xSemaphoreTake(media_mux_, portMAX_DELAY);
+  held_gen_.store(0);
   release(held_still_);
   release(held_clip_);
+  if (media_mux_) xSemaphoreGive(media_mux_);
   if (held_jobs_) xQueueReset(held_jobs_);
 }
 void ShowPlayer::ack(uint32_t cue, bool motion, bool ok) {
@@ -167,8 +172,11 @@ void ShowPlayer::hold(const ShowRequest& r) {
     // A new held cue replaces the old one. If the old cue already went, a clip
     // still downloading for it may finish and join the glass; otherwise it is moot.
     if (held_request_.cue != request_.cue) ++held_revision_;
+    if (media_mux_) xSemaphoreTake(media_mux_, portMAX_DELAY);
+    held_gen_.store(0);
     release(held_still_);
     release(held_clip_);
+    if (media_mux_) xSemaphoreGive(media_mux_);
     if (held_jobs_) xQueueReset(held_jobs_);
   }
   held_request_ = r;
@@ -180,7 +188,10 @@ bool ShowPlayer::swap_held(const ShowRequest& r) {
   ++revision_;  // whatever was downloading for the old picture is moot
   if (jobs_) xQueueReset(jobs_);
   if (media_mux_) xSemaphoreTake(media_mux_, portMAX_DELAY);
-  ++media_gen_;
+  // Adopt the held clip's generation: the decode-ahead ring may already carry
+  // its first frames under that tag, and they stay presentable after the swap.
+  const uint32_t hg = held_gen_.exchange(0);
+  media_gen_.store(hg ? hg : next_gen());
   release(still_);
   release(clip_);
   still_ = held_still_;
@@ -188,6 +199,11 @@ bool ShowPlayer::swap_held(const ShowRequest& r) {
   held_still_ = Media{};
   held_clip_ = Media{};
   if (media_mux_) xSemaphoreGive(media_mux_);
+  int predecoded = 0;
+  for (int b = 0; b < kDecBufs; ++b) {
+    if (dec_gen_[b].load() == media_gen_.load()) ++predecoded;
+  }
+  Serial.printf("show: swap cue=%lu predecoded=%d\n", static_cast<unsigned long>(r.cue), predecoded);
   request_ = r;
   request_.hold = false;
   request_.go = false;
@@ -221,7 +237,7 @@ void ShowPlayer::submit(const ShowRequest& r) {
   const uint32_t revision = ++revision_;
   if (!same) {
     if (media_mux_) xSemaphoreTake(media_mux_, portMAX_DELAY);
-    ++media_gen_;
+    media_gen_.store(next_gen());
     release(still_);
     release(clip_);
     if (media_mux_) xSemaphoreGive(media_mux_);
@@ -246,16 +262,20 @@ void ShowPlayer::update() {
       if (request_.viewing && request_.cue && media.cue == request_.cue) {
         // This cue already went; its late clip (or still) joins the picture on the glass.
         if (media_mux_) xSemaphoreTake(media_mux_, portMAX_DELAY);
-        ++media_gen_;
+        media_gen_.store(next_gen());
         Media& target = media.motion ? clip_ : still_;
         release(target);
         target = media;
         if (media_mux_) xSemaphoreGive(media_mux_);
         arm_clip();
       } else if (media.cue == held_request_.cue) {
+        // The decode task reads held_clip_ under this same mutex.
+        if (media_mux_) xSemaphoreTake(media_mux_, portMAX_DELAY);
         Media& target = media.motion ? held_clip_ : held_still_;
         release(target);
         target = media;
+        if (media.motion) held_gen_.store(next_gen());
+        if (media_mux_) xSemaphoreGive(media_mux_);
       } else {
         release(media);
         continue;
@@ -267,7 +287,7 @@ void ShowPlayer::update() {
     }
     if (media.revision != revision_.load() || !request_.viewing) { release(media); continue; }
     if (media_mux_) xSemaphoreTake(media_mux_, portMAX_DELAY);
-    ++media_gen_;
+    media_gen_.store(next_gen());
     Media& target = media.motion ? clip_ : still_;
     release(target);
     target = media;
@@ -523,7 +543,9 @@ void ShowPlayer::decode_run() {
     size_t index = 0;
     size_t count = 0;
     uint32_t gen = 0;
+    uint32_t cur = 0;
     bool have = false;
+    bool held_job = false;
     if (media_mux_ != nullptr && xSemaphoreTake(media_mux_, portMAX_DELAY) == pdTRUE) {
       Media& media = clip_;
       if (media.motion && media.bytes != nullptr && media.count > 0 && dec_scratch_ != nullptr) {
@@ -531,7 +553,7 @@ void ShowPlayer::decode_run() {
         count = media.count;
         gen = media_gen_.load();
         // Earliest of the next few frames not already decoded for this media.
-        for (size_t ahead = 0; ahead < kDecBufs && !have; ++ahead) {
+        for (size_t ahead = 0; ahead < kDecAhead && !have; ++ahead) {
           const size_t t = (index + ahead) % media.count;
           bool decoded = false;
           for (int b = 0; b < kDecBufs; ++b) {
@@ -548,26 +570,68 @@ void ShowPlayer::decode_run() {
           break;
         }
       }
+      cur = media_gen_.load();
+      // The held cue's first frames decode ahead under the held generation
+      // while the current clip plays, so "go" presents them with no stall.
+      const uint32_t hg = held_gen_.load();
+      if (!have && held_clip_.motion && held_clip_.bytes != nullptr && held_clip_.count > 0 &&
+          dec_scratch_ != nullptr && hg != 0) {
+        for (size_t t = 0; t < kHeldAhead && t < held_clip_.count; ++t) {
+          bool decoded = false;
+          for (int b = 0; b < kDecBufs; ++b) {
+            if (dec_gen_[b].load() == hg && dec_index_[b].load() == int(t)) decoded = true;
+          }
+          if (decoded) continue;
+          const ShowFrame& frame = held_clip_.frames[t];
+          if (frame.length <= kDecScratch) {
+            memcpy(dec_scratch_, held_clip_.bytes + frame.offset, frame.length);
+            target = t;
+            length = frame.length;
+            gen = hg;
+            have = true;
+            held_job = true;
+          }
+          break;
+        }
+      }
       xSemaphoreGive(media_mux_);
     }
     if (!have) {
       vTaskDelay(pdMS_TO_TICKS(10));
       continue;
     }
-    // Write into a buffer that isn't holding a frame the display still needs.
+    // Write into a buffer that isn't holding a frame either live generation
+    // still needs. A never-committed slot (generation 0) is always free.
+    const uint32_t hg = held_gen_.load();
     int w = -1;
     for (int b = 0; b < kDecBufs && w < 0; ++b) {
-      if (dec_gen_[b].load() != gen) w = b;  // stale media: free to reuse
+      const uint32_t slot_gen = dec_gen_[b].load();
+      if (slot_gen == 0 || (slot_gen != cur && slot_gen != hg)) w = b;  // stale media: free to reuse
     }
-    for (int b = 0; b < kDecBufs && w < 0; ++b) {
-      const int held = dec_index_[b].load();
-      bool wanted = false;
-      for (size_t a = 0; a < kDecBufs; ++a) {
-        if (held == int((index + a) % count)) wanted = true;
+    if (w < 0 && count > 0) {
+      for (int b = 0; b < kDecBufs && w < 0; ++b) {
+        if (dec_gen_[b].load() != cur) continue;
+        const int slot = dec_index_[b].load();
+        bool wanted = false;
+        for (size_t a = 0; a < kDecAhead; ++a) {
+          if (slot == int((index + a) % count)) wanted = true;
+        }
+        if (!wanted) w = b;  // behind the playhead: free to reuse
       }
-      if (!wanted) w = b;  // behind the playhead: free to reuse
     }
-    if (w < 0) w = dec_w_.fetch_add(1) % kDecBufs;
+    if (w < 0) {
+      if (held_job) {
+        // Every slot is a held frame or one the playing clip wants: a
+        // pre-decode must not evict the live window. Retry next round.
+        vTaskDelay(pdMS_TO_TICKS(10));
+        continue;
+      }
+      for (int tries = 0; tries < kDecBufs && w < 0; ++tries) {
+        const int candidate = dec_w_.fetch_add(1) % kDecBufs;
+        if (dec_gen_[candidate].load() != hg) w = candidate;
+      }
+      if (w < 0) w = dec_w_.fetch_add(1) % kDecBufs;
+    }
     bool ok = false;
     bool attempted = false;
     const uint32_t decode_started = millis();
@@ -575,7 +639,7 @@ void ShowPlayer::decode_run() {
     // Re-check under the lock: cancel() bumps the generation and drains this
     // lock, so a frame copied before the bump must skip the decoder here —
     // taking the lock itself is not proof the media is still current.
-    if (media_gen_.load() == gen && dec_pixels_[w] != nullptr) {
+    if ((media_gen_.load() == gen || held_gen_.load() == gen) && dec_pixels_[w] != nullptr) {
       attempted = true;
       ok = jpg2rgb565(dec_scratch_, length, reinterpret_cast<uint8_t*>(dec_pixels_[w]), JPG_SCALE_NONE);
     }

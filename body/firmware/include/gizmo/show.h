@@ -58,6 +58,7 @@ class ShowPlayer {
   void ack(uint32_t cue, bool motion, bool ok);
   size_t motion_index(size_t count) const;
   void arm_clip();
+  uint32_t next_gen() { return ++gen_counter_; }
   void note_presented(size_t index, size_t count);
   void report_perf(const char* reason);
   QueueHandle_t jobs_ = nullptr, held_jobs_ = nullptr, results_ = nullptr;
@@ -67,14 +68,22 @@ class ShowPlayer {
   // copies the next frames' JPEG bytes under media_mux_, decodes them into
   // these SPIRAM buffers, and render() becomes a memcpy. Buffers tagged with
   // the media generation they came from; a stale generation is skipped.
-  // Six slots is ~750 ms at 8 fps, enough to absorb a TLS burst on core 0
-  // without the playhead running dry.
-  static constexpr int kDecBufs = 6;
+  // kDecAhead slots look ahead for the playing clip — ~750 ms at 8 fps, enough
+  // to absorb a TLS burst on core 0 without the playhead running dry. The rest
+  // pre-decode the held cue's first frames so "go" presents them at once.
+  static constexpr int kDecBufs = 8;
+  static constexpr size_t kDecAhead = 6;
+  static constexpr size_t kHeldAhead = 2;
   static constexpr size_t kDecScratch = 40 * 1024;
   static constexpr size_t kDecPixels = kShowWidth * kShowHeight * sizeof(uint16_t);
   uint16_t* dec_pixels_[kDecBufs] = {};
   uint8_t* dec_scratch_ = nullptr;
+  // Ring slots are tagged by generation. One counter serves the playing clip
+  // and the held clip so "go" can adopt the held generation as media_gen_ and
+  // keep the pre-decoded frames presentable. held_gen_ == 0 means no held clip.
+  std::atomic<uint32_t> gen_counter_{0};
   std::atomic<uint32_t> media_gen_{0};
+  std::atomic<uint32_t> held_gen_{0};
   std::atomic<int> dec_index_[kDecBufs];
   std::atomic<uint32_t> dec_gen_[kDecBufs];
   // Set when the decoder failed on this frame: render skips it (repeats the
