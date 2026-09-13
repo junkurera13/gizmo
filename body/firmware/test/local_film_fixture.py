@@ -474,6 +474,7 @@ def create_app(fixture: Fixture) -> FastAPI:
                 "label": fixture.label,
                 "seconds": fixture.seconds,
                 "fps": fixture.fps,
+                "body_protocol": {"version": 1, "websocket_path": "/ws"},
             }
         )
 
@@ -564,7 +565,9 @@ def check_app(fixture: Fixture) -> None:
     segment = fixture.segments[0]
     base = f"/shows/{device}/{segment.show_id}"
     with TestClient(create_app(fixture)) as client:
-        assert client.get("/health").status_code == 200
+        health = client.get("/health")
+        assert health.status_code == 200
+        assert health.json()["body_protocol"]["version"] == 1
         still = client.get(base + ".jpg", params={"w": WIDTH, "h": HEIGHT})
         assert still.status_code == 200 and still.headers["content-type"] == "image/jpeg"
         motion = client.get(
