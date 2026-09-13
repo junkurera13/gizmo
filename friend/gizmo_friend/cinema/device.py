@@ -39,10 +39,6 @@ AUDIO_PACKET_BYTES = 11_520
 # second covers the measured 0.7-0.8 second packet stalls. A longer burst made
 # friend-net preempt the JPEG decoder enough to repeat several visible frames.
 DEVICE_AUDIO_LEAD_SECONDS = 0.96
-# The device is still draining its PCM ring when the server's send clock
-# reaches the end of narration (measured 0.26-0.53 s on hardware). Keep the
-# last picture up that long before "ended" clears the glass.
-DEVICE_END_HOLD_SECONDS = 0.8
 DEVICE_WIDTH = 320
 DEVICE_HEIGHT = 240
 CAPTION_BAND_HEIGHT = 24
@@ -320,10 +316,6 @@ class DeviceFilmPlayer:
 
         pending = None
         position = 0.0
-        loop = asyncio.get_running_loop()
-        film_clock = None  # loop.time() when the first go is sent
-        scheduled = 0.0  # film seconds whose audio was scheduled before this segment
-        presend = 0  # bytes of this segment's pcm already sent during the prior cue
         try:
             index = 0
             item = await preload(index)
@@ -346,20 +338,12 @@ class DeviceFilmPlayer:
                 position += len(segment.pcm) / PCM_BYTES_PER_SECOND
                 if self.on_talking:
                     await self.on_talking()
-                if film_clock is None:
-                    film_clock = loop.time()
-                seg_start = film_clock + scheduled
+                started = asyncio.get_running_loop().time()
 
-                def due(offset):
-                    # A packet is put on the wire LEAD ahead of when the device
-                    # should play it, so the film clock runs continuously across
-                    # cue boundaries instead of restarting at each go.
-                    return (
-                        seg_start
-                        + offset / PCM_BYTES_PER_SECOND
-                        - DEVICE_AUDIO_LEAD_SECONDS
-                    )
-
+                # WebSocket events are ordered. Put a narration cushion into
+                # the device's existing PCM rings before HOLD starts the next
+                # HTTPS download; previously HOLD went first, so TLS bursts
+                # could interrupt the very first audio packets of every cue.
                 prefill_packets = math.ceil(
                     DEVICE_AUDIO_LEAD_SECONDS
                     * PCM_BYTES_PER_SECOND
@@ -368,27 +352,25 @@ class DeviceFilmPlayer:
                 prefill_end = min(
                     len(segment.pcm), prefill_packets * AUDIO_PACKET_BYTES
                 )
-                if presend == 0:
-                    # WebSocket events are ordered. Put a narration cushion into
-                    # the device's existing PCM rings before HOLD starts the next
-                    # HTTPS download; previously HOLD went first, so TLS bursts
-                    # could interrupt the very first audio packets of every cue.
-                    for offset in range(0, prefill_end, AUDIO_PACKET_BYTES):
-                        await self.send(
-                            {
-                                "type": "audio",
-                                "pcm": base64.b64encode(
-                                    segment.pcm[offset : offset + AUDIO_PACKET_BYTES]
-                                ).decode(),
-                            }
-                        )
-                    presend = prefill_end
+                for offset in range(0, prefill_end, AUDIO_PACKET_BYTES):
+                    await self.send(
+                        {
+                            "type": "audio",
+                            "pcm": base64.b64encode(
+                                segment.pcm[offset : offset + AUDIO_PACKET_BYTES]
+                            ).decode(),
+                        }
+                    )
 
                 # The next held cue downloads while the protected narration
                 # lead drains. Capture itself has continued in parallel.
                 pending = asyncio.create_task(preload(index + 1))
-                for offset in range(presend, len(segment.pcm), AUDIO_PACKET_BYTES):
-                    wait = due(offset) - loop.time()
+                for offset in range(prefill_end, len(segment.pcm), AUDIO_PACKET_BYTES):
+                    wait = (
+                        offset / PCM_BYTES_PER_SECOND
+                        - (asyncio.get_running_loop().time() - started)
+                        - DEVICE_AUDIO_LEAD_SECONDS
+                    )
                     if wait > 0:
                         await asyncio.sleep(wait)
                     await self.send(
@@ -399,62 +381,17 @@ class DeviceFilmPlayer:
                             ).decode(),
                         }
                     )
-
-                # Pre-send the next cue's narration lead at its natural due
-                # times during this cue's tail, so go never lands a burst on
-                # the device (a burst starves the MJPEG decoder on core 0).
-                next_presend = 0
-                next_start = seg_start + len(segment.pcm) / PCM_BYTES_PER_SECOND
-                done, _ = await asyncio.wait(
-                    {pending},
-                    timeout=max(
-                        0.0,
-                        next_start - DEVICE_AUDIO_LEAD_SECONDS - loop.time(),
-                    ),
-                )
-                if (
-                    pending in done
-                    and not pending.cancelled()
-                    and pending.exception() is None
-                    and pending.result() is not None
-                ):
-                    next_segment = pending.result()[0]
-                    next_prefill_end = min(
-                        len(next_segment.pcm),
-                        prefill_packets * AUDIO_PACKET_BYTES,
+                await asyncio.sleep(
+                    max(
+                        0,
+                        len(segment.pcm) / PCM_BYTES_PER_SECOND
+                        - (asyncio.get_running_loop().time() - started),
                     )
-                    # The go for the next cue still waits on its glass-ready
-                    # ack, but this lead is already on the wire: a late ack lets
-                    # audio run ahead of the picture by at most
-                    # DEVICE_AUDIO_LEAD_SECONDS. Accepted — never burst at go.
-                    for offset in range(0, next_prefill_end, AUDIO_PACKET_BYTES):
-                        wait = (
-                            next_start
-                            + offset / PCM_BYTES_PER_SECOND
-                            - DEVICE_AUDIO_LEAD_SECONDS
-                            - loop.time()
-                        )
-                        if wait > 0:
-                            await asyncio.sleep(wait)
-                        await self.send(
-                            {
-                                "type": "audio",
-                                "pcm": base64.b64encode(
-                                    next_segment.pcm[
-                                        offset : offset + AUDIO_PACKET_BYTES
-                                    ]
-                                ).decode(),
-                            }
-                        )
-                    next_presend = next_prefill_end
-                await asyncio.sleep(max(0, next_start - loop.time()))
-                scheduled += len(segment.pcm) / PCM_BYTES_PER_SECOND
+                )
                 item = await pending
                 pending = None
-                presend = next_presend
                 index += 1
             if revision == self.cinema.revision:
-                await asyncio.sleep(DEVICE_END_HOLD_SECONDS)
                 await self.cinema.finish(revision)
         except asyncio.CancelledError:
             raise

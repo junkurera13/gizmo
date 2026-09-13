@@ -20,7 +20,7 @@ class ShowPlayer {
   void cancel(bool dismiss = true);
   void update();
   bool viewing() const { return request_.viewing; }
-  bool available() const { return still_.bytes != nullptr || clip_.bytes != nullptr; }
+  bool available() const { return still_.bytes != nullptr; }
   bool motion_playing() const { return clip_.bytes != nullptr; }
   bool render(uint16_t* pixels, bool force = false);
   // Decodes under the chip-global gizmo::jpeg_lock (esp_jpg_decode is not
@@ -58,7 +58,6 @@ class ShowPlayer {
   void ack(uint32_t cue, bool motion, bool ok);
   size_t motion_index(size_t count) const;
   void arm_clip();
-  uint32_t next_gen() { return ++gen_counter_; }
   void note_presented(size_t index, size_t count);
   void report_perf(const char* reason);
   QueueHandle_t jobs_ = nullptr, held_jobs_ = nullptr, results_ = nullptr;
@@ -68,31 +67,14 @@ class ShowPlayer {
   // copies the next frames' JPEG bytes under media_mux_, decodes them into
   // these SPIRAM buffers, and render() becomes a memcpy. Buffers tagged with
   // the media generation they came from; a stale generation is skipped.
-  // kDecAhead slots look ahead for the playing clip — ~750 ms at 8 fps, enough
-  // to absorb a TLS burst on core 0 without the playhead running dry. The rest
-  // pre-decode the held cue's first frames so "go" presents them at once; a
-  // held clip lands seconds before its go, so a full second lookahead can be
-  // waiting in the ring at the swap instead of the old single frame.
-  static constexpr int kDecBufs = 12;
-  static constexpr size_t kDecAhead = 6;
-  static constexpr size_t kHeldAhead = 6;
+  // Six slots is ~750 ms at 8 fps, enough to absorb a TLS burst on core 0
+  // without the playhead running dry.
+  static constexpr int kDecBufs = 6;
   static constexpr size_t kDecScratch = 40 * 1024;
   static constexpr size_t kDecPixels = kShowWidth * kShowHeight * sizeof(uint16_t);
-  static constexpr uint32_t kStallLogMs = 250;
   uint16_t* dec_pixels_[kDecBufs] = {};
   uint8_t* dec_scratch_ = nullptr;
-  // Stall forensics: what the decode and download tasks were doing when a
-  // present gap exceeded kStallLogMs. Written by those tasks, read by
-  // note_presented() on the body loop.
-  std::atomic<uint8_t> downloading_{0};  // 0 = idle, 1 = still, 2 = motion
-  std::atomic<uint32_t> dec_last_commit_ms_{0};
-  std::atomic<bool> dec_in_flight_{false};
-  // Ring slots are tagged by generation. One counter serves the playing clip
-  // and the held clip so "go" can adopt the held generation as media_gen_ and
-  // keep the pre-decoded frames presentable. held_gen_ == 0 means no held clip.
-  std::atomic<uint32_t> gen_counter_{0};
   std::atomic<uint32_t> media_gen_{0};
-  std::atomic<uint32_t> held_gen_{0};
   std::atomic<int> dec_index_[kDecBufs];
   std::atomic<uint32_t> dec_gen_[kDecBufs];
   // Set when the decoder failed on this frame: render skips it (repeats the
@@ -119,7 +101,6 @@ class ShowPlayer {
   uint32_t perf_presented_ = 0;
   uint32_t perf_dropped_ = 0;
   uint32_t perf_repeats_ = 0;
-  uint32_t perf_stalls_ = 0;
   int perf_missed_index_ = -1;
   std::atomic<uint32_t> perf_decode_failed_{0};
   std::atomic<uint32_t> perf_decode_max_ms_{0};

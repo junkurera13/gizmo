@@ -1,6 +1,4 @@
 import asyncio
-import base64
-import math
 import tempfile
 import unittest
 from pathlib import Path
@@ -8,13 +6,7 @@ from types import SimpleNamespace
 from unittest.mock import AsyncMock, Mock, patch
 
 from fastapi.testclient import TestClient
-from gizmo_friend.cinema.device import (
-    AUDIO_PACKET_BYTES,
-    DEVICE_AUDIO_LEAD_SECONDS,
-    DEVICE_END_HOLD_SECONDS,
-    PCM_BYTES_PER_SECOND,
-    DeviceFilmPlayer,
-)
+from gizmo_friend.cinema.device import DeviceFilmPlayer
 from gizmo_friend.cinema.plan import FilmBeat, FilmPlan, PreparedFilm
 from gizmo_friend.cinema.runtime import CinemaSession
 from gizmo_friend.server import app_factory
@@ -101,8 +93,7 @@ class DevicePlayerTests(unittest.IsolatedAsyncioTestCase):
             await queue.put(None)
 
         player.capture = capture
-        with patch("gizmo_friend.cinema.device.DEVICE_END_HOLD_SECONDS", 0):
-            await player.play(2)
+        await player.play(2)
 
         first_go = next(
             index
@@ -172,204 +163,6 @@ class DevicePlayerTests(unittest.IsolatedAsyncioTestCase):
         cinema.mark_presented.assert_not_called()
         cinema.interrupt.assert_awaited_once()
         player.on_failed.assert_awaited_once()
-
-    async def test_last_picture_holds_for_device_drain_before_finish(self):
-        track = object()
-        stream = SimpleNamespace(
-            video_ready=None,
-            closed=False,
-            tracks={"video": track},
-            relay=SimpleNamespace(subscribe=Mock(return_value=track)),
-        )
-        events = []
-        cinema = SimpleNamespace(
-            stream=stream,
-            prepared=SimpleNamespace(
-                plan=SimpleNamespace(title="Ship"),
-                timings=[],
-            ),
-            revision=2,
-            mark_presented=Mock(),
-            interrupt=AsyncMock(),
-            finish=AsyncMock(side_effect=lambda _revision: events.append("finish")),
-        )
-        acks = {}
-
-        async def send(event):
-            if event.get("hold"):
-                acks[(event["cue"], "motion")].set_result(True)
-
-        player = DeviceFilmPlayer(cinema, None, send, acks)
-        segment = SimpleNamespace(
-            show=SimpleNamespace(still_url="/still.jpg", frames_url="/film.mjpeg"),
-            pcm=b"\0\0",
-        )
-
-        async def capture(_track, queue, _prepared, _revision):
-            await queue.put(segment)
-            await queue.put(None)
-
-        player.capture = capture
-        with patch(
-            "gizmo_friend.cinema.device.asyncio.sleep",
-            side_effect=lambda seconds: events.append(seconds),
-        ):
-            await player.play(2)
-
-        self.assertEqual(events[-2:], [DEVICE_END_HOLD_SECONDS, "finish"])
-        self.assertEqual(events.count(DEVICE_END_HOLD_SECONDS), 1)
-        cinema.finish.assert_awaited_once_with(2)
-
-    async def test_next_cue_audio_lead_is_paced_before_its_go(self):
-        track = object()
-        stream = SimpleNamespace(
-            video_ready=None,
-            closed=False,
-            tracks={"video": track},
-            relay=SimpleNamespace(subscribe=Mock(return_value=track)),
-        )
-        cinema = SimpleNamespace(
-            stream=stream,
-            prepared=SimpleNamespace(
-                plan=SimpleNamespace(title="Ship"),
-                timings=[],
-            ),
-            revision=2,
-            mark_presented=Mock(),
-            interrupt=AsyncMock(),
-            finish=AsyncMock(),
-        )
-        acks = {}
-        events = []
-
-        async def send(event):
-            events.append(event)
-            if event.get("hold"):
-                acks[(event["cue"], "motion")].set_result(True)
-
-        player = DeviceFilmPlayer(cinema, None, send, acks)
-        seg1 = SimpleNamespace(
-            show=SimpleNamespace(still_url="/still.jpg", frames_url="/film.mjpeg"),
-            pcm=b"\x01" * (AUDIO_PACKET_BYTES * 8),
-        )
-        seg2 = SimpleNamespace(
-            show=SimpleNamespace(still_url="/still.jpg", frames_url="/film.mjpeg"),
-            pcm=b"\x02" * (AUDIO_PACKET_BYTES * 8),
-        )
-
-        async def capture(_track, queue, _prepared, _revision):
-            await queue.put(seg1)
-            await queue.put(seg2)
-            await queue.put(None)
-
-        player.capture = capture
-        with patch(
-            "gizmo_friend.cinema.device.asyncio.sleep",
-            side_effect=lambda _seconds: None,
-        ):
-            await player.play(2)
-
-        def audio_pcm(event):
-            return base64.b64decode(event["pcm"])
-
-        audio = [
-            (index, audio_pcm(event))
-            for index, event in enumerate(events)
-            if event.get("type") == "audio"
-        ]
-        go_202 = next(
-            index
-            for index, event in enumerate(events)
-            if event.get("go") and event["cue"] == 202
-        )
-        hold_202 = next(
-            index
-            for index, event in enumerate(events)
-            if event.get("hold") and event["cue"] == 202
-        )
-        first_seg2 = next(index for index, pcm in audio if pcm[:1] == b"\x02")
-        # The next cue's narration lead is pre-sent during this cue's tail, so
-        # its go lands with no burst for the device decoder to fight.
-        self.assertLess(first_seg2, go_202)
-        self.assertLess(hold_202, first_seg2)
-        joined = b"".join(pcm for _, pcm in audio)
-        self.assertEqual(joined, seg1.pcm + seg2.pcm)
-        lead_packets = math.ceil(
-            DEVICE_AUDIO_LEAD_SECONDS * PCM_BYTES_PER_SECOND / AUDIO_PACKET_BYTES
-        )
-        pre_sent = [pcm for index, pcm in audio if index < go_202 and pcm[:1] == b"\x02"]
-        self.assertEqual(len(pre_sent), lead_packets)
-        after = [pcm for index, pcm in audio if index > go_202]
-        self.assertEqual(after[0][:1], b"\x02")  # continues mid-segment, no re-burst
-        self.assertEqual(len(after), 8 - lead_packets)
-
-    async def test_pre_send_falls_back_to_burst_when_next_segment_is_late(self):
-        track = object()
-        stream = SimpleNamespace(
-            video_ready=None,
-            closed=False,
-            tracks={"video": track},
-            relay=SimpleNamespace(subscribe=Mock(return_value=track)),
-        )
-        cinema = SimpleNamespace(
-            stream=stream,
-            prepared=SimpleNamespace(
-                plan=SimpleNamespace(title="Ship"),
-                timings=[],
-            ),
-            revision=2,
-            mark_presented=Mock(),
-            interrupt=AsyncMock(),
-            finish=AsyncMock(),
-        )
-        acks = {}
-        events = []
-        release = asyncio.Event()
-
-        async def send(event):
-            events.append(event)
-            if event.get("hold"):
-                acks[(event["cue"], "motion")].set_result(True)
-            elif event.get("go") and event["cue"] == 201:
-                # The next segment exists only after the first go is already
-                # on the wire — too late for a paced pre-send.
-                asyncio.get_running_loop().call_later(0.05, release.set)
-
-        player = DeviceFilmPlayer(cinema, None, send, acks)
-        seg1 = SimpleNamespace(
-            show=SimpleNamespace(still_url="/still.jpg", frames_url="/film.mjpeg"),
-            pcm=b"\x01" * AUDIO_PACKET_BYTES,
-        )
-        seg2 = SimpleNamespace(
-            show=SimpleNamespace(still_url="/still.jpg", frames_url="/film.mjpeg"),
-            pcm=b"\x02" * AUDIO_PACKET_BYTES,
-        )
-
-        async def capture(_track, queue, _prepared, _revision):
-            await queue.put(seg1)
-            await release.wait()
-            await queue.put(seg2)
-            await queue.put(None)
-
-        player.capture = capture
-        with patch("gizmo_friend.cinema.device.DEVICE_END_HOLD_SECONDS", 0):
-            await player.play(2)
-
-        audio = [
-            (index, base64.b64decode(event["pcm"]))
-            for index, event in enumerate(events)
-            if event.get("type") == "audio"
-        ]
-        go_202 = next(
-            index
-            for index, event in enumerate(events)
-            if event.get("go") and event["cue"] == 202
-        )
-        joined = b"".join(pcm for _, pcm in audio)
-        self.assertEqual(joined, seg1.pcm + seg2.pcm)
-        first_seg2 = next(index for index, pcm in audio if pcm[:1] == b"\x02")
-        self.assertGreater(first_seg2, go_202)  # nothing could be pre-sent
-        cinema.finish.assert_awaited_once_with(2)
 
 
 class RuntimeTests(unittest.IsolatedAsyncioTestCase):
