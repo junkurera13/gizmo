@@ -6,9 +6,10 @@
 #include "gizmo/show_format.h"
 
 namespace gizmo {
-// Body loop owns playback and the display. Download sits above decode-ahead
-// so the next cue's file arrives during the current segment. friend-net stays
-// higher so spoken PCM still wins the core.
+// Body loop owns playback and the display. Download and decode-ahead share the
+// media core, but the next download waits for a decoded-frame cushion before
+// competing with the clip on screen. friend-net stays higher so spoken PCM
+// still wins the core.
 //
 // Two slots: the picture on the glass, and one held picture for a story cue
 // that is fetched and indexed ahead of its words. "go" swaps the held slot in
@@ -48,6 +49,8 @@ class ShowPlayer {
   void run();
   static void decode_task(void* context);
   void decode_run();
+  size_t decoded_headroom(bool& active);
+  void wait_for_decode_headroom(const Job& job);
   bool download(const Job& job, bool motion, Media& media);
   void publish(Media& media);
   void release(Media& media);
@@ -67,9 +70,11 @@ class ShowPlayer {
   // copies the next frames' JPEG bytes under media_mux_, decodes them into
   // these SPIRAM buffers, and render() becomes a memcpy. Buffers tagged with
   // the media generation they came from; a stale generation is skipped.
-  // Six slots is ~500 ms at 12 fps, enough to absorb a TLS burst on core 0
-  // without the playhead running dry.
-  static constexpr int kDecBufs = 6;
+  // Ten slots is ~830 ms at 12 fps. Eight must be ready before a look-ahead
+  // download competes for this core, which absorbs the measured ~900 ms local
+  // cue transfer while decoding continues at reduced throughput.
+  static constexpr int kDecBufs = 10;
+  static constexpr size_t kDownloadHeadroom = 8;
   static constexpr size_t kDecScratch = 40 * 1024;
   static constexpr size_t kDecPixels = kShowWidth * kShowHeight * sizeof(uint16_t);
   uint16_t* dec_pixels_[kDecBufs] = {};

@@ -80,6 +80,13 @@ int main(int argc,char** argv) {
   assert(player.drawn_==0);
   mock_now+=84;assert(wait_render(player,pixels));assert(player.drawn_==1);
   mock_now+=84;assert(wait_render(player,pixels));assert(player.drawn_==0);
+  bool motion_active=false;
+  size_t headroom=0;
+  for(int i=0;i<100&&headroom<2;++i){
+    headroom=player.decoded_headroom(motion_active);
+    std::this_thread::sleep_for(std::chrono::milliseconds(2));
+  }
+  assert(motion_active&&headroom==2); // the download gate sees a contiguous decoded cushion
   // A failed frame is marked bad and skipped: render repeats the previous
   // frame instead of decoding inline, and the clip is retained. Republishing
   // bumps the generation, so the decode task re-decodes and the injected

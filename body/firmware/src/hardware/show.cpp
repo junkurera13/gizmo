@@ -486,6 +486,7 @@ void ShowPlayer::run() {
     // A film cue is time-critical (its segment plays next); a conversational
     // picture can wait. Held first so a slow ambient still never delays a cue.
     if (xQueueReceive(held_jobs_, &job, 0) == pdTRUE || xQueueReceive(jobs_, &job, 0) == pdTRUE) {
+      if (job.held) wait_for_decode_headroom(job);
       Media media;
       bool still_ok = !job.still;
       if (job.still) {
@@ -509,6 +510,54 @@ void ShowPlayer::run() {
     }
     vTaskDelay(pdMS_TO_TICKS(5));
   }
+}
+size_t ShowPlayer::decoded_headroom(bool& active) {
+  active = false;
+  size_t index = 0;
+  size_t count = 0;
+  uint32_t gen = 0;
+  if (media_mux_ != nullptr && xSemaphoreTake(media_mux_, portMAX_DELAY) == pdTRUE) {
+    if (clip_.motion && clip_.bytes != nullptr && clip_.count > 0) {
+      active = true;
+      index = motion_index(clip_.count);
+      count = clip_.count;
+      gen = media_gen_.load();
+    }
+    xSemaphoreGive(media_mux_);
+  }
+  if (!active) return 0;
+
+  size_t ready = 0;
+  const size_t wanted = min(static_cast<size_t>(kDecBufs), count);
+  for (size_t ahead = 0; ahead < wanted; ++ahead) {
+    const int target = static_cast<int>((index + ahead) % count);
+    bool found = false;
+    for (int b = 0; b < kDecBufs; ++b) {
+      if (dec_gen_[b].load() == gen && dec_index_[b].load() == target && !dec_bad_[b].load()) {
+        found = true;
+        break;
+      }
+    }
+    if (!found) break;
+    ++ready;
+  }
+  return ready;
+}
+void ShowPlayer::wait_for_decode_headroom(const Job& job) {
+  bool active = false;
+  size_t ready = decoded_headroom(active);
+  if (!active) return;  // First cue: there is no film on screen to protect yet.
+
+  const uint32_t started = millis();
+  while (ready < kDownloadHeadroom && job.revision == held_revision_.load() &&
+         uint32_t(millis() - started) < 1200) {
+    vTaskDelay(pdMS_TO_TICKS(5));
+    ready = decoded_headroom(active);
+    if (!active) break;
+  }
+  Serial.printf("show: download gate cue=%lu headroom=%u wait_ms=%lu\n",
+                static_cast<unsigned long>(job.request.cue), unsigned(ready),
+                static_cast<unsigned long>(millis() - started));
 }
 void ShowPlayer::decode_task(void* context) { static_cast<ShowPlayer*>(context)->decode_run(); }
 void ShowPlayer::decode_run() {
