@@ -44,8 +44,10 @@ logger = logging.getLogger(__name__)
 STATIC = Path(__file__).resolve().parents[1] / "static"
 BOOT_SECONDS = 3.8
 # The follow-up question lands over the still-playing first film; its film
-# rolls this long after the ask, with no thinking state in between.
-FOLLOWUP_GAP_SECONDS = 5.0
+# rolls this long after the ask begins — question length plus a beat — with no
+# thinking state in between. Pressing at ~22s cuts to the follow-up exactly as
+# the first film ends.
+FOLLOWUP_GAP_SECONDS = 4.7
 
 
 @dataclass(frozen=True)
@@ -405,7 +407,16 @@ class DeviceDemo:
                         self.recording = True
                         self.mic.clear()
                         if self.playing_step == 0:
-                            # The question rides over the still-playing film.
+                            # The question rides over the still-playing film;
+                            # the follow-up rolls a fixed beat after the ask
+                            # starts, so his timing matches the emulator.
+                            if (
+                                self.followup_task is None
+                                or self.followup_task.done()
+                            ):
+                                self.followup_task = asyncio.create_task(
+                                    self._followup()
+                                )
                             continue
                         await self._cancel_all()
                         # An aborted take restarts the sequence from film one.
@@ -420,17 +431,10 @@ class DeviceDemo:
                         self.recording = False
                         self.mic.clear()
                         if self.playing_step == 0:
-                            if (
-                                self.followup_task is None
-                                or self.followup_task.done()
-                            ):
-                                self.followup_task = asyncio.create_task(
-                                    self._followup()
-                                )
-                        else:
-                            self.step_task = asyncio.create_task(
-                                self._run_step(self.step_index)
-                            )
+                            continue
+                        self.step_task = asyncio.create_task(
+                            self._run_step(self.step_index)
+                        )
                 elif kind in {"audio", "mic"} and self.recording:
                     raw = message.get("pcm", "")
                     if isinstance(raw, str) and len(raw) < 100_000:
