@@ -31,7 +31,11 @@ FILM_NARRATION_STYLE = (
 )
 
 STYLE = f"""Original educational motion design. {ART_STYLE}
-Purposeful movement, smooth revealing transitions and close-up cutaways.
+This film will be sampled at eight frames per second on a tiny screen. Compose
+for that cadence: use a locked camera, slow deliberate movement, bold simple
+shapes and large flat color regions. One main action changes at a time. Avoid
+fast pans, zooms, wave shimmer, flickering particles, fine texture, rapid cuts
+or whole-frame motion. Purposeful movement and clear revealing cutaways.
 The first frame is already a clean, fully formed establishing shot: no fade-in,
 dissolve, visual noise, blocky materialization or object morphing into existence.
 Show cause and effect,

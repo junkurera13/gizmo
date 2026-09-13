@@ -32,6 +32,13 @@ from gizmo_friend.settings import DeviceSettings
 
 FPS = 8
 SEGMENT_SECONDS = 5
+PCM_BYTES_PER_SECOND = 24_000 * 2
+AUDIO_PACKET_BYTES = 11_520
+# Prime enough narration before asking the ESP32 to begin the next HTTPS cue
+# fetch. The physical device has a three-second live PCM ring; 1.5 seconds
+# covers the measured sub-second packet stalls without making a 250 KiB cue
+# wait so long that it misses the next five-second boundary.
+DEVICE_AUDIO_LEAD_SECONDS = 1.5
 DEVICE_WIDTH = 320
 DEVICE_HEIGHT = 240
 CAPTION_BAND_HEIGHT = 24
@@ -328,17 +335,41 @@ class DeviceFilmPlayer:
                 self.cinema.mark_presented(revision)
                 if self.on_presenting:
                     await self.on_presenting()
-                position += len(segment.pcm) / 48000
-                # The next held cue downloads during this segment's narration.
-                pending = asyncio.create_task(preload(index + 1))
+                position += len(segment.pcm) / PCM_BYTES_PER_SECOND
                 if self.on_talking:
                     await self.on_talking()
                 started = asyncio.get_running_loop().time()
-                for offset in range(0, len(segment.pcm), 11520):
+
+                # WebSocket events are ordered. Put a narration cushion into
+                # the device's existing PCM rings before HOLD starts the next
+                # HTTPS download; previously HOLD went first, so TLS bursts
+                # could interrupt the very first audio packets of every cue.
+                prefill_packets = math.ceil(
+                    DEVICE_AUDIO_LEAD_SECONDS
+                    * PCM_BYTES_PER_SECOND
+                    / AUDIO_PACKET_BYTES
+                )
+                prefill_end = min(
+                    len(segment.pcm), prefill_packets * AUDIO_PACKET_BYTES
+                )
+                for offset in range(0, prefill_end, AUDIO_PACKET_BYTES):
+                    await self.send(
+                        {
+                            "type": "audio",
+                            "pcm": base64.b64encode(
+                                segment.pcm[offset : offset + AUDIO_PACKET_BYTES]
+                            ).decode(),
+                        }
+                    )
+
+                # The next held cue downloads while the protected narration
+                # lead drains. Capture itself has continued in parallel.
+                pending = asyncio.create_task(preload(index + 1))
+                for offset in range(prefill_end, len(segment.pcm), AUDIO_PACKET_BYTES):
                     wait = (
-                        offset / 48000
+                        offset / PCM_BYTES_PER_SECOND
                         - (asyncio.get_running_loop().time() - started)
-                        - 0.48
+                        - DEVICE_AUDIO_LEAD_SECONDS
                     )
                     if wait > 0:
                         await asyncio.sleep(wait)
@@ -346,14 +377,14 @@ class DeviceFilmPlayer:
                         {
                             "type": "audio",
                             "pcm": base64.b64encode(
-                                segment.pcm[offset : offset + 11520]
+                                segment.pcm[offset : offset + AUDIO_PACKET_BYTES]
                             ).decode(),
                         }
                     )
                 await asyncio.sleep(
                     max(
                         0,
-                        len(segment.pcm) / 48000
+                        len(segment.pcm) / PCM_BYTES_PER_SECOND
                         - (asyncio.get_running_loop().time() - started),
                     )
                 )

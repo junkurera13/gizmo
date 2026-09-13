@@ -54,6 +54,66 @@ class FakeStream:
 
 
 class DevicePlayerTests(unittest.IsolatedAsyncioTestCase):
+    async def test_narration_prefill_precedes_next_cue_download(self):
+        track = object()
+        stream = SimpleNamespace(
+            video_ready=None,
+            closed=False,
+            tracks={"video": track},
+            relay=SimpleNamespace(subscribe=Mock(return_value=track)),
+        )
+        cinema = SimpleNamespace(
+            stream=stream,
+            prepared=SimpleNamespace(
+                plan=SimpleNamespace(title="Ship"),
+                timings=[],
+            ),
+            revision=2,
+            mark_presented=Mock(),
+            interrupt=AsyncMock(),
+            finish=AsyncMock(),
+        )
+        acks = {}
+        events = []
+
+        async def send(event):
+            events.append(event)
+            if event.get("hold"):
+                acks[(event["cue"], "motion")].set_result(True)
+
+        player = DeviceFilmPlayer(cinema, None, send, acks)
+        segment = SimpleNamespace(
+            show=SimpleNamespace(still_url="/still.jpg", frames_url="/film.mjpeg"),
+            pcm=b"\0\0",
+        )
+
+        async def capture(_track, queue, _prepared, _revision):
+            await queue.put(segment)
+            await queue.put(segment)
+            await queue.put(None)
+
+        player.capture = capture
+        await player.play(2)
+
+        first_go = next(
+            index
+            for index, event in enumerate(events)
+            if event.get("go") and event["cue"] == 201
+        )
+        first_audio = next(
+            index
+            for index, event in enumerate(events)
+            if event.get("type") == "audio"
+        )
+        second_hold = next(
+            index
+            for index, event in enumerate(events)
+            if event.get("hold") and event["cue"] == 202
+        )
+        self.assertLess(first_go, first_audio)
+        self.assertLess(first_audio, second_hold)
+        cinema.finish.assert_awaited_once_with(2)
+
     async def test_failed_go_does_not_discard_the_live_fallback(self):
         track = object()
         stream = SimpleNamespace(
