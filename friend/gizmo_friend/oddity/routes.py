@@ -2,8 +2,6 @@ from __future__ import annotations
 
 import asyncio
 import base64
-import hashlib
-import hmac
 import json
 import os
 import re
@@ -21,15 +19,6 @@ from gizmo_friend.oddity.runtime import ExperienceSession, MEDIA_NAME
 
 COOKIE = "oddity_session"
 IDENTITY = re.compile(r"[0-9a-f]{32}")
-
-
-def _token_ok(provided: str, expected: str) -> bool:
-    if not expected:
-        return True
-    return hmac.compare_digest(
-        hashlib.sha256(provided.encode()).digest(),
-        hashlib.sha256(expected.encode()).digest(),
-    )
 
 
 def router(root: Path, static: Path) -> APIRouter:
@@ -90,15 +79,6 @@ def router(root: Path, static: Path) -> APIRouter:
         })
         path.write_text(json.dumps(saved))
 
-    def authenticate(request: Request) -> None:
-        if not os.environ.get("RAILWAY_ENVIRONMENT_ID"):
-            return
-        preview_token = os.environ.get("ODDITY_PREVIEW_TOKEN", "").strip()
-        if not preview_token:
-            raise HTTPException(503, "preview access is not configured")
-        if not _token_ok(request.headers.get("x-oddity-preview", ""), preview_token):
-            raise HTTPException(401, "preview code required")
-
     @api.get("/oddity")
     async def index():
         response = FileResponse(static / "oddity.html", headers={
@@ -124,7 +104,6 @@ def router(root: Path, static: Path) -> APIRouter:
         mode_header = request.headers.get("x-oddity-mode", "").strip()
         moment_id = request.headers.get("x-oddity-moment", "").strip()
         if mode_header == "moment" or os.environ.get("RAILWAY_ENVIRONMENT_ID"):
-            authenticate(request)
             if not moment_id:
                 moment_id = ORDER[0]
             if not lookup(moment_id):

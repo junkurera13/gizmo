@@ -404,11 +404,10 @@ class OddityRouteTests(unittest.TestCase):
                 self.assertEqual(first.get("/oddity/media/session.json").status_code, 404)
                 self.assertEqual(first.get("/health").status_code, 200)
 
-    def test_cloud_preview_is_public_shell_with_gated_session(self):
+    def test_cloud_preview_is_public_shell_with_open_session(self):
         environment = {
             "GIZMO_DEVICE_TOKEN": "device-secret",
             "RAILWAY_ENVIRONMENT_ID": "production",
-            "ODDITY_PREVIEW_TOKEN": "adult-review",
         }
         with tempfile.TemporaryDirectory() as directory, patch.dict("os.environ", environment):
             root = Path(directory)
@@ -444,8 +443,7 @@ class OddityRouteTests(unittest.TestCase):
                 self.assertEqual(client.get("/static/demo-rainbow-gizmo-intro.wav").status_code, 200)
                 self.assertEqual(client.get("/static/demo-rainbow-gizmo-split.wav").status_code, 200)
                 self.assertEqual(client.get("/").status_code, 401)
-                self.assertEqual(client.post("/oddity/session").status_code, 401)
-                response = client.post("/oddity/session", headers={"x-oddity-preview": "adult-review"})
+                response = client.post("/oddity/session")
                 self.assertEqual(response.status_code, 200)
                 body = response.json()
                 self.assertRegex(body["session"], r"^[0-9a-f]{32}$")
@@ -459,36 +457,32 @@ class OddityRouteTests(unittest.TestCase):
         environment = {
             "GIZMO_DEVICE_TOKEN": "device-secret",
             "RAILWAY_ENVIRONMENT_ID": "production",
-            "ODDITY_PREVIEW_TOKEN": "adult-review",
         }
         with tempfile.TemporaryDirectory() as directory, patch.dict("os.environ", environment):
             root = Path(directory)
             with TestClient(app_factory(root)) as client:
                 self.assertEqual(client.post("/oddity/session", headers={
-                    "x-oddity-mode": "sandbox",
-                }).status_code, 401)
-                self.assertEqual(client.post("/oddity/session", headers={
-                    "x-oddity-mode": "moment", "x-oddity-preview": "adult-review",
+                    "x-oddity-mode": "moment",
                     "x-oddity-moment": "not-a-moment",
                 }).status_code, 400)
                 sandbox = client.post("/oddity/session", headers={
-                    "x-oddity-mode": "sandbox", "x-oddity-preview": "adult-review",
+                    "x-oddity-mode": "sandbox",
                 })
                 self.assertEqual(sandbox.status_code, 200)
                 self.assertEqual(sandbox.json()["mode"], "moment")
                 self.assertEqual(sandbox.json()["moment"], "birthday")
                 first = client.post("/oddity/session", headers={
-                    "x-oddity-mode": "moment", "x-oddity-preview": "adult-review",
+                    "x-oddity-mode": "moment",
                     "x-oddity-moment": "draw",
                 })
                 second = client.post("/oddity/session", headers={
-                    "x-oddity-mode": "moment", "x-oddity-preview": "adult-review",
+                    "x-oddity-mode": "moment",
                     "x-oddity-moment": "pompeii",
                     "x-oddity-session": first.json()["session"],
                 })
                 self.assertNotEqual(first.json()["session"], second.json()["session"])
                 reuse = client.post("/oddity/session", headers={
-                    "x-oddity-mode": "moment", "x-oddity-preview": "adult-review",
+                    "x-oddity-mode": "moment",
                     "x-oddity-moment": "pompeii",
                     "x-oddity-session": second.json()["session"],
                 })
@@ -498,27 +492,17 @@ class OddityRouteTests(unittest.TestCase):
                 reused["director_addendum"] = "stale contract"
                 reused_path.write_text(json.dumps(reused))
                 client.post("/oddity/session", headers={
-                    "x-oddity-mode": "moment", "x-oddity-preview": "adult-review",
+                    "x-oddity-mode": "moment",
                     "x-oddity-moment": "pompeii",
                     "x-oddity-session": reuse.json()["session"],
                 })
                 refreshed = json.loads(reused_path.read_text())
                 self.assertNotEqual(refreshed["director_addendum"], "stale contract")
 
-    def test_cloud_session_without_preview_token_is_unavailable(self):
-        environment = {
-            "GIZMO_DEVICE_TOKEN": "device-secret",
-            "RAILWAY_ENVIRONMENT_ID": "production",
-        }
-        with tempfile.TemporaryDirectory() as directory, patch.dict("os.environ", environment):
-            with TestClient(app_factory(Path(directory))) as client:
-                self.assertEqual(client.post("/oddity/session").status_code, 503)
-
     def test_local_sessions_need_no_code(self):
         environment = {
             "GIZMO_DEVICE_TOKEN": "",
             "RAILWAY_ENVIRONMENT_ID": "",
-            "ODDITY_PREVIEW_TOKEN": "adult-review",
         }
         with tempfile.TemporaryDirectory() as directory, patch.dict("os.environ", environment):
             with TestClient(app_factory(Path(directory))) as client:
