@@ -134,8 +134,6 @@ export function createGlass(stage, hooks = {}) {
 
   function syncReply(text) {
     const caption = text === undefined ? ($('caption')?.textContent || '') : String(text);
-    const line = $('camera-line');
-    if (line) line.textContent = caption.trim();
     $('glass-camera')?.classList.toggle('is-replying', cameraIsReplying(world, caption));
   }
 

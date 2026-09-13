@@ -22,27 +22,14 @@ void render_hud(const draw::Canvas& canvas, const Hud& hud);
 void render_recording_overlay(const draw::Canvas& canvas, uint8_t vu, uint32_t elapsed_ms, uint32_t capacity_ms);
 void render_playback_overlay(const draw::Canvas& canvas, uint8_t vu, float progress, uint32_t memo_ms);
 
-// Camera world: 78% viewfinder + 22% character strip (simulator CameraWorldView).
-// Matches Down / double-Select entry. Local preview only; no Friend `frame`.
-constexpr float kCameraStripFraction = 0.22f;
-constexpr float kCameraCharacterWidthFraction = 0.19f;
-constexpr float kCameraCharacterHeightFraction = 0.87f;
-constexpr float kCameraStripPadFraction = 0.045f;
-constexpr float kCameraCornerFraction = 0.075f;
-
-inline int camera_strip_height(int height) {
-  int strip = static_cast<int>(static_cast<float>(height) * kCameraStripFraction + 0.5f);
-  if (strip < 1) strip = 1;
-  if (strip >= height) strip = height / 5;
-  return strip;
-}
-
+// Camera world: the viewfinder fills the whole panel (simulator
+// CameraWorldView). Matches Down / double-Select entry. Local preview only;
+// no Friend `frame`.
+//
 // If `viewfinder_ready`, the canvas already holds a full-panel RGB565 capture
-// which is centre-cropped into the viewfinder. Otherwise the viewfinder is
-// black with optional `status` text (starting / error). `home_base` is the
-// decoded idle still, or null to skip the character.
-void render_camera_world(const draw::Canvas& canvas, const uint16_t* home_base, bool viewfinder_ready,
-                         const char* status);
+// and nothing is drawn. Otherwise the panel is black with optional `status`
+// text (starting / error).
+void render_camera_world(const draw::Canvas& canvas, bool viewfinder_ready, const char* status);
 
 // Setup / join card over home while Wi-Fi still needs attention.
 void render_wifi_setup(const draw::Canvas& canvas, const char* title, const char* line, const char* detail);
