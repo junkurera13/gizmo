@@ -105,7 +105,7 @@ main{padding:0 16px}.simulator{width:min(650px,100%,calc((100svh - 180px)*1145/1
 .preview-form .preview-error:empty{display:none;margin:0}
 .embedded .masthead,.embedded footer,.embedded .below-screen,.embedded .device-hints,.embedded .composer,.embedded .starters,.embedded .notice{display:none}.embedded,.embedded body,.embedded main{background:#000}.embedded main{min-height:100svh;padding-top:30px;display:flex;align-items:flex-start;box-sizing:border-box}.embedded .simulator{width:min(650px,100%,calc((100svh - 92px)*1145/1373))}.embedded .power-bar{margin:0 0 -25px}
 html.embedded .simulator{width:min(650px,100%,calc((100svh - 168px)*1145/1373))}
-.moments{display:none;align-items:center;gap:12px;width:min(100%,22rem);margin:-8.5% auto 0;color:#c8c2c6;touch-action:pan-y;position:relative;z-index:2}
+.moments{display:none;align-items:center;gap:12px;width:min(100%,22rem);margin:-4.5% auto 0;color:#c8c2c6;touch-action:pan-y;position:relative;z-index:2}
 html.embedded .moments:not([hidden]){display:flex}
 .moments button{margin:0;padding:0;border:0;background:transparent;color:#d7d2d7;font:inherit}
 #moment-prev,#moment-next{width:28px;height:28px;flex-shrink:0;font-size:22px;line-height:1;color:#9c959a}
