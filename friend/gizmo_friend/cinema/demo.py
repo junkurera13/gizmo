@@ -48,6 +48,10 @@ BOOT_SECONDS = 3.8
 # thinking state in between. Pressing at ~22s cuts to the follow-up exactly as
 # the first film ends.
 FOLLOWUP_GAP_SECONDS = 4.7
+# When a non-final film finishes, its last frame stays on the glass through
+# this window instead of flashing home — a pending or late follow-up ask cuts
+# straight into the next film. The window lapsing drops home and resets.
+FOLLOWUP_HOLD_SECONDS = 15.0
 
 
 @dataclass(frozen=True)
@@ -178,6 +182,7 @@ class DeviceDemo:
         self.followup_task: asyncio.Task | None = None
         self.step_index = 0
         self.playing_step: int | None = None
+        self.held_frame = False
         self._segments: dict[int, list] = {}
 
     async def send(self, event):
@@ -332,11 +337,24 @@ class DeviceDemo:
             self.playing_step = None
         # Reached only on a clean finish — a cancelled film hands control to
         # whoever cancelled it (retake, follow-up, power) without a home flash.
-        if self.powered:
-            self.state = "listening"
-            await self.send({"type": "glass", "viewing": False, "text": ""})
-            await self.send({"type": "state"})
+        if not self.powered:
+            self.step_index = (index + 1) % len(self.steps)
+            return
         self.step_index = (index + 1) % len(self.steps)
+        if index + 1 < len(self.steps):
+            # Hold the last frame through the follow-up window so a late or
+            # mistimed ask still cuts straight into the next film.
+            self.held_frame = True
+            try:
+                await asyncio.sleep(FOLLOWUP_HOLD_SECONDS)
+            finally:
+                self.held_frame = False
+            if not self.powered:
+                return
+            self.step_index = 0
+        self.state = "listening"
+        await self.send({"type": "glass", "viewing": False, "text": ""})
+        await self.send({"type": "state"})
 
     async def _followup(self) -> None:
         """The ask lands mid-film; the follow-up rolls a beat later."""
@@ -406,10 +424,9 @@ class DeviceDemo:
                     if active:
                         self.recording = True
                         self.mic.clear()
-                        if self.playing_step == 0:
-                            # The question rides over the still-playing film;
-                            # the follow-up rolls a fixed beat after the ask
-                            # starts, so his timing matches the emulator.
+                        if self.playing_step == 0 or self.held_frame:
+                            # The ask lands mid-film or on its held last frame;
+                            # the follow-up rolls a fixed beat after it starts.
                             if (
                                 self.followup_task is None
                                 or self.followup_task.done()
@@ -430,7 +447,7 @@ class DeviceDemo:
                     else:
                         self.recording = False
                         self.mic.clear()
-                        if self.playing_step == 0:
+                        if self.playing_step == 0 or self.held_frame:
                             continue
                         self.step_task = asyncio.create_task(
                             self._run_step(self.step_index)
@@ -454,6 +471,7 @@ class DeviceDemo:
                         await self.send(self.settings.snapshot())
                     else:
                         await self._cancel_all()
+                        self.step_index = 0
                         self.state = "listening"
                         await self.send({"type": "glass", "viewing": False, "text": ""})
                         await self.send({"type": "state"})

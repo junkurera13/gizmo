@@ -56,6 +56,8 @@ async def ack_holds(socket, seen):
 class DeviceDemoTest(unittest.IsolatedAsyncioTestCase):
     async def test_ptt_release_thinks_then_plays_canned_film(self):
         socket = FakeSocket()
+        demo_module.FOLLOWUP_HOLD_SECONDS = 0.05
+        self.addCleanup(setattr, demo_module, "FOLLOWUP_HOLD_SECONDS", 15.0)
         with tempfile.TemporaryDirectory() as tmp:
             demo = DeviceDemo(socket, Path(tmp), "demo-device", "antarctica")
             demo.steps[0] = DemoStep(
@@ -98,10 +100,13 @@ class DeviceDemoTest(unittest.IsolatedAsyncioTestCase):
             [e for e in socket.sent if e.get("type") == "glass"][-1]["viewing"],
             False,
         )
+        # An unanswered film one resets the sequence once the window lapses.
+        self.assertEqual(demo.step_index, 0)
 
     async def test_question_mid_film_rolls_followup_with_no_thinking(self):
         socket = FakeSocket()
         demo_module.FOLLOWUP_GAP_SECONDS = 0.05
+        self.addCleanup(setattr, demo_module, "FOLLOWUP_GAP_SECONDS", 4.7)
         with tempfile.TemporaryDirectory() as tmp:
             demo = DeviceDemo(socket, Path(tmp), "demo-device", "antarctica")
             demo.steps[0] = DemoStep(0.01, "v.mp4", "a.wav", "S0", ((0.0, "x"),))
@@ -148,6 +153,64 @@ class DeviceDemoTest(unittest.IsolatedAsyncioTestCase):
         subjects = [e["subject"] for e in socket.sent if e.get("go")]
         self.assertEqual(subjects[:1] + subjects[-1:], ["S0", "S1"])
         self.assertIn(201, acked)
+
+    async def test_held_frame_covers_a_late_followup_ask(self):
+        socket = FakeSocket()
+        demo_module.FOLLOWUP_GAP_SECONDS = 0.05
+        demo_module.FOLLOWUP_HOLD_SECONDS = 5.0
+        self.addCleanup(setattr, demo_module, "FOLLOWUP_GAP_SECONDS", 4.7)
+        self.addCleanup(setattr, demo_module, "FOLLOWUP_HOLD_SECONDS", 15.0)
+        with tempfile.TemporaryDirectory() as tmp:
+            demo = DeviceDemo(socket, Path(tmp), "demo-device", "antarctica")
+            demo.steps[0] = DemoStep(0.01, "v.mp4", "a.wav", "S0", ((0.0, "x"),))
+            demo.steps[1] = DemoStep(0.0, "v2.mp4", "a2.wav", "S1", ((0.0, "y"),))
+            demo._segments[0] = [fake_segment(0.2)]
+            demo._segments[1] = [fake_segment(0.2)]
+            run = asyncio.create_task(demo.run())
+            acked = set()
+            try:
+                socket.script.append({"type": "ptt", "active": False})
+                deadline = asyncio.get_running_loop().time() + 10
+                # Film one finishes with no ask — its last frame must hold.
+                while not demo.held_frame:
+                    self.assertLess(asyncio.get_running_loop().time(), deadline)
+                    await ack_holds(socket, acked)
+                    await asyncio.sleep(0.005)
+                clears = [
+                    e
+                    for e in socket.sent
+                    if e.get("type") == "glass" and e.get("viewing") is False
+                ]
+                self.assertEqual(len(clears), 1)  # only the connect-time clear
+                # The late ask rides the frozen frame into film two.
+                socket.script.append({"type": "ptt", "active": True})
+                await asyncio.sleep(0.02)
+                socket.script.append({"type": "ptt", "active": False})
+                while not any(
+                    e.get("go") and e.get("subject") == "S1" for e in socket.sent
+                ):
+                    self.assertLess(asyncio.get_running_loop().time(), deadline)
+                    await ack_holds(socket, acked)
+                    await asyncio.sleep(0.005)
+                clears = [
+                    e
+                    for e in socket.sent
+                    if e.get("type") == "glass" and e.get("viewing") is False
+                ]
+                self.assertEqual(
+                    len(clears), 1, "no home flash between film one and two"
+                )
+                while demo.followup_task and not demo.followup_task.done():
+                    await ack_holds(socket, acked)
+                    await asyncio.sleep(0.005)
+            finally:
+                run.cancel()
+                try:
+                    await run
+                except asyncio.CancelledError:
+                    pass
+
+        self.assertEqual(demo.step_index, 0)
 
     def test_step_timings_chains_beats(self):
         timings = step_timings(DEMO_MOMENTS["antarctica"][0])
