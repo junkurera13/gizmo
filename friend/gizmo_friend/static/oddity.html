@@ -43,17 +43,9 @@
       document.documentElement.classList.add('oddity-locked');
     }
   </script>
-  <script type="module" src="/static/oddity.js?v=gate80"></script>
+  <script type="module" src="/static/oddity.js?v=gate81"></script>
 </head>
 <body>
-  <header class="masthead">
-    <a href="/oddity" class="wordmark" aria-label="OddityOS home">oddity<span>OS 1</span></a>
-    <nav aria-label="Simulator controls">
-      <button id="sound" class="quiet" aria-label="Mute narration" aria-pressed="false">Sound on</button>
-      <button id="expand" class="icon-button" aria-label="Enter fullscreen"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M8 3H3v5M16 3h5v5M21 16v5h-5M8 21H3v-5"/></svg></button>
-      <button id="help" class="icon-button" aria-label="How to use Gizmo">?</button>
-    </nav>
-  </header>
   <section id="preview-gate" class="preview-gate" aria-labelledby="preview-title" hidden>
     <form id="preview-form" class="preview-form">
       <div class="preview-blink" aria-hidden="true">
@@ -190,7 +182,7 @@
             <div class="stage-bottom" hidden><span id="scene-position"></span><div id="beat-dots" class="beat-dots"></div><span id="scene-kind"></span></div>
           </div>
         </div>
-        <button id="talk" type="button" class="device-control device-talk" aria-label="Hold to talk" aria-describedby="talk-label" title="Hold to talk · Space"></button>
+        <button id="talk" type="button" class="device-control device-talk" aria-label="Hold to talk" title="Hold to talk · Space"></button>
         <button id="previous" type="button" class="device-control device-up" aria-label="Navigate up" title="Up · Settings">⌃</button>
         <button id="next" type="button" class="device-control device-down" aria-label="Navigate down" title="Down · Camera">⌄</button>
         <button id="select" type="button" class="device-control device-select" aria-label="Select" title="Select · Enter">✓</button>
@@ -209,16 +201,8 @@
         </div>
         <button id="moment-next" type="button" aria-label="Next moment">›</button>
       </div>
-      <div class="below-screen"><p id="status" role="status">A friend, and whatever comes next.</p><button id="reconnect" class="quiet" hidden>Reconnect</button><button id="pause" class="quiet" hidden>Pause</button></div>
-      <p id="notice" class="notice" role="alert" hidden></p>
-      <div class="device-hints"><span id="talk-label">Hold the pink side to talk <kbd>space</kbd></span><span><kbd>↑</kbd> Settings <kbd>↓</kbd> Camera <kbd>↵</kbd> Select</span></div>
-      <form id="composer" class="composer"><input id="thought" name="thought" placeholder="Or type a thought…" aria-label="Your thought" maxlength="3000" autocomplete="off" disabled><button id="send" aria-label="Send thought" disabled>↗</button></form>
-      <div id="starters" class="starters" hidden><button>Why don't satellites fall down?</button><button>What if I fell into Jupiter?</button></div>
     </section>
   </main>
-  <footer><span>Gizmo · Browser preview</span><button id="open-notes" class="quiet">Session notes</button><span class="keyboard-hint">Interrupt whenever curiosity takes you.</span></footer>
-  <dialog id="help-dialog"><button class="dialog-close" data-close aria-label="Close help">×</button><h2>Follow your curiosity.</h2><p>Power on. Hold the pink button or Space to speak. Let go when you're done.</p><p>Up opens Settings. Down opens Camera. Select confirms, or double-press Select for Camera. Down past Volume returns Home.</p><p class="fine">Your conversation and generated scenes stay in this browser's session on the server. Microphone recording runs only while you hold the button, for up to 45 seconds.</p></dialog>
-  <dialog id="notes-dialog"><button class="dialog-close" data-close aria-label="Close session notes">×</button><h2>This conversation</h2><div id="notes"></div><details><summary>Experience direction</summary><ol id="direction"></ol></details></dialog>
   <audio id="voice" preload="auto"></audio>
   <audio id="demo-audio" preload="auto"></audio>
   <audio id="glass-boot-audio" src="/static/oddity-boot.wav" preload="auto"></audio>

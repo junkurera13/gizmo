@@ -22,17 +22,16 @@ function interactionUI() {
       status('Thinking about what you found…', 'thinking');
     },
     experiment: value => send({type:'experiment', turn, id:currentBeat.id, ...value}),
-    reply: () => $('thought').focus(),
+    reply: () => $('talk').focus(),
   });
 }
 function invite(beat) {
-  setCaption(); $('pause').hidden = true;
+  setCaption();
   interactionUI().show(beat.interaction);
   status(beat.interaction.kind === 'orbit' ? 'Change the speed. See what happens.' : 'Take your time. You can always tell me something else.', 'exploring');
 }
-const embedded = /(?:^|[?&])embedded=1(?:&|$)/.test(globalThis.location?.search || '');
-if (embedded) document.documentElement.classList.add('embedded');
-let playMoments = embedded;
+document.documentElement?.classList.add('embedded');
+let playMoments = true;
 const CODE_KEY = 'oddity-preview-v1';
 const SESSION_KEY = 'oddity-session-v1';
 const MOMENT_KEY = 'oddity-moment-v1';
@@ -99,10 +98,9 @@ function setCaption(text = '') {
     reveal(() => caption.classList.remove('is-swapping'));
   }, 130);
 }
-function status(text, state) { $('status').textContent = text; if (state && glass?.world === 'home') stage.dataset.state = state; }
-function notice(text = '') { $('notice').textContent = text; $('notice').hidden = !text; }
+function status(text, state) { const el = $('status'); if (el) el.textContent = text; if (state && glass?.world === 'home') stage.dataset.state = state; }
+function notice(text = '') { const el = $('notice'); if (!el) return; el.textContent = text; el.hidden = !text; }
 function send(value) { if (socket?.readyState === WebSocket.OPEN) socket.send(JSON.stringify(value)); }
-function inputEnabled(enabled) { for (const id of ['thought', 'send']) $(id).disabled = !enabled; }
 function showPreviewGate(message = '') {
   document.documentElement.classList.add('oddity-locked');
   document.documentElement.classList.remove('oddity-ready');
@@ -250,7 +248,7 @@ function resetConversation() {
   history = []; archive = []; plan = []; turn = '';
   restoredInvitation = null;
   renderNotes();
-  $('direction').replaceChildren();
+  $('direction')?.replaceChildren();
   if (awake) goHome();
 }
 async function selectMoment(index) {
@@ -617,7 +615,7 @@ async function sayMoment() {
 }
 async function connect(previewCode, options = {}) {
   if (socket && socket.readyState < WebSocket.CLOSING) return;
-  $('reconnect').hidden = true; expectedClose = false; inputEnabled(false);
+  expectedClose = false;
   const preview = previewCode ?? stored(CODE_KEY);
   const fresh = Boolean(options.fresh);
   try {
@@ -643,14 +641,13 @@ async function connect(previewCode, options = {}) {
     await revealDevice();
   } catch (error) {
     if (!$('preview-gate').hidden) $('preview-error').textContent = error.message;
-    notice(error.message); $('reconnect').hidden = false; status('Cannot reach the private preview.'); return;
+    notice(error.message); status('Cannot reach the private preview.'); return;
   }
   socket = new WebSocket(`${location.protocol === 'https:' ? 'wss:' : 'ws:'}//${location.host}/oddity/ws?session=${encodeURIComponent(session)}`);
   socket.onmessage = ({data}) => handle(JSON.parse(data));
   socket.onclose = () => {
-    stopPlayer(); cancelRecording(); inputEnabled(false);
+    stopPlayer(); cancelRecording();
     $('connection').textContent = 'Disconnected';
-    $('reconnect').hidden = false;
     if (!expectedClose) status('Connection closed. Reconnect when you’re ready.');
   };
   socket.onerror = () => notice('Cannot reach Gizmo. Check that the local brain is running.');
@@ -659,13 +656,13 @@ function handle(event) {
   if (event.type === 'hello') {
     archive = event.library || []; history = event.history || []; renderNotes();
     restoredInvitation = event.current?.awaiting ? event.current : null;
-    inputEnabled(awake); $('power').disabled = false;
+    $('power').disabled = false;
     if (awake) status('Right here. Where were we?');
     return;
   }
   if (event.type === 'turn') {
     stopPlayer(); turn = event.turn; queue = []; ready = false; plan = [];
-    notice(); $('starters').hidden = true; return;
+    notice(); return;
   }
   if (event.turn && event.turn !== turn) return;
   switch (event.type) {
@@ -683,7 +680,7 @@ function handle(event) {
     case 'plan':
       plan = event.beats; $('chapter-title').textContent = event.title;
       $('beat-dots').replaceChildren(...plan.map(() => document.createElement('i')));
-      $('direction').replaceChildren(...plan.map((b) => {
+      $('direction')?.replaceChildren(...plan.map((b) => {
         const li = document.createElement('li'); li.textContent = `${b.purpose} · ${b.visual} · ${b.delivery === 'after' ? 'watch, then narrate' : 'narrate together'}`; return li;
       }));
       status('Making room for that thought…', 'preparing'); break;
@@ -706,7 +703,9 @@ function handle(event) {
   }
 }
 function renderNotes() {
-  $('notes').replaceChildren(...history.slice(-30).map((line) => {
+  const notes = $('notes');
+  if (!notes) return;
+  notes.replaceChildren(...history.slice(-30).map((line) => {
     const p = document.createElement('p'), name = document.createElement('strong');
     name.textContent = line.role === 'user' ? 'You' : 'Gizmo';
     p.append(name, document.createTextNode(line.text)); return p;
@@ -742,8 +741,6 @@ function onGlassOff() {
   if (held) cancelRecording();
   interrupt();
   awake = false;
-  inputEnabled(false);
-  $('starters').hidden = true;
   orbitView?.hide();
   screenOrbit = false;
   detachFilm();
@@ -762,8 +759,6 @@ function wake() {
 }
 function onGlassReady() {
   awake = true;
-  inputEnabled(socket?.readyState === WebSocket.OPEN);
-  $('starters').hidden = history.length > 0 || playMoments;
   syncPower();
   if (restoredInvitation) {
     const beat = archive.find(b => b.id === restoredInvitation.id);
@@ -788,7 +783,7 @@ function stopPlayer() {
   invitation?.stop(); orbitView?.cancel();
   controller?.abort(); controller = null; playing = false; paused = false;
   voice.pause(); film.pause(); filmTimed = []; detachFilm(); clearInterval(progressTimer);
-  $('pause').hidden = true; $('pause').textContent = 'Pause'; $('play-blocked').hidden = true;
+  $('play-blocked').hidden = true;
   mediaWaitResolve?.(); mediaWaitResolve = null;
 }
 function interrupt() {
@@ -797,7 +792,7 @@ function interrupt() {
 }
 function finish() {
   if (invitation?.active) return;
-  $('pause').hidden = true; status('Your turn. Follow that thought.', 'idle');
+  status('Your turn. Follow that thought.', 'idle');
   if (!film.hidden) dissolveScene();
 }
 function delay(ms, signal) {
@@ -993,7 +988,7 @@ async function playQueue() {
       $('scene-position').textContent = `${beat.index + 1} / ${plan.length}`;
       $('scene-kind').textContent = beat.film ? 'Moving picture' : beat.image ? 'Drawing' : '';
       [...$('beat-dots').children].forEach((dot, i) => dot.classList.toggle('active', i === beat.index));
-      $('pause').hidden = false; status('You can interrupt at any time.', 'playing');
+      status('You can interrupt at any time.', 'playing');
       const archived = {...beat};
       if (beat.visual === 'keep' && screenOrbit) archived.kind = 'orbit';
       if (beat.visual === 'keep' && stage.classList.contains('has-scene')) {
@@ -1059,18 +1054,13 @@ async function playQueue() {
 }
 function togglePause() {
   if (!playing) return;
-  paused = !paused; $('pause').textContent = paused ? 'Continue' : 'Pause';
+  paused = !paused;
   if (paused) { voice.pause(); film.pause(); status('Take your time.', 'paused'); }
   else {
     if (voice.getAttribute('src') && !voice.ended) voice.play().catch(() => notice('Tap Continue to resume sound.'));
     if (!film.hidden && (film.srcObject || film.src) && !film.ended) film.play().catch(() => {});
     status('You can interrupt at any time.', 'playing');
   }
-}
-async function submitThought(text) {
-  text = text.trim(); if (!text || !awake || socket?.readyState !== WebSocket.OPEN) return;
-  await unlockAudio(); interrupt(); send({type:'text', text});
-  $('thought').value = ''; status('Thinking it through…', 'thinking');
 }
 function setTalkPressed(pressed) {
   talkHeld = pressed;
@@ -1096,7 +1086,6 @@ function cancelRecording() {
   if (recorder?.state === 'recording') { recorder.onstop = null; recorder.stop(); }
   stream?.getTracks().forEach((track) => track.stop()); stream = null;
   $('talk').classList.remove('recording'); $('listening').hidden = true;
-  $('talk-label').replaceChildren(document.createTextNode('Hold the pink side to talk '), Object.assign(document.createElement('kbd'), {textContent:'space'}));
   if (wasHeld) status('Microphone stopped. Hold to try again.', 'idle');
 }
 async function startRecording() {
@@ -1112,7 +1101,7 @@ async function startRecording() {
   $('device').dataset.ptt = 'true';
   interrupt(); unlockAudio(); status('Opening the microphone…', 'listening');
   try {
-    if (!navigator.mediaDevices?.getUserMedia || !window.MediaRecorder) throw new Error('Use a browser with microphone recording on localhost or HTTPS. You can still type below.');
+    if (!navigator.mediaDevices?.getUserMedia || !window.MediaRecorder) throw new Error('Use a browser with microphone recording on localhost or HTTPS.');
     const recordingStream = await navigator.mediaDevices.getUserMedia({audio:{echoCancellation:true, noiseSuppression:true}, video:false});
     if (!held || attempt !== microphoneAttempt) { recordingStream.getTracks().forEach(t => t.stop()); return; }
     stream = recordingStream;
@@ -1152,11 +1141,11 @@ async function startRecording() {
       reader.readAsDataURL(blob);
     };
     recorder.start(250); $('talk').classList.add('recording'); $('listening').hidden = false;
-    $('talk-label').textContent = 'Release to send'; setCaption(); status('Listening. Let go when you’re done.', 'listening');
+    setCaption(); status('Listening. Let go when you’re done.', 'listening');
     recordingTimer = setTimeout(stopRecording, 45_000);
   } catch (error) {
-    cancelRecording(); notice(error.name === 'NotAllowedError' ? 'Microphone access was declined. Allow it in your browser, or type below.' : error.message);
-    status('You can type your thought below.', 'idle');
+    cancelRecording(); notice(error.name === 'NotAllowedError' ? 'Microphone access was declined. Allow it in your browser.' : error.message);
+    status('Microphone is unavailable.', 'idle');
   }
 }
 function stopRecording() {
@@ -1165,24 +1154,21 @@ function stopRecording() {
   if (!talkHeld) $('device').dataset.ptt = 'false';
   if (recorder?.state === 'recording') recorder.stop();
   else { microphoneAttempt++; status('Hold again after allowing the microphone.', 'idle'); }
-  $('talk').classList.remove('recording'); $('listening').hidden = true; $('talk-label').textContent = 'Hold the pink side to talk';
+  $('talk').classList.remove('recording'); $('listening').hidden = true;
   status('Listening back…');
 }
 $('power').onclick = () => (awake || glass.booting) ? sleep() : wake();
-$('reconnect').onclick = () => { notice(); connect(); };
 $('preview-form').onsubmit = (event) => {
   event.preventDefault();
   const code = $('preview-code').value.trim();
   if (!code) { $('preview-code').focus(); return; }
   remember(CODE_KEY, code); $('preview-error').textContent = ''; connect(code);
 };
-$('composer').onsubmit = (event) => { event.preventDefault(); submitThought($('thought').value); };
 $('talk').onpointerdown = (event) => { if (demoRunning) stopDemo(); pressTalk(event); };
 $('talk').onpointerup = releaseTalk;
 $('talk').onpointercancel = () => { setTalkPressed(false); cancelRecording(); };
 $('talk').onlostpointercapture = () => { if (held) releaseTalk(); };
 $('talk').oncontextmenu = (event) => event.preventDefault();
-$('pause').onclick = togglePause;
 function onSelect() {
   glass.select({
     invitation,
@@ -1197,12 +1183,6 @@ $('select').onclick = onSelect;
 $('previous').onclick = () => glass.navigate('up');
 $('next').onclick = () => glass.navigate('down');
 $('home').onclick = goHome;
-$('sound').onclick = () => { muted = !muted; syncSound(); $('sound').textContent = muted ? 'Sound off' : 'Sound on'; $('sound').setAttribute('aria-pressed', String(muted)); $('sound').setAttribute('aria-label', muted ? 'Unmute narration' : 'Mute narration'); };
-$('expand').onclick = async () => { try { if (document.fullscreenElement) await document.exitFullscreen(); else await document.documentElement.requestFullscreen(); } catch { notice('Fullscreen is unavailable in this browser.'); } };
-document.addEventListener('fullscreenchange', () => $('expand').setAttribute('aria-label', document.fullscreenElement ? 'Exit fullscreen' : 'Enter fullscreen'));
-$('help').onclick = () => $('help-dialog').showModal(); $('open-notes').onclick = () => $('notes-dialog').showModal();
-document.querySelectorAll('[data-close]').forEach(button => button.onclick = () => button.closest('dialog').close());
-document.querySelectorAll('.starters button').forEach(button => button.onclick = () => submitThought(button.textContent));
 $('moment-prev').onclick = () => selectMoment(momentIndex - 1);
 $('moment-next').onclick = () => selectMoment(momentIndex + 1);
 $('moment-say').onclick = () => sayMoment();

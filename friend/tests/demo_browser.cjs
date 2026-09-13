@@ -69,7 +69,7 @@ const catalog = JSON.parse(execFileSync('.venv/Scripts/python.exe', ['-c',
       assert.ok(plantKidFullscreen,'plant camera is fullscreen during kid speech');
       assert.ok(plantAgentCaptioned,'plant camera makes room for Gizmo captions');
     }
-    assert.equal(await page.locator('#notice').textContent(),'');
+    assert.equal(await page.evaluate(()=>document.getElementById('notice')?.textContent || ''),'');
     assert.equal(await page.locator('#caption').textContent(),'');
     if(item.id==='draw') {
       await page.waitForTimeout(1000);

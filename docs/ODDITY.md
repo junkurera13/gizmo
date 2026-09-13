@@ -13,7 +13,7 @@ source .venv/bin/activate
 gizmo --host 127.0.0.1 --port 43148
 ```
 
-Open [OddityOS 1](http://127.0.0.1:43148/oddity). No separate frontend build or Node server is required. `gizmo` loads the existing root `.env`; all provider keys stay on the server. Local `/oddity` is the full sandbox with no code gate. Add `?embedded=1` to see the public moment rail exactly as reviewers do.
+Open [OddityOS 1](http://127.0.0.1:43148/oddity). No separate frontend build or Node server is required. `gizmo` loads the existing root `.env`; all provider keys stay on the server. Local `/oddity` is the same chromeless moment player the site embeds, with no code gate.
 
 Click **Wake Gizmo**. Hold the pink button or Space to record; release to send. Typing works too. Select pauses or continues playback. Up opens Settings; Down opens Camera. The return arrow restores the character. Speaking or sending a new thought interrupts the old sequence. Session notes show the conversation and the current plan's short editorial labels.
 
