@@ -28,8 +28,12 @@ class Display {
   void command(uint8_t value);
   void data(uint8_t value);
   void window(int x0, int y0, int x1, int y1);
+  bool write_pixels(const uint16_t* pixels, int source_width, int cols, int y0, int rows);
 
   bool ready_ = false;
+  void* panel_io_ = nullptr;
+  void* color_done_sem_ = nullptr;
+  uint16_t* dma_pixels_ = nullptr;
   uint8_t rotation_ = 1;
   uint8_t pixel_gain_ = 255;
   int width_ = 320;
