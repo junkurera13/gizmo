@@ -24,7 +24,7 @@ class MomentCatalogTests(unittest.TestCase):
             for reply in replies:
                 if not reply.get('reply_timed'):
                     continue
-                with wave.open(str(static / reply['reply_audio'].split('/')[-1])) as audio:
+                with wave.open(str(static / reply['reply_audio'].split('/')[-1].split('?')[0])) as audio:
                     duration = audio.getnframes() / audio.getframerate()
                 cues = reply['reply_timed']
                 self.assertEqual([at for at, _ in cues], sorted(at for at, _ in cues))
@@ -32,13 +32,19 @@ class MomentCatalogTests(unittest.TestCase):
                 self.assertEqual(' '.join(text for _, text in cues if text), reply['reply'])
                 if item['id'] == 'birthday':
                     self.assertLess(duration, 9)
+                if item['id'] == 'plant':
+                    self.assertLess(duration / demo['reply_audio_rate'], 21.2)
+                    self.assertGreater(duration / demo['reply_audio_rate'], 20.5)
                 if 'math' in demo:
                     self.assertLess(demo['math']['visual_timed'][-1][0], duration)
 
     def test_public_catalog_hides_seed_and_contract(self):
         public = catalog()
-        self.assertEqual([item["id"] for item in public], ["birthday", "plant", "draw", "mathcheck", "rainbow", "pompeii"])
-        self.assertEqual(len(public), 6)
+        self.assertEqual(
+            [item["id"] for item in public],
+            ["birthday", "plant", "draw", "mathcheck", "rainbow", "antarctica", "pompeii"],
+        )
+        self.assertEqual(len(public), 7)
         self.assertNotIn("seed", public[0])
         self.assertNotIn("contract", public[0])
         self.assertEqual(public[0]["demo"]["prompt_audio"], "/static/demo-birthday-kid.mp3?v=days1")
@@ -51,7 +57,7 @@ class MomentCatalogTests(unittest.TestCase):
         self.assertNotIn("video", public[0]["demo"])
         self.assertNotIn("image", public[0]["demo"])
         plant = public[1]["demo"]
-        self.assertEqual(plant["camera"]["video"], "/static/demo-plant-camera.mp4?v=plant5")
+        self.assertEqual(plant["camera"]["video"], "/static/demo-plant-camera.mp4?v=plant6")
         self.assertEqual(plant["camera"]["start_at"], 2.6)
         self.assertEqual(
             [cue["at"] for cue in plant["camera"]["cues"]],
@@ -63,10 +69,22 @@ class MomentCatalogTests(unittest.TestCase):
                 "/static/demo-plant-question.mp3?v=plant5",
             ],
         )
-        self.assertEqual(plant["reply_audio"], "/static/demo-plant-refreshed.wav")
+        self.assertEqual(plant["reply_audio"], "/static/demo-plant-refreshed.wav?v=plant2")
+        self.assertEqual(
+            [caption for _, caption in plant["reply_timed"]],
+            [
+                "Your plant caught a tiny fungal bug,",
+                "which causes dark spots, yellow circles,",
+                "and crispy brown edges.",
+                "Help it heal by snipping off the sick leaves",
+                "and throwing them in the trash.",
+                "Water only the dirt around the base,",
+                "keeping the other leaves dry so the fungus can't spread.",
+            ],
+        )
         self.assertEqual(plant['camera']['reply_wait_ms'], 1000)
         self.assertTrue(plant['camera']['loop'])
-        self.assertEqual(plant["reply_audio_rate"], 1.0)
+        self.assertEqual(plant["reply_audio_rate"], 0.92)
         self.assertNotIn("touch", plant["reply"].lower())
         self.assertNotIn("soil", plant["reply"].lower())
         draw = public[2]["demo"]
@@ -76,6 +94,7 @@ class MomentCatalogTests(unittest.TestCase):
         self.assertIn("Adventure Time", draw["reply"])
         self.assertIn("Jake the Dog", draw["reply"])
         self.assertTrue(draw['keep_scene'])
+        self.assertTrue(draw['fullscreen_after_reply'])
         self.assertIn("easy", draw["reply"])
         math = public[3]["demo"]
         self.assertEqual(math["prompt_audio"], "/static/demo-math-kid.mp3?v=math2")
@@ -91,11 +110,14 @@ class MomentCatalogTests(unittest.TestCase):
                 "audio": "/static/demo-math-kid.mp3?v=math2",
             }],
         })
-        self.assertEqual(math["reply_audio"], "/static/demo-mathcheck-refreshed.wav")
-        self.assertEqual(math["math"]["attempt"], "27 + 16 = 42")
-        self.assertEqual(math["math"]["answer"], "40 + 3 = 43")
-        self.assertIn("just one away", math["reply"])
-        self.assertIn("forty-three", math["reply"])
+        self.assertEqual(math["reply_audio"], "/static/demo-mathcheck-refreshed.wav?v=math4")
+        self.assertEqual(math["reply_audio_rate"], 1.3)
+        self.assertEqual(math["math"]["attempt"], "26 + 16 = 43")
+        self.assertEqual(math["math"]["make_ten"], "20 + 10 = 30")
+        self.assertEqual(math["math"]["left"], "6 + 6 = 12")
+        self.assertEqual(math["math"]["answer"], "30 + 12 = 42")
+        self.assertIn("not forty-three", math["reply"])
+        self.assertIn("Together, forty-two", math["reply"])
         rainbow = public[4]["demo"]
         self.assertEqual(rainbow["prompt_audio"], "/static/demo-rainbow-kid.mp3?v=rainbow2")
         self.assertEqual(rainbow["beats"][0]["rainbow"], {"focus": "overview"})
@@ -107,11 +129,19 @@ class MomentCatalogTests(unittest.TestCase):
         })
         self.assertEqual(rainbow["beats"][1]["rainbow"], {"focus": "split"})
         self.assertIn("many colors", rainbow["beats"][1]["reply"])
-        self.assertEqual(public[5]["demo"]["prompt_audio"], "/static/demo-pompeii-kid.mp3")
-        self.assertEqual(public[5]["demo"]["video"], "/static/demo-pompeii-polished.mp4")
-        self.assertIn('paintings', public[5]['demo']['followup']['prompt'])
-        self.assertEqual(public[5]["demo"]["reply_audio"], "/static/demo-pompeii.wav")
-        self.assertIn("Vesuvius", public[5]["demo"]["reply"])
+        antarctica = public[5]["demo"]
+        self.assertEqual(antarctica["prompt_audio"], "/static/demo-antarctica-kid.mp3?v=antarctica1")
+        self.assertEqual(antarctica["reply_audio"], "/static/demo-antarctica.wav?v=antarctica1")
+        self.assertEqual(antarctica["video"], "/static/demo-antarctica.mp4?v=antarctica1")
+        self.assertIn("South Pole", antarctica["reply"])
+        self.assertIn("penguins", antarctica["reply"])
+        self.assertEqual(public[6]["demo"]["prompt_audio"], "/static/demo-pompeii-kid.mp3")
+        self.assertEqual(public[6]["demo"]["video"], "/static/demo-pompeii-polished.mp4")
+        self.assertIn('paintings', public[6]['demo']['followup']['prompt'])
+        self.assertEqual(public[6]['demo']['followup']['audio'], "/static/demo-pompeii-kid-followup-user.mp3?v=pompeii1")
+        self.assertEqual(public[6]['demo']['followup']['video'], "/static/demo-pompeii-followup.mp4?v=pompeii1")
+        self.assertEqual(public[6]["demo"]["reply_audio"], "/static/demo-pompeii.wav")
+        self.assertIn("Vesuvius", public[6]["demo"]["reply"])
         self.assertTrue(lookup("trex").contract)
         self.assertIsNone(lookup("missing"))
 

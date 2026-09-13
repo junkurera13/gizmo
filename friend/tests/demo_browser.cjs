@@ -21,7 +21,9 @@ const catalog = JSON.parse(execFileSync('.venv/Scripts/python.exe', ['-c',
       document.documentElement.classList.remove('oddity-locked');
       $('preview-gate').hidden = true;
       stage.dataset.glass = 'home'; $('glass-home').hidden = false;
-      glass = {world:'home', syncReply(){}, closeCamera(){
+      glass = {world:'home', syncReply(text){
+        $('glass-camera').classList.toggle('is-replying', Boolean(String(text || '').trim()));
+      }, closeCamera(){
         cameraFeed.pause(); $('glass-camera').hidden=true; stage.dataset.glass='home';
       }, openDemoCamera(src){
         cameraFeed.src=src; cameraFeed.hidden=false; $('glass-camera').hidden=false;
@@ -44,18 +46,30 @@ const catalog = JSON.parse(execFileSync('.venv/Scripts/python.exe', ['-c',
   await page.waitForFunction(()=>window.runDemo);
   for (const item of catalog) {
     await page.evaluate(item=>{window.done=false;runDemo(item).then(()=>window.done=true);},item);
-    let samples=0;
+    let samples=0, plantKidFullscreen=false, plantAgentCaptioned=false;
     while (!await page.evaluate(()=>window.done)) {
       const state=await page.evaluate(()=>inspectDemo());
       if (!state.paused && /kid|question/.test(state.audio)) {
         assert.equal(state.caption,'',item.id+' kid captions'); samples++;
+        if (item.id==='plant') {
+          const clip=await page.locator('.camera-finder').evaluate(node=>getComputedStyle(node).clipPath);
+          plantKidFullscreen ||= clip === 'inset(0px)';
+        }
+      }
+      if (item.id==='plant' && /plant-refreshed/.test(state.audio) && !state.paused && state.caption) {
+        const clip=await page.locator('.camera-finder').evaluate(node=>getComputedStyle(node).clipPath);
+        plantAgentCaptioned ||= clip !== 'inset(0px)';
       }
       if (item.id==='mathcheck' && /mathcheck-refreshed/.test(state.audio) && !state.paused)
         assert.equal(state.camera,false);
       await page.waitForTimeout(30);
     }
     assert.ok(samples>0,item.id+' sampled kid speech');
-    assert.equal(await page.locator('#notice').textContent(),'');
+    if (item.id==='plant') {
+      assert.ok(plantKidFullscreen,'plant camera is fullscreen during kid speech');
+      assert.ok(plantAgentCaptioned,'plant camera makes room for Gizmo captions');
+    }
+    assert.equal(await page.evaluate(()=>document.getElementById('notice')?.textContent || ''),'');
     assert.equal(await page.locator('#caption').textContent(),'');
     if(item.id==='draw') {
       await page.waitForTimeout(1000);

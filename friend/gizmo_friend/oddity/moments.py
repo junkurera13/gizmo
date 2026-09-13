@@ -63,6 +63,7 @@ ORDER: tuple[str, ...] = (
     "ants",
     "homework",
     "trex",
+    "antarctica",
     "pompeii",
 )
 
@@ -114,12 +115,16 @@ _register(
         demo={
             "prompt": "Gizmo, what's wrong with this plant?",
             "prompt_audio": "/static/demo-plant-question.mp3?v=plant5",
-            "reply": "Brown spots and yellow edges mean this leaf needs more shade.",
+            "reply": (
+                "Your plant caught a tiny fungal bug, which causes dark spots, yellow circles, and crispy "
+                "brown edges. Help it heal by snipping off the sick leaves and throwing them in the trash. "
+                "Water only the dirt around the base, keeping the other leaves dry so the fungus can't spread."
+            ),
             "reply_audio": "/static/demo-plant-gizmo.wav?v=plant8",
-            "reply_audio_rate": 1.0,
+            "reply_audio_rate": 0.92,
             **_recording('plant'),
             "camera": {
-                "video": "/static/demo-plant-camera.mp4?v=plant5",
+                "video": "/static/demo-plant-camera.mp4?v=plant6",
                 "start_at": 2.6,
                 "reply_wait_ms": 1000,
                 "loop": True,
@@ -156,32 +161,30 @@ _register(
             "image": "/static/demo-draw-jake.png?v=draw1",
             "subject": "Jake the Dog from Adventure Time",
             "keep_scene": True,
+            "fullscreen_after_reply": True,
         },
     ),
     Moment(
         id="mathcheck",
         line="Did I get this right?",
         seed=(
-            "The kid is checking their work on 27 + 16. They wrote 42, but the correct answer is 43."
+            "The kid is checking their work on 26 + 16. They wrote 43, but the correct answer is 42."
         ),
         contract=(
-            "Praise the attempt before correcting it. Explain regrouping with a make-a-ten method in "
-            "simple language: move 3 from the 6 to the 7 to make another 10, leaving 3, then combine "
-            "four tens and three ones. Show each step visually and keep the tone suitable for a child "
-            "aged 6 to 10."
+            "Praise the attempt before correcting it. Split both numbers into tens and ones: twenty plus "
+            "ten makes thirty, while six plus six makes twelve. Then combine thirty and twelve to make "
+            "forty-two. Show each step visually and keep the tone suitable for a child aged 6 to 10."
         ),
         demo={
             "prompt": "Gizmo, did I get this right?",
             "prompt_audio": "/static/demo-math-kid.mp3?v=math2",
             "reply": (
-                "Nice work—you were only one away! Twenty-seven plus sixteen is forty-three, not "
-                "forty-two. Look at the ones: move three from the six to the seven to make a new ten, "
-                "with three left. Now we have four tens and three ones, which makes forty-three. "
-                "Great job checking your answer!"
+                "Twenty-six plus sixteen is forty-two, not forty-three! "
+                "Twenty plus ten is thirty; six plus six is twelve. Together, forty-two!"
             ),
             "reply_audio": "/static/demo-math-gizmo.wav?v=math1",
             **_recording('mathcheck'),
-            "reply_audio_rate": 1.0,
+            "reply_audio_rate": 1.3,
             "camera": {
                 "video": "/static/demo-math-camera.mp4?v=math3",
                 "start_at": 0,
@@ -198,13 +201,14 @@ _register(
             },
             "math": {
                 "visual_timed": _RECORDINGS['mathcheck']['visual_timed'],
-                "attempt": "27 + 16 = 42",
-                "make_ten": "7 + 3 = 10",
-                "left": "3 left",
-                "answer": "40 + 3 = 43",
+                "attempt": "26 + 16 = 43",
+                "make_ten": "20 + 10 = 30",
+                "left": "6 + 6 = 12",
+                "answer": "30 + 12 = 42",
                 "description": (
-                    "Twenty-seven plus sixteen corrected from forty-two to forty-three by regrouping "
-                    "the ones into a new ten, with three ones left."
+                    "A colorful cartoon showing twenty-six and sixteen splitting into tens and ones: "
+                    "twenty plus ten makes thirty, six plus six makes twelve, and thirty plus twelve "
+                    "makes forty-two."
                 ),
             },
         },
@@ -285,6 +289,31 @@ _register(
         ),
     ),
     Moment(
+        id="antarctica",
+        line="What does Antarctica look like?",
+        seed="",
+        contract=(
+            "Answer with a short educational film that first locates Antarctica on a globe, "
+            "then travels across its ice sheet, mountains, glaciers, coast, icebergs, and "
+            "penguins. Explain that it surrounds the South Pole and that its interior is a "
+            "cold, windy desert. Keep the geography accurate, the transitions fluid, and the "
+            "imagery colorful, gentle, and suitable for children."
+        ),
+        demo={
+            "prompt": "Gizmo, what does Antarctica look like?",
+            "prompt_audio": "/static/demo-antarctica-kid.mp3?v=antarctica1",
+            "reply": (
+                "Antarctica is the icy continent at the very bottom of Earth. On a globe, it "
+                "wraps around the South Pole. Most of it is covered by a huge sheet of ice, "
+                "with bright glaciers, tall mountains, and deep blue cracks. Along the coast, "
+                "you can see floating icebergs and penguins, while the middle is a cold, windy "
+                "white desert."
+            ),
+            "reply_audio": "/static/demo-antarctica.wav?v=antarctica1",
+            "video": "/static/demo-antarctica.mp4?v=antarctica1",
+        },
+    ),
+    Moment(
         id="pompeii",
         line="What happened to Pompeii?",
         seed="",
@@ -319,7 +348,9 @@ _register(
             "video": "/static/demo-pompeii-polished.mp4",
             "followup": {
                 "prompt": _RECORDINGS['pompeii-kid-followup']['reply'],
-                "audio": _RECORDINGS['pompeii-kid-followup']['reply_audio'],
+                "audio": "/static/demo-pompeii-kid-followup-user.mp3?v=pompeii1",
+                "video": "/static/demo-pompeii-followup.mp4?v=pompeii1",
+                "fullscreen_during_prompt": True,
                 "reply_wait_ms": 800,
                 **_recording('pompeii-followup'),
             },
