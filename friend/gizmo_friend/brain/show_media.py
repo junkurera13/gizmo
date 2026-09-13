@@ -81,12 +81,30 @@ def strip_audio(source: Path, target: Path) -> int:
     return _run(source, target, ["-c:v", "copy", "-movflags", "+faststart", "-f", "mp4"], remux=True)
 
 
-def encode_mjpeg(source: Path, target: Path, *, width: int, height: int, fps: int) -> int:
-    """A finite sequence of JPEGs, each center-cover-cropped without stretching."""
+def encode_mjpeg(
+    source: Path,
+    target: Path,
+    *,
+    width: int,
+    height: int,
+    fps: int,
+    content_height: int | None = None,
+) -> int:
+    """A finite sequence of center-cover-cropped JPEGs, optionally above a static black band."""
+    content_height = height if content_height is None else content_height
+    if not 1 <= content_height <= height:
+        raise ValueError("content_height must fit inside the output height")
     filters = (
-        f"fps={fps},scale={width}:{height}:force_original_aspect_ratio=increase:flags=lanczos,"
-        f"crop={width}:{height}:exact=1,setsar=1"
+        f"fps={fps},scale={width}:{content_height}:"
+        "force_original_aspect_ratio=increase:flags=lanczos,"
+        f"crop={width}:{content_height}:exact=1"
     )
+    if content_height < height:
+        # Device film leaves its caption band unchanged between frames to save
+        # one SPI transfer. Bake that otherwise-discarded region static so it
+        # can never retain moving pixels from the first frame.
+        filters += f",pad={width}:{height}:0:0:color=black"
+    filters += ",setsar=1"
     return _run(source, target, [
         # FFmpeg's 4:4:4 JPEGs use 1x2 sampling for every component. The ESP32
         # ROM TJpgDec rejects that layout; 4:2:0 emits supported 2x2/1x1/1x1.

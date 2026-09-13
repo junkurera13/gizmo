@@ -39,6 +39,9 @@ HEIGHT = 240
 FPS = 8
 SECONDS = 30
 SEGMENT_SECONDS = 5
+# Keep in sync with firmware include/gizmo/screens.h. Film playback repaints
+# only the area above this static strip after its first full-screen frame.
+CAPTION_BAND_HEIGHT = 24
 WIRE_RATE = 24_000
 PCM_CHUNK_BYTES = 11_520
 ROOT = Path(__file__).resolve().parents[3]
@@ -198,7 +201,14 @@ def build_prebuilt_fixture(
         raise FileNotFoundError(f"missing prebuilt demo media: {video} / {audio}")
     with tempfile.TemporaryDirectory(prefix="gizmo-demo-") as temporary:
         encoded = Path(temporary) / "film.mjpeg"
-        encoded_count = encode_mjpeg(video, encoded, width=WIDTH, height=HEIGHT, fps=fps)
+        encoded_count = encode_mjpeg(
+            video,
+            encoded,
+            width=WIDTH,
+            height=HEIGHT,
+            fps=fps,
+            content_height=HEIGHT - CAPTION_BAND_HEIGHT,
+        )
         frames = _split_mjpeg(encoded.read_bytes())
     if encoded_count != len(frames):
         raise ValueError(
