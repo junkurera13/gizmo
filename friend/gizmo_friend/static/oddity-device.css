@@ -103,7 +103,7 @@ main{padding:0 16px}.simulator{width:min(650px,100%,calc((100svh - 180px)*1145/1
 .preview-form button:hover,.preview-form button:focus-visible{background:#fff;color:#000;outline:0}
 .preview-form .preview-error{min-height:0;margin:0.85rem 0 0;color:#888;font-size:0.68rem;letter-spacing:0.04em;text-align:center}
 .preview-form .preview-error:empty{display:none;margin:0}
-.embedded .masthead,.embedded footer,.embedded .below-screen,.embedded .device-hints,.embedded .composer,.embedded .starters,.embedded .notice{display:none}.embedded,.embedded body,.embedded main{background:#000}.embedded main{min-height:100svh;padding-top:20px;display:flex;align-items:flex-start;box-sizing:border-box}.embedded .simulator{width:min(650px,100%,calc((100svh - 92px)*1145/1373))}.embedded .power-bar{margin:0 0 -25px}
+.embedded .masthead,.embedded footer,.embedded .below-screen,.embedded .device-hints,.embedded .composer,.embedded .starters,.embedded .notice{display:none}.embedded,.embedded body,.embedded main{background:#000}.embedded main{min-height:100svh;padding-top:30px;display:flex;align-items:flex-start;box-sizing:border-box}.embedded .simulator{width:min(650px,100%,calc((100svh - 92px)*1145/1373))}.embedded .power-bar{margin:0 0 -25px}
 html.embedded .simulator{width:min(650px,100%,calc((100svh - 168px)*1145/1373))}
 .moments{display:none;align-items:center;gap:12px;width:min(100%,22rem);margin:-8.5% auto 0;color:#c8c2c6;touch-action:pan-y;position:relative;z-index:2}
 html.embedded .moments:not([hidden]){display:flex}
