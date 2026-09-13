@@ -79,12 +79,14 @@ main{padding:0 16px}.simulator{width:min(650px,100%,calc((100svh - 180px)*1145/1
 .stage.has-scene.demo-fullscreen .scene:after{opacity:0}
 #film{transition:opacity .22s ease}
 #film.swap{opacity:0}
-.power-bar{display:flex;justify-content:center;margin:0 0 -25px;position:relative;z-index:2;transform:translateY(18px)}
+.power-bar{display:flex;align-items:center;justify-content:center;gap:18px;margin:0 0 -25px;position:relative;z-index:2;transform:translateY(18px)}
 .power-toggle{display:inline-flex;align-items:center;gap:10px;margin:0;padding:0;border:0;background:transparent;color:#c8c8c8;font:inherit;font-size:11px;letter-spacing:.14em;text-transform:uppercase;cursor:pointer}
 .power-track{display:block;width:40px;height:22px;box-sizing:border-box;padding:2px;border:1px solid #fff;border-radius:999px}
 .power-knob{display:block;width:16px;height:16px;border-radius:50%;background:#fff;transition:transform .16s ease}
 .power-toggle.is-on .power-knob,.power-toggle[aria-checked=true] .power-knob{transform:translateX(18px)}
 .power-toggle:focus-visible{outline:2px solid #fff;outline-offset:4px}
+#power-cinema{border-bottom:1px solid #555;padding:1px 0;color:#9f9b9e;font-size:10px;line-height:1.25;letter-spacing:.12em;text-decoration:none;text-transform:uppercase;transition:color .16s ease,border-color .16s ease}
+#power-cinema:hover,#power-cinema:focus-visible{color:#fff;border-bottom-color:#fff;outline:0}
 .below-screen{margin:-4% 10% 0;position:relative;min-height:22px;gap:12px}.below-screen p{font-size:12px}.notice{margin:8px 10% 0;color:#d4a1a9}.device-hints{display:flex;justify-content:center;gap:18px;margin:12px -15px 7px;font-size:11px;color:#88848a;white-space:nowrap}.device-hints kbd{color:#b6aeb7}.composer{max-width:320px}.composer input{color:#dfd8dd;font-size:13px;padding:10px 0}.composer input::placeholder{color:#787379}.composer button{color:#c2b6bf}.starters{margin-top:10px;gap:16px}.starters button{color:#a998a3;border-color:#574651;font-size:10px}footer{padding:18px 32px;color:#69656c;font-size:10px}footer .quiet{font-size:10px}.keyboard-hint{color:#7c777f}
 @media(max-width:600px){.masthead{padding:19px 20px}.simulator{width:min(100%,520px)}main{padding:0 8px}.device-hints{font-size:10px;gap:12px;margin-left:0;margin-right:0}.below-screen{margin-top:-3%;margin-left:9%;margin-right:9%}.below-screen p{font-size:11px}.composer{max-width:280px}.starters{gap:10px}.starters button{font-size:9px}footer{padding:26px 20px}}
 @media(prefers-reduced-motion:reduce){.device-control,.camera-finder,.demo-rainbow svg{transition:none}.demo-math.is-active .math-attempt,.demo-math.is-active .math-make-ten,.demo-math.is-active .math-leftover,.demo-math.is-active .math-answer{animation:none;opacity:1}.demo-rainbow.is-active .rainbow-sun,.demo-rainbow.is-active .incoming-light .beam,.demo-rainbow.is-active .beam-enter,.demo-rainbow.is-active .beam-reflect,.demo-rainbow.is-active .beam-exit,.demo-rainbow.is-active .ray{animation:none;stroke-dashoffset:0}.demo-rainbow.is-active .rainbow-callout{animation:none;opacity:1}.demo-rainbow .spectrum-particles{display:none}}
@@ -107,12 +109,10 @@ html.embedded .simulator{width:min(650px,100%,calc((100svh - 168px)*1145/1373))}
 html.embedded .moments:not([hidden]){display:flex}
 .moments button{margin:0;padding:0;border:0;background:transparent;color:#d7d2d7;font:inherit}
 #moment-prev,#moment-next{width:28px;height:28px;flex-shrink:0;font-size:22px;line-height:1;color:#9c959a}
-#moment-prev:hover,#moment-next:hover,#moment-say:hover,#moment-cinema:hover{color:#fff}
+#moment-prev:hover,#moment-next:hover,#moment-say:hover{color:#fff}
 .moment-copy{min-width:0;flex:1;text-align:center}
 #moment-line{margin:0 0 6px;font-size:12px;line-height:1.35;letter-spacing:.01em;color:#e6e0e4}
-.moment-actions{display:flex;align-items:center;justify-content:center;gap:14px}
-#moment-say,#moment-cinema{border-bottom:1px solid #5c555a;padding:0 0 1px;font-size:10px;line-height:1.25;letter-spacing:.12em;text-transform:uppercase;color:#a898a0;text-decoration:none;transition:color .16s ease,border-color .16s ease}
-#moment-cinema:focus-visible{color:#fff;border-bottom-color:#fff;outline:0}
+#moment-say{border-bottom:1px solid #5c555a;padding:0 0 1px;font-size:10px;letter-spacing:.12em;text-transform:uppercase;color:#a898a0}
 .moments.is-playing #moment-prev,.moments.is-playing #moment-next{opacity:.3;pointer-events:none}#moment-say.is-playing{border-bottom-color:transparent;color:#fff}
 @media(max-width:600px){.embedded main{padding-top:0}.embedded .simulator{width:min(100%,520px)}html.embedded .simulator{width:min(100%,520px)}#moment-line{font-size:11px}}
 /* One caption treatment for Gizmo on the home, camera and visual screens. */

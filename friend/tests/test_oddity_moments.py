@@ -194,12 +194,15 @@ class MomentCatalogTests(unittest.TestCase):
             css,
         )
 
-    def test_demo_rail_links_to_standalone_cinema(self):
+    def test_power_bar_links_to_standalone_cinema(self):
         html = (Path(__file__).resolve().parents[1] / "gizmo_friend" / "static" / "oddity.html").read_text()
+        power_bar = html[html.index('<div class="power-bar">'):html.index('<div id="device"')]
+        demo_rail = html[html.index('<div id="moments"'):html.index('</section>', html.index('<div id="moments"'))]
         self.assertIn(
-            'id="moment-cinema" href="https://oddware.xyz/gizmo/cinema"',
-            html,
+            'id="power-cinema" href="https://oddware.xyz/gizmo/cinema"',
+            power_bar,
         )
+        self.assertNotIn("power-cinema", demo_rail)
 
     def test_birthday_seed_is_eleven_days_out(self):
         with patch.dict("os.environ", {"GIZMO_TZ": "UTC"}):
