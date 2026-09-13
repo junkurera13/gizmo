@@ -315,6 +315,11 @@ class DeviceDemo:
         await self.send({"type": "glass", "viewing": False, "text": ""})
         await self.send({"type": "state"})
 
+    async def _warm(self) -> None:
+        """Encode every step right after connect so thinking time stays pure."""
+        for index in range(len(self.steps)):
+            await self._segments_for(index)
+
     async def _cancel_playback(self) -> None:
         playback, self.playback = self.playback, None
         if playback and playback is not asyncio.current_task():
@@ -348,6 +353,7 @@ class DeviceDemo:
             }
         )
         await self.send({"type": "glass", "viewing": False, "text": ""})
+        warm = asyncio.create_task(self._warm())
         try:
             while True:
                 message = await self.socket.receive_json()
@@ -381,6 +387,10 @@ class DeviceDemo:
                         self.mic.clear()
                         await self._cancel_playback()
                         self.state = "listening"
+                        await self.send({"type": "interrupted"})
+                        await self.send(
+                            {"type": "glass", "viewing": False, "text": ""}
+                        )
                         await self.send({"type": "state"})
                     else:
                         self.recording = False
@@ -390,9 +400,11 @@ class DeviceDemo:
                     raw = message.get("pcm", "")
                     if isinstance(raw, str) and len(raw) < 100_000:
                         try:
-                            self.mic.extend(base64.b64decode(raw, validate=True))
+                            pcm = base64.b64decode(raw, validate=True)
                         except ValueError:
                             continue
+                        if len(self.mic) + len(pcm) <= 20 * 48000:
+                            self.mic.extend(pcm)
                 elif kind == "text":
                     if self.powered and not self.recording:
                         self.playback = asyncio.create_task(self._next_step())
@@ -410,4 +422,6 @@ class DeviceDemo:
                         await self._cancel_playback()
                     await self.send(self.settings.snapshot())
         finally:
+            warm.cancel()
+            await asyncio.gather(warm, return_exceptions=True)
             await self._cancel_playback()
