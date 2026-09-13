@@ -32,6 +32,8 @@ FILM_NARRATION_STYLE = (
 
 STYLE = f"""Original educational motion design. {ART_STYLE}
 Purposeful movement, smooth revealing transitions and close-up cutaways.
+The first frame is already a clean, fully formed establishing shot: no fade-in,
+dissolve, visual noise, blocky materialization or object morphing into existence.
 Show cause and effect,
 not a static illustration with ambient particles. The central requested object stays
 visible. Leave typography and labels out of the generated picture."""
