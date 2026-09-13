@@ -329,16 +329,19 @@ class DeviceDemo:
 
     async def _next_step(self) -> None:
         index = min(self.step_index, len(self.steps) - 1)
-        self.step_index += 1
         try:
             await self._play_step(index)
         except asyncio.CancelledError:
+            # Interrupted take replays the same step on the next press.
             raise
         except Exception as error:  # noqa: BLE001 - never die mid-take
             logger.warning("Demo step failed: error=%s", type(error).__name__)
             self.state = "listening"
             await self.send({"type": "glass", "viewing": False, "text": ""})
             await self.send({"type": "state"})
+            return
+        # A completed cycle wraps so every full pass is film one + film two.
+        self.step_index = (self.step_index + 1) % len(self.steps)
 
     async def run(self):
         await self.socket.accept()
