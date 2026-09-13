@@ -17,5 +17,7 @@ body[data-phase=playing] .poster,body[data-has-film=true] .poster{opacity:0}body
 #sound{position:absolute;top:20px;right:24px;z-index:10;width:44px;height:44px;display:grid;place-items:center;background:#ffffff14;border:none;border-radius:50%;padding:0;color:#fff;transition:background .2s,transform .15s}#sound:hover{background:#ffffff26}#sound:active{transform:scale(.92)}#sound svg{width:22px;height:22px;display:block}#sound .mute-slash{display:none}#sound.is-muted .waves{display:none}#sound.is-muted .mute-slash{display:block}
 dialog{border:1px solid #e9e2da30;background:#132237;color:#fff5df;border-radius:18px;max-width:360px;padding:30px}dialog::backdrop{background:#030a15bb;backdrop-filter:blur(12px)}dialog form{display:grid;gap:16px}dialog h2{margin:0;font-weight:500}dialog label{font-size:13px}dialog input{background:#fff5df;color:#142339;border:0;border-radius:8px;padding:12px;width:100%}dialog button{border:0;background:#f5a3b9;color:#142339;padding:12px;border-radius:30px}#access-error{font-size:12px;margin:0}
 
+html.embedded header,html.embedded .welcome,html.embedded .film-info{display:none!important}
+
 @media(max-width:600px){.simulator{width:min(100%,520px)}.bottom{gap:8px}#talk,#pause{width:49px;height:49px}#question{padding-left:17px}#ask{font-size:14px}#send{width:39px;height:39px}.hint{font-size:10px}}
 @media(prefers-reduced-motion:reduce){*,*::before,*::after{transition:none!important;animation:none!important}}

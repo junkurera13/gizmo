@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import base64
+import hashlib
 import hmac
 import json
 import os
@@ -13,7 +14,7 @@ from pathlib import Path
 from urllib.parse import urlsplit
 
 from fastapi import APIRouter, HTTPException, Request, WebSocket, WebSocketDisconnect
-from fastapi.responses import FileResponse, JSONResponse
+from fastapi.responses import FileResponse, HTMLResponse, JSONResponse
 
 from gizmo_friend.brain.show_budget import ShowBudget
 from gizmo_friend.cinema.runtime import CinemaSession
@@ -36,6 +37,13 @@ def router(root: Path, static: Path):
     credentials: set[str] = set()
     active: dict[str, CinemaSession] = {}
     budget = FilmBudget(root)
+    # The page is served no-store while /static responses are heuristically
+    # cached — stamp the asset URLs so a fresh page can never pair with
+    # another version's css/js (a rolling deploy splits them otherwise).
+    asset_version = hashlib.sha256(
+        (static / "cinema.css").read_bytes()
+        + (static / "cinema.js").read_bytes()
+    ).hexdigest()[:12]
 
     def same_origin(connection):
         origin = urlsplit(connection.headers.get("origin", ""))
@@ -57,8 +65,13 @@ def router(root: Path, static: Path):
 
     @api.get("/cinema")
     async def page():
-        return FileResponse(
-            static / "cinema.html",
+        html = (static / "cinema.html").read_text()
+        for name in ("cinema.css", "cinema.js"):
+            html = html.replace(
+                f"/static/{name}", f"/static/{name}?v={asset_version}"
+            )
+        return HTMLResponse(
+            html,
             headers={
                 "Cache-Control": "no-store",
                 "X-Robots-Tag": "noindex",
