@@ -168,47 +168,47 @@ _register(
         id="mathcheck",
         line="Did I get this right?",
         seed=(
-            "The kid is checking their work on 26 + 16. They wrote 43, but the correct answer is 42."
+            "The kid is checking a fraction picture. Two of four equal parts are blue, but they wrote 2/3."
         ),
         contract=(
-            "Praise the attempt before correcting it. Split both numbers into tens and ones: twenty plus "
-            "ten makes thirty, while six plus six makes twelve. Then combine thirty and twelve to make "
-            "forty-two. Show each step visually and keep the tone suitable for a child aged 6 to 10."
+            "Praise the attempt before correcting it. Explain that the numerator counts the two shaded "
+            "parts and the denominator counts all four equal parts. Show that the picture is 2/4, which "
+            "simplifies to 1/2. Keep the tone suitable for a child aged 6 to 10."
         ),
         demo={
             "prompt": "Gizmo, did I get this right?",
             "prompt_audio": "/static/demo-math-kid.mp3?v=math2",
             "reply": (
-                "Twenty-six plus sixteen is forty-two, not forty-three! "
-                "Twenty plus ten is thirty; six plus six is twelve. Together, forty-two!"
+                "Almost! You counted the two blue parts correctly, so two goes on top. "
+                "But the circle is split into four equal parts, so four goes on the bottom. "
+                "That is two-fourths, which is the same as one-half. Nice job checking!"
             ),
-            "reply_audio": "/static/demo-math-gizmo.wav?v=math1",
-            **_recording('mathcheck'),
-            "reply_audio_rate": 1.15,
+            "reply_audio": "/static/demo-math-fraction-gizmo.wav?v=fraction1",
+            "reply_audio_rate": 1.0,
             "camera": {
-                "video": "/static/demo-math-camera.mp4?v=math3",
-                "start_at": 0,
+                "video": "/static/demo-math-fraction-camera.mp4?v=fraction1",
+                "start_at": 5.2,
                 "home_wait_ms": 1000,
-                "reply_wait_ms": 2000,
+                "reply_wait_ms": 900,
                 "loop": True,
                 "cues": [
                     {
-                        "at": 1.0,
+                        "at": 6.0,
                         "prompt": "Gizmo, did I get this right?",
                         "audio": "/static/demo-math-kid.mp3?v=math2",
                     },
                 ],
             },
             "math": {
-                "visual_timed": _RECORDINGS['mathcheck']['visual_timed'],
-                "attempt": "26 + 16 = 43",
-                "make_ten": "20 + 10 = 30",
-                "left": "6 + 6 = 12",
-                "answer": "30 + 12 = 42",
+                "visual_timed": [[0.0, 0], [2.8, 1], [4.2, 2], [7.8, 3], [11.5, 4]],
+                "attempt": "2/3",
+                "attempt_lead": "You wrote ",
+                "shaded": "shaded parts",
+                "total": "equal parts",
+                "answer": "2/4 = 1/2",
                 "description": (
-                    "A colorful cartoon showing twenty-six and sixteen splitting into tens and ones: "
-                    "twenty plus ten makes thirty, six plus six makes twelve, and thirty plus twelve "
-                    "makes forty-two."
+                    "A colorful fraction circle split into four equal pieces with two pieces shaded, "
+                    "showing that two-fourths simplifies to one-half."
                 ),
             },
         },
@@ -311,6 +311,33 @@ _register(
             ),
             "reply_audio": "/static/demo-antarctica-gizmo.wav?v=antarctica3",
             "video": "/static/demo-antarctica.mp4?v=antarctica1",
+            "beats": [
+                {
+                    "reply": (
+                        "Antarctica is the icy continent at the very bottom of Earth. On a globe, "
+                        "it wraps around the South Pole. Most of it is covered by a huge sheet of "
+                        "ice, with bright glaciers, tall mountains, and deep blue cracks. Along the "
+                        "coast, you can see floating icebergs and penguins."
+                    ),
+                    "reply_audio": "/static/demo-antarctica-gizmo.wav?v=antarctica3",
+                    "video": "/static/demo-antarctica.mp4?v=antarctica1",
+                    "interruption": {
+                        "after_ms": 22000,
+                        "prompt": "Do penguins live anywhere else besides Antarctica?",
+                        "audio": "/static/demo-antarctica-followup-kid.mp3?v=penguin1",
+                        "think_wait_ms": 650,
+                        "fullscreen_during_prompt": True,
+                    },
+                },
+                {
+                    "reply": (
+                        "Yes! Penguins also live in South America, southern Africa, Australia, "
+                        "New Zealand, and the Galapagos Islands. Not every penguin lives somewhere icy."
+                    ),
+                    "reply_audio": "/static/demo-antarctica-followup-gizmo.wav?v=penguin1",
+                    "video": "/static/demo-antarctica-followup.mp4?v=penguin1",
+                },
+            ],
         },
     ),
     Moment(

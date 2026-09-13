@@ -43,7 +43,7 @@
       document.documentElement.classList.add('oddity-locked');
     }
   </script>
-  <script type="module" src="/static/oddity.js?v=gate82"></script>
+  <script type="module" src="/static/oddity.js?v=gate84"></script>
 </head>
 <body>
   <section id="preview-gate" class="preview-gate" aria-labelledby="preview-title" hidden>
@@ -119,23 +119,19 @@
                 <div class="math-cloud math-cloud-one" aria-hidden="true"></div>
                 <div class="math-cloud math-cloud-two" aria-hidden="true"></div>
                 <p id="math-attempt" class="math-attempt"></p>
-                <div class="math-split" aria-label="Split twenty-six and sixteen into tens and ones">
-                  <span>26 = <b>20 + 6</b></span>
-                  <i>+</i>
-                  <span>16 = <b>10 + 6</b></span>
+                <div class="fraction-model" aria-hidden="true">
+                  <svg viewBox="0 0 220 220">
+                    <path class="fraction-piece is-shaded" d="M110 110 L110 12 A98 98 0 0 1 208 110 Z"/>
+                    <path class="fraction-piece" d="M110 110 L208 110 A98 98 0 0 1 110 208 Z"/>
+                    <path class="fraction-piece is-shaded" d="M110 110 L110 208 A98 98 0 0 1 12 110 Z"/>
+                    <path class="fraction-piece" d="M110 110 L12 110 A98 98 0 0 1 110 12 Z"/>
+                  </svg>
                 </div>
-                <div class="math-stories">
-                  <div class="math-story math-tens-story">
-                    <div class="math-rods" aria-hidden="true"><i></i><i></i><i></i></div>
-                    <strong id="math-make-ten"></strong>
-                  </div>
-                  <div class="math-story math-ones-story">
-                    <div class="math-dots" aria-hidden="true"><span><i></i><i></i><i></i><i></i><i></i><i></i></span><span><i></i><i></i><i></i><i></i><i></i><i></i></span></div>
-                    <strong id="math-left"></strong>
-                  </div>
+                <div class="fraction-counts">
+                  <div class="fraction-count fraction-shaded"><b>2</b><span id="math-shaded"></span></div>
+                  <div class="fraction-count fraction-total"><b>4</b><span id="math-total"></span></div>
                 </div>
                 <p id="math-answer" class="math-answer"></p>
-                <div class="math-confetti" aria-hidden="true"><i></i><i></i><i></i><i></i><i></i><i></i></div>
               </div>
               <div id="demo-rainbow" class="demo-rainbow" role="img" hidden>
                 <div class="rainbow-atmosphere" aria-hidden="true"><i></i><i></i><i></i><i></i><i></i><i></i></div>

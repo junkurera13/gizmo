@@ -397,19 +397,16 @@ function showDemoMath(math, signal) {
   $('still').classList.remove('is-demo-reference'); $('still').hidden = true;
   hideDemoVisuals();
   const visual = $('demo-math');
-  const attempt = String(math.attempt || '26 + 16 = 43');
-  const wrong = attempt.match(/^(.*?=\s*)(\S+)$/);
-  $('math-attempt').replaceChildren(document.createTextNode(wrong?.[1] || attempt));
-  if (wrong) {
-    const value = document.createElement('span'); value.className = 'math-wrong'; value.textContent = wrong[2];
-    $('math-attempt').append(value);
-  }
-  $('math-make-ten').textContent = math.make_ten || '20 + 10 = 30';
-  $('math-left').textContent = math.left || '6 + 6 = 12';
-  $('math-answer').textContent = math.answer || '30 + 12 = 42';
-  demoMathCues = math.visual_timed || [[0,0],[8.4,1],[10.8,2],[13.3,3],[16.1,4]];
+  const attempt = String(math.attempt || '2/3');
+  $('math-attempt').replaceChildren(document.createTextNode(math.attempt_lead || 'You wrote '));
+  const value = document.createElement('span'); value.className = 'math-wrong'; value.textContent = attempt;
+  $('math-attempt').append(value);
+  $('math-shaded').textContent = math.shaded || 'shaded parts';
+  $('math-total').textContent = math.total || 'equal parts';
+  $('math-answer').textContent = math.answer || '2/4 = 1/2';
+  demoMathCues = math.visual_timed || [[0,0],[2.8,1],[4.2,2],[7.8,3],[11.5,4]];
   syncDemoMath(0);
-  visual.setAttribute('aria-label', math.description || 'A visual correction showing twenty-seven plus sixteen equals forty-three.');
+  visual.setAttribute('aria-label', math.description || 'A visual correction showing two shaded parts out of four equals one-half.');
   visual.hidden = false; visual.classList.remove('is-active'); void visual.offsetWidth; visual.classList.add('is-active');
   stage.classList.remove('scene-ending'); stage.classList.add('has-scene'); $('home').hidden = false;
   $('scene').classList.remove('scene-enter'); void $('scene').offsetWidth; $('scene').classList.add('scene-enter');
@@ -570,6 +567,9 @@ async function sayMoment() {
         }
         history.push({role:'assistant', text:beat.reply}); renderNotes();
         if (beat.interruption) {
+          if (beat.interruption.fullscreen_during_prompt && demoOwnsScene) {
+            expandDemoSceneFullscreen();
+          }
           status('Listen to the question…', 'listening');
           setTalkPressed(true); $('talk').classList.add('recording');
           try {

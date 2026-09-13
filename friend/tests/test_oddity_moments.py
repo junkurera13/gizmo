@@ -99,25 +99,25 @@ class MomentCatalogTests(unittest.TestCase):
         math = public[3]["demo"]
         self.assertEqual(math["prompt_audio"], "/static/demo-math-kid.mp3?v=math2")
         self.assertEqual(math["camera"], {
-                "video": "/static/demo-math-camera.mp4?v=math3",
-                "start_at": 0,
+                "video": "/static/demo-math-fraction-camera.mp4?v=fraction1",
+                "start_at": 5.2,
                 "home_wait_ms": 1000,
-                "reply_wait_ms": 2000,
+                "reply_wait_ms": 900,
                 "loop": True,
             "cues": [{
-                "at": 1.0,
+                "at": 6.0,
                 "prompt": "Gizmo, did I get this right?",
                 "audio": "/static/demo-math-kid.mp3?v=math2",
             }],
         })
-        self.assertEqual(math["reply_audio"], "/static/demo-mathcheck-refreshed.wav?v=math4")
-        self.assertEqual(math["reply_audio_rate"], 1.15)
-        self.assertEqual(math["math"]["attempt"], "26 + 16 = 43")
-        self.assertEqual(math["math"]["make_ten"], "20 + 10 = 30")
-        self.assertEqual(math["math"]["left"], "6 + 6 = 12")
-        self.assertEqual(math["math"]["answer"], "30 + 12 = 42")
-        self.assertIn("not forty-three", math["reply"])
-        self.assertIn("Together, forty-two", math["reply"])
+        self.assertEqual(math["reply_audio"], "/static/demo-math-fraction-gizmo.wav?v=fraction1")
+        self.assertEqual(math["reply_audio_rate"], 1.0)
+        self.assertEqual(math["math"]["attempt"], "2/3")
+        self.assertEqual(math["math"]["shaded"], "shaded parts")
+        self.assertEqual(math["math"]["total"], "equal parts")
+        self.assertEqual(math["math"]["answer"], "2/4 = 1/2")
+        self.assertIn("two blue parts", math["reply"])
+        self.assertIn("same as one-half", math["reply"])
         rainbow = public[4]["demo"]
         self.assertEqual(rainbow["prompt_audio"], "/static/demo-rainbow-kid.mp3?v=rainbow2")
         self.assertEqual(rainbow["beats"][0]["rainbow"], {"focus": "overview"})
@@ -135,6 +135,25 @@ class MomentCatalogTests(unittest.TestCase):
         self.assertEqual(antarctica["video"], "/static/demo-antarctica.mp4?v=antarctica1")
         self.assertIn("South Pole", antarctica["reply"])
         self.assertIn("penguins", antarctica["reply"])
+        self.assertEqual(len(antarctica["beats"]), 2)
+        interruption = antarctica["beats"][0]["interruption"]
+        self.assertEqual(interruption["after_ms"], 22000)
+        self.assertTrue(interruption["fullscreen_during_prompt"])
+        self.assertEqual(
+            interruption["audio"],
+            "/static/demo-antarctica-followup-kid.mp3?v=penguin1",
+        )
+        self.assertIn("anywhere else", interruption["prompt"])
+        self.assertEqual(
+            antarctica["beats"][1]["reply_audio"],
+            "/static/demo-antarctica-followup-gizmo.wav?v=penguin1",
+        )
+        self.assertEqual(
+            antarctica["beats"][1]["video"],
+            "/static/demo-antarctica-followup.mp4?v=penguin1",
+        )
+        self.assertIn("South America", antarctica["beats"][1]["reply"])
+        self.assertIn("Galapagos", antarctica["beats"][1]["reply"])
         self.assertEqual(public[6]["demo"]["prompt_audio"], "/static/demo-pompeii-kid.mp3")
         self.assertEqual(public[6]["demo"]["video"], "/static/demo-pompeii-polished.mp4")
         self.assertIn('paintings', public[6]['demo']['followup']['prompt'])
@@ -145,9 +164,12 @@ class MomentCatalogTests(unittest.TestCase):
         self.assertTrue(lookup("trex").contract)
         self.assertIsNone(lookup("missing"))
 
-    def test_math_visual_uses_number_cards_without_agent_characters(self):
+    def test_math_visual_uses_fraction_circle_without_agent_characters(self):
         html = (Path(__file__).resolve().parents[1] / "gizmo_friend" / "static" / "oddity.html").read_text()
-        self.assertIn('class="math-split"', html)
+        self.assertIn('class="fraction-model"', html)
+        self.assertEqual(html.count('fraction-piece is-shaded'), 2)
+        self.assertIn('id="math-shaded"', html)
+        self.assertIn('id="math-total"', html)
         self.assertNotIn('class="math-pals"', html)
         self.assertNotIn('class="math-face"', html)
 

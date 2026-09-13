@@ -119,22 +119,35 @@ test('Pompeii plays three synchronized narrated videos', async () => {
 
 test('Antarctica locates the continent in a synchronized educational film', async () => {
   const ui = await app();
-  ui.context.recorded = []; ui.context.videos = [];
+  ui.context.recorded = []; ui.context.videos = []; ui.context.fullscreenExpansions = 0;
   ui.run(`
     delay = async () => {};
     playDemoRecording = async (src, signal, text) => { recorded.push(src); setCaption(text); };
+    playDemoRecordingFor = async (src, signal, text) => { recorded.push(src); setCaption(text); };
     showDemoVideo = async (src) => { videos.push(src); demoOwnsScene = true; };
+    expandDemoSceneFullscreen = () => { fullscreenExpansions += 1; };
     moments = [{id:'antarctica', line:'What does Antarctica look like?', demo:{
       prompt:'Gizmo, what does Antarctica look like?', prompt_audio:'kid.mp3',
       reply:'Antarctica surrounds the South Pole.', reply_audio:'gizmo.wav', video:'antarctica.mp4',
+      beats:[
+        {reply:'Antarctica has icebergs and penguins.', reply_audio:'gizmo.wav', video:'antarctica.mp4',
+          interruption:{after_ms:22000, prompt:'Do penguins live anywhere else besides Antarctica?',
+            audio:'penguin-kid.mp3', think_wait_ms:650, fullscreen_during_prompt:true}},
+        {reply:'Penguins also live in South America and the Galapagos Islands.',
+          reply_audio:'penguin-gizmo.wav', video:'penguin-world.mp4'},
+      ],
     }}]; syncMoment('antarctica');
   `);
   await ui.run('sayMoment()');
-  assert.deepEqual([...ui.context.recorded], ['kid.mp3', 'gizmo.wav']);
-  assert.deepEqual([...ui.context.videos], ['antarctica.mp4']);
+  assert.deepEqual([...ui.context.recorded], ['kid.mp3', 'gizmo.wav', 'penguin-kid.mp3', 'penguin-gizmo.wav']);
+  assert.deepEqual([...ui.context.videos], ['antarctica.mp4', 'penguin-world.mp4']);
+  assert.equal(ui.context.fullscreenExpansions, 1);
   assert.deepEqual([...ui.run('history.map(item => item.text)')], [
-    'Gizmo, what does Antarctica look like?', 'Antarctica surrounds the South Pole.',
+    'Gizmo, what does Antarctica look like?', 'Antarctica has icebergs and penguins.',
+    'Do penguins live anywhere else besides Antarctica?',
+    'Penguins also live in South America and the Galapagos Islands.',
   ]);
+  assert.equal(ui.element('caption').textContent, '');
 });
 
 test('Pompeii continues with the recorded kid follow-up and its answer video', async () => {
@@ -254,27 +267,27 @@ test('math-check closes camera and reveals math without the Gizmo painting anima
     };
     moments = [{id:'mathcheck', line:'Did I get this right?', demo:{
       prompt:'Gizmo, did I get this right?', prompt_audio:'kid.mp3',
-      reply:'Nice work—you were only one away! Twenty-seven plus sixteen is forty-three, not forty-two.',
-      reply_audio:'umbriel.wav', reply_audio_rate:1, math:{attempt:'26 + 16 = 43'},
-      camera:{video:'math.mp4', start_at:0, home_wait_ms:1000, reply_wait_ms:2000, loop:true, cues:[
-        {at:1, prompt:'Gizmo, did I get this right?', audio:'kid.mp3'},
+      reply:'Almost! Two blue parts out of four is two-fourths, or one-half.',
+      reply_audio:'umbriel.wav', reply_audio_rate:1, math:{attempt:'2/3'},
+      camera:{video:'fraction.mp4', start_at:5.2, home_wait_ms:1000, reply_wait_ms:900, loop:true, cues:[
+        {at:6, prompt:'Gizmo, did I get this right?', audio:'kid.mp3'},
       ]},
     }}]; syncMoment('mathcheck');
   `);
   ui.run("showDemoMath = () => events.push('math')");
   await ui.run('sayMoment()');
   assert.deepEqual([...ui.context.events], [
-    'status:idle', 'wait:1000', 'status:idle', 'wait:120', 'open:math.mp4', 'wait:100', 'video',
-    'cue:1', 'status:listening', 'audio:kid.mp3',
-    'pause:video', 'home', 'math', 'status:playing', 'wait:2000', 'status:playing',
+    'status:idle', 'wait:1000', 'status:idle', 'wait:120', 'open:fraction.mp4', 'wait:100', 'video',
+    'cue:6', 'status:listening', 'audio:kid.mp3',
+    'pause:video', 'home', 'math', 'status:playing', 'wait:900', 'status:playing',
     'audio:umbriel.wav', 'reply-video-loop:true', 'pause:video', 'status:idle',
   ]);
   assert.equal(ui.context.events.includes('status:thinking'), false);
   assert.equal(ui.element('camera-feed').loop, true);
-  assert.equal(ui.element('camera-feed').currentTime, 0);
+  assert.equal(ui.element('camera-feed').currentTime, 5.2);
   assert.deepEqual([...ui.run('history.map(item => item.text)')], [
     'Gizmo, did I get this right?',
-    'Nice work—you were only one away! Twenty-seven plus sixteen is forty-three, not forty-two.',
+    'Almost! Two blue parts out of four is two-fourths, or one-half.',
   ]);
   assert.equal(ui.element('caption').textContent, '');
   assert.match(ui.element('status').textContent, /Demo finished/);
