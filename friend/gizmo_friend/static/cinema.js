@@ -1,3 +1,4 @@
+import {mountDevice} from '/static/oddity-device.mjs';
 const $ = id => document.getElementById(id);
 const SESSION_KEY = 'gizmo-cinema-v1';
 function stored(key) {
@@ -10,6 +11,7 @@ function remember(key, value) {
 }
 let key = stored(SESSION_KEY);
 if (new URLSearchParams(location.search).has('embedded')) document.documentElement.classList.add('embedded');
+mountDevice($('device')).catch(() => { $('device').dataset.loaded = 'true'; });
 const video = $('film'), freeze = $('freeze');
 let socket, peer, revision = 0, duration = 0, startTime = null, ending = false;
 let recorder, microphone, held = false, recordingTimer;
@@ -19,8 +21,6 @@ const metrics = [];
 window.gizmoFilmMetrics = metrics; // Local acceptance evidence; no provider credentials.
 function phase(name, message) {
   document.body.dataset.phase = name;
-  $('welcome').inert = name !== 'idle';
-  $('welcome').setAttribute('aria-hidden', name !== 'idle');
   if (message !== undefined) $('status').textContent = message;
   $('pause').hidden = ['idle','paused','ended','error'].includes(name);
 }
@@ -151,7 +151,6 @@ function presented(_now, metadata) {
 if(video.requestVideoFrameCallback)video.requestVideoFrameCallback(presented);
 else video.addEventListener('timeupdate',()=>{if(!video.paused){document.body.dataset.hasFilm='true';freeze.hidden=true;phase('playing', 'Hold the pink button to ask something.');if(startTime===null)startTime=video.currentTime;if(video.currentTime-startTime>=duration&&!ending){ending=true;freezeFilm();send({type:'finished',revision});}}});
 $('question').addEventListener('submit',e=>{e.preventDefault();ask($('ask').value);});
-document.querySelectorAll('[data-question]').forEach(button=>button.addEventListener('click',()=>ask(button.dataset.question)));
 $('pause').onclick=interrupt;
 $('sound').onclick=()=>{muted=!muted;video.muted=muted;$('sound').textContent=muted?'Sound off':'Sound on';$('sound').setAttribute('aria-label',muted?'Unmute sound':'Mute sound');};
 $('resume').onclick=async()=>{video.muted=muted;await video.play();$('resume').hidden=true;};
@@ -178,8 +177,10 @@ async function startRecording() {
   }catch(error){held=false;$('talk').classList.remove('recording');phase('error','Microphone unavailable. You can type your question.');}
 }
 function stopRecording(){held=false;++recordingRevision;clearTimeout(recordingTimer);$('talk').classList.remove('recording');if(recorder?.state==='recording')recorder.stop();}
-$('talk').addEventListener('pointerdown',e=>{e.preventDefault();$('talk').setPointerCapture(e.pointerId);startRecording();});
-['pointerup','pointercancel','lostpointercapture'].forEach(kind=>$('talk').addEventListener(kind,stopRecording));
+for (const button of [$('talk'), $('ptt')]) {
+  button.addEventListener('pointerdown',e=>{e.preventDefault();button.setPointerCapture(e.pointerId);startRecording();});
+  ['pointerup','pointercancel','lostpointercapture'].forEach(kind=>button.addEventListener(kind,stopRecording));
+}
 $('talk').addEventListener('keydown',e=>{if([' ','Enter'].includes(e.key)&&!e.repeat){e.preventDefault();startRecording();}});
 $('talk').addEventListener('keyup',e=>{if([' ','Enter'].includes(e.key)){e.preventDefault();stopRecording();}});
 window.addEventListener('pagehide',()=>{send({type:'interrupt'});socket?.close();peer?.close();microphone?.getTracks().forEach(t=>t.stop());});
