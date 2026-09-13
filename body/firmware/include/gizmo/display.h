@@ -7,6 +7,10 @@ namespace gizmo {
 // ILI9341 SPI panel. MISO is unused, so begin() cannot read a chip ID.
 class Display {
  public:
+  // The panel scan is deliberately matched to the measured ~33 ms film-band
+  // transfer. See display.cpp; this is independent of the film's 8 fps cadence.
+  static constexpr uint8_t kNominalPanelScanHz = 30;
+
   esp_err_t begin();
   void fill(uint16_t color);
   void blit_rgb565(const uint16_t* pixels, int width, int height);
