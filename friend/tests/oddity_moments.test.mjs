@@ -162,6 +162,40 @@ test('Antarctica locates the continent in a synchronized educational film', asyn
   assert.equal(ui.element('caption').textContent, '');
 });
 
+test('Troy plays a normal kid question, Umbriel story, and spoken follow-up', async () => {
+  const ui = await app();
+  ui.context.recorded = []; ui.context.videos = []; ui.context.spokenCaptions = [];
+  ui.run(`
+    delay = async () => {};
+    playDemoRecording = async (src, signal, text) => { recorded.push(src); spokenCaptions.push(text || ''); setCaption(text); };
+    showDemoVideo = async (src) => { videos.push(src); demoOwnsScene = true; };
+    moments = [{id:'troy', line:'What happened in the story of Troy?', demo:{
+      prompt:'Gizmo, what happened in the story of Troy?', prompt_audio:'troy-kid.wav',
+      reply:'The Trojans brought a wooden horse inside their city.', reply_audio:'troy-gizmo.wav',
+      video:'troy-story.mp4', followup:{
+        prompt:'Why did the Trojans trust the wooden horse?', audio:'troy-followup-kid.wav',
+        reply:'They believed it was a victory gift.', reply_audio:'troy-followup-gizmo.wav',
+        video:'troy-followup.mp4', reply_wait_ms:700,
+      },
+    }}]; syncMoment('troy');
+  `);
+  await ui.run('sayMoment()');
+  assert.deepEqual([...ui.context.recorded], [
+    'troy-kid.wav', 'troy-gizmo.wav', 'troy-followup-kid.wav', 'troy-followup-gizmo.wav',
+  ]);
+  assert.deepEqual([...ui.context.spokenCaptions], [
+    '', 'The Trojans brought a wooden horse inside their city.', '', 'They believed it was a victory gift.',
+  ]);
+  assert.deepEqual([...ui.context.videos], ['troy-story.mp4', 'troy-followup.mp4']);
+  assert.deepEqual([...ui.run('history.map(item => item.text)')], [
+    'Gizmo, what happened in the story of Troy?',
+    'The Trojans brought a wooden horse inside their city.',
+    'Why did the Trojans trust the wooden horse?',
+    'They believed it was a victory gift.',
+  ]);
+  assert.equal(ui.element('caption').textContent, '');
+});
+
 test('Pompeii continues with the recorded kid follow-up and its answer video', async () => {
   const ui = await app();
   ui.context.recorded = []; ui.context.videos = []; ui.context.fullscreenExpansions = 0;

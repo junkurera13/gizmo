@@ -42,9 +42,9 @@ class MomentCatalogTests(unittest.TestCase):
         public = catalog()
         self.assertEqual(
             [item["id"] for item in public],
-            ["birthday", "plant", "draw", "mathcheck", "rainbow", "antarctica", "pompeii"],
+            ["birthday", "plant", "draw", "mathcheck", "rainbow", "antarctica", "troy", "pompeii"],
         )
-        self.assertEqual(len(public), 7)
+        self.assertEqual(len(public), 8)
         self.assertNotIn("seed", public[0])
         self.assertNotIn("contract", public[0])
         self.assertEqual(public[0]["demo"]["prompt_audio"], "/static/demo-birthday-kid.mp3?v=days1")
@@ -166,13 +166,24 @@ class MomentCatalogTests(unittest.TestCase):
         )
         self.assertIn("South America", antarctica["beats"][1]["reply"])
         self.assertIn("Galapagos", antarctica["beats"][1]["reply"])
-        self.assertEqual(public[6]["demo"]["prompt_audio"], "/static/demo-pompeii-kid.mp3")
-        self.assertEqual(public[6]["demo"]["video"], "/static/demo-pompeii-polished.mp4")
-        self.assertIn('paintings', public[6]['demo']['followup']['prompt'])
-        self.assertEqual(public[6]['demo']['followup']['audio'], "/static/demo-pompeii-kid-followup-user.mp3?v=pompeii1")
-        self.assertEqual(public[6]['demo']['followup']['video'], "/static/demo-pompeii-followup.mp4?v=pompeii1")
-        self.assertEqual(public[6]["demo"]["reply_audio"], "/static/demo-pompeii.wav")
-        self.assertIn("Vesuvius", public[6]["demo"]["reply"])
+        troy = public[6]["demo"]
+        self.assertEqual(troy["prompt_audio"], "/static/demo-troy-kid.wav?v=troy1")
+        self.assertEqual(troy["reply_audio"], "/static/demo-troy-gizmo.wav?v=troy1")
+        self.assertEqual(troy["video"], "/static/demo-troy-story.mp4?v=troy3")
+        self.assertIn("wooden horse", troy["reply"])
+        self.assertIn("mythology", troy["reply"])
+        self.assertEqual(troy["followup"]["prompt"], "Why did the Trojans trust the wooden horse?")
+        self.assertEqual(troy["followup"]["audio"], "/static/demo-troy-followup-kid.wav?v=troy1")
+        self.assertEqual(troy["followup"]["video"], "/static/demo-troy-followup.mp4?v=troy3")
+        self.assertEqual(troy["followup"]["reply_audio"], "/static/demo-troy-followup-gizmo.wav?v=troy1")
+        self.assertIn("victory gift", troy["followup"]["reply"])
+        self.assertEqual(public[7]["demo"]["prompt_audio"], "/static/demo-pompeii-kid.mp3")
+        self.assertEqual(public[7]["demo"]["video"], "/static/demo-pompeii-polished.mp4")
+        self.assertIn('paintings', public[7]['demo']['followup']['prompt'])
+        self.assertEqual(public[7]['demo']['followup']['audio'], "/static/demo-pompeii-kid-followup-user.mp3?v=pompeii1")
+        self.assertEqual(public[7]['demo']['followup']['video'], "/static/demo-pompeii-followup.mp4?v=pompeii1")
+        self.assertEqual(public[7]["demo"]["reply_audio"], "/static/demo-pompeii.wav")
+        self.assertIn("Vesuvius", public[7]["demo"]["reply"])
         self.assertTrue(lookup("trex").contract)
         self.assertIsNone(lookup("missing"))
 
