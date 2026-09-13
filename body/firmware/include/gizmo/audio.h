@@ -43,6 +43,7 @@ class Audio {
   // thinking, narration is talking, and the MJPEG GET can starve either.
   void set_live_expecting(bool expecting) { live_expecting_ = expecting; }
   size_t live_capacity_left() const { return live_cap_ - live_n_; }
+  void diagnose_live() const;
 
   void set_volume(uint8_t step, uint8_t steps);
   void update();
@@ -63,6 +64,7 @@ class Audio {
   void pump_live();
   void track_level(const int16_t* samples, size_t count);
   bool arm_live();
+  void report_live(const char* reason);
 
   static constexpr size_t kChunkSamples = 256;
   static constexpr size_t kWarmupSamples = kSampleRate / 8;  // 125 ms discarded on record start
@@ -104,6 +106,14 @@ class Audio {
   size_t live_n_ = 0;
   uint32_t live_wait_since_ = 0;
   uint32_t live_drain_until_ = 0;
+  bool live_perf_active_ = false;
+  uint32_t live_perf_started_ms_ = 0;
+  uint32_t live_perf_last_enqueue_ms_ = 0;
+  uint32_t live_perf_queued_samples_ = 0;
+  uint32_t live_perf_peak_samples_ = 0;
+  uint32_t live_perf_max_packet_gap_ms_ = 0;
+  uint32_t live_perf_starvations_ = 0;
+  uint32_t live_perf_starts_ = 0;
 };
 
 }  // namespace gizmo

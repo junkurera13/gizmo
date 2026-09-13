@@ -4,6 +4,79 @@ Software implementation is complete; physical display, decode speed, PSRAM
 headroom, and simultaneous voice playback still need a flashed XIAO test.
 The existing panel wiring and peripheral ownership are unchanged.
 
+## Demo-only Pompeii shortcut
+
+For the application recording, the local fixture can serve the bundled,
+prebuilt 37-second Pompeii film. This is deliberately isolated from the real
+agent: it makes no transcription, planner, TTS, Gemini, Fal, H3, or Railway
+request, and it does not change production behavior. Gizmo still performs the
+real HTTP download, MJPEG decoding, panel playback, PCM buffering, and A/V
+timing.
+
+Start it from the repository root on a laptop connected to the same Wi-Fi as
+Gizmo:
+
+```sh
+.venv/bin/python body/firmware/test/local_film_fixture.py --demo-pompeii
+```
+
+Send the printed `Fhttp://<mac-ip>:8765` command over serial. After
+`friend: online`, hold PTT and ask exactly, "Gizmo, what happened to Pompeii a
+long time ago?" The first cue downloads while PTT is held. On release, expect
+the finished film and narration to begin without a cloud-generation wait.
+
+Keep the fixture terminal and laptop awake for the entire take. Film one
+uncut rehearsal before the application take, and retain the serial log. After
+recording, restore the real backend with
+`Fhttps://gizmo-brain-production.up.railway.app`. Describe this honestly as a
+curated prototype demo of the intended interaction, not live generation.
+
+## Checkpoint 1: deterministic 30-second local film
+
+Run this before any provider or Railway test. It exercises the production
+WebSocket/audio/held-cue/HTTP/MJPEG path over local Wi-Fi, but removes Gemini,
+Fal, H3, and Railway from the experiment. The picture has a moving scan bar and
+whole-second counter; the soundtrack ticks on those same boundaries.
+
+In terminal 1, start the fixture from the repository root:
+
+```sh
+.venv/bin/python body/firmware/test/local_film_fixture.py
+```
+
+It prints an `Fhttp://<mac-ip>:8765` command. Keep that process running. Flash
+the exact checkout under test, then open a timestamped monitor in terminal 2:
+
+```sh
+body/firmware/.venv/bin/pio run -d body/firmware -t upload --upload-port <XIAO-port>
+body/firmware/.venv/bin/pio device monitor -b 115200 --port <XIAO-port> --filter time
+```
+
+Send the printed `Fhttp://...` command over serial. Do not change `K`; the local
+fixture ignores the stored production token. Wait for `friend: online`, then
+press and release PTT (`p`, then `p` over serial also works). No speech is
+required. Record the whole display and audible soundtrack at 60 fps if the
+phone permits it. Repeat ten times without rebooting the board.
+
+Each run must show six `HOLD -> READY -> GO` cues on the fixture console and six
+`show perf: end` records on serial. Acceptance is:
+
+- no reboot, Guru Meditation, watchdog, JPEG error, `motion unavailable`, or
+  audio overflow;
+- `decode_failed=0`, `dropped=0`, and ideally `repeats=0` for every cue;
+- `present_gap_max_ms` stays below 220 ms and `blit_max_us` below 25000;
+- the final `audio perf: end` reports `queued_ms` near 30000, `starts=1`, and
+  `starvations=0`;
+- motion never races through missed frames, and the audible tick stays aligned
+  with each displayed second without accumulating visible drift;
+- no horizontal tear is visible in the moving scan bar.
+
+Send `?` during cue 3 and again after completion. Return the full timestamped
+serial log, fixture-console log, and uncut phone video. This fixture now runs
+at the hardware-derived fixed 8 fps; do not reintroduce the cloud, Fal, H3, or
+Railway until its cadence passes. Restore the production URL afterward
+with `Fhttps://gizmo-brain-production.up.railway.app`.
+
 ## Build and flash
 
 From the checkout containing these changes, build and identify the XIAO's
@@ -28,7 +101,7 @@ in [README.md](README.md). Do not include credentials in returned logs.
    agent can choose words; absence of a `glass` media event is distinct from
    download/render failure.
 2. Ask to make that picture move. The still should remain until
-   `show: ready motion frames=... bytes=... 320x240 fps=12`, followed by silent
+   `show: ready motion frames=... bytes=... 320x240 fps=8`, followed by silent
    looping motion. The device does not play the source MP4 or its audio.
 3. While it moves, ask a spoken follow-up. Check that PTT, the whole spoken
    reply, and buttons remain responsive with no watchdog reset or audio gaps.

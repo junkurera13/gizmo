@@ -79,6 +79,48 @@ class ShowMediaTests(unittest.TestCase):
             data = data[end:]
         self.assertEqual(decoded, count)
 
+    def test_device_mjpeg_uses_the_bandwidth_bounded_quality(self):
+        with patch.object(show_media, '_run', return_value=1) as run:
+            self.assertEqual(
+                show_media.encode_mjpeg(
+                    self.source, self.target, width=320, height=240, fps=8,
+                ),
+                1,
+            )
+        arguments = run.call_args.args[2]
+        quality = arguments.index('-q:v')
+        self.assertEqual(arguments[quality + 1], str(show_media.DEVICE_MJPEG_QSCALE))
+        self.assertEqual(show_media.DEVICE_MJPEG_QSCALE, 14)
+
+    def test_device_mjpeg_can_bake_a_static_bottom_band(self):
+        with patch.object(show_media, '_run', return_value=1) as run:
+            show_media.encode_mjpeg(
+                self.source,
+                self.target,
+                width=320,
+                height=240,
+                fps=8,
+                content_height=216,
+            )
+        arguments = run.call_args.args[2]
+        filters = arguments[arguments.index('-vf') + 1]
+        self.assertIn('scale=320:216:', filters)
+        self.assertIn('crop=320:216:exact=1', filters)
+        self.assertIn('pad=320:240:0:0:color=black', filters)
+
+    def test_device_mjpeg_rejects_an_invalid_content_height(self):
+        for content_height in (0, 241):
+            with self.subTest(content_height=content_height):
+                with self.assertRaisesRegex(ValueError, 'content_height'):
+                    show_media.encode_mjpeg(
+                        self.source,
+                        self.target,
+                        width=320,
+                        height=240,
+                        fps=8,
+                        content_height=content_height,
+                    )
+
     def test_put_mjpeg_is_served_without_an_mp4(self):
         store = ShowStore(self.root / 'device', device_id='fixture')
         still = Image.new('RGB', (320, 240), (20, 40, 60))

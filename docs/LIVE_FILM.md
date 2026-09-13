@@ -42,9 +42,9 @@ The old Fal `minimax/h3-max/image-to-video` still→short-clip path is **not** u
 
 For a desk test that should prefer a film for every ask on one body, set `GIZMO_DIRECTOR_DEVICE=<exact-device-id>`. That is now a Friend routing hint, not a replacement brain. Leave it unset for normal conversation. Held-cue firmware (`X-Gizmo-Glass-Cues: 1`) is still required for on-device playback; without it the film cannot preload.
 
-`cinema/device.py` buffers five seconds of incoming video, preserves the frame's aspect ratio at 320×240, produces ESP-compatible 12 fps MJPEG through the existing Show store, and pairs each segment with the corresponding original 24 kHz PCM. The next segment downloads while the current segment plays. Motion acknowledgement is required before `go`; failures stop the speech instead of letting it drift. Select dismisses, PTT stops the film and returns to Friend listening, and brightness/volume retain their existing Friend controls.
+`cinema/device.py` buffers five seconds of incoming video, fits it into the 320×240 device composition, produces ESP-compatible 8 fps MJPEG through the existing Show store, and pairs each segment with the corresponding original 24 kHz PCM. Every cue is adaptively JPEG-compressed to at most 256 KiB so the next segment can finish downloading while the current segment plays. Motion acknowledgement is required before `go`; failures stop the speech instead of letting it drift. Select dismisses, PTT stops the film and returns to Friend listening, and brightness/volume retain their existing Friend controls.
 
-The bridge is software-tested, not accepted on a physical XIAO. Friend-owned start/stop of the same player is also software-tested. Full A/V sync on the XIAO still needs desk acceptance. The earlier microphone queue overflow and idle speaker-static reports remain separate unresolved issues. The body still needs tests for actual speaker start delay, JPEG decode, PSRAM use, network throughput, missed frames, interruption, settings, and reconnect. A downloaded/ready acknowledgement is not a presentation timestamp.
+The held-cue player is accepted on a physical XIAO with the deterministic local fixture at 8 fps: a 37.16-second narrated film completed in 37.81 seconds with zero dropped, repeated, or decode-failed frames after its cue sizes were reduced below 288 KiB. The complete live H3 → Railway → XIAO path still needs desk acceptance. The earlier microphone queue overflow and idle speaker-static reports remain separate unresolved issues. Interruption, settings, reconnect, and fresh live-generation latency still need physical checks. A downloaded/ready acknowledgement is not a presentation timestamp.
 
 ## Evidence from September 10
 
@@ -84,7 +84,7 @@ node --check friend/gizmo_friend/static/oddity.js
 uv lock --check
 ```
 
-Regression coverage includes cloud gating and origin checks, waiting for an attached viewer before generation, cancellation, stale completion, heard-versus-interrupted context, concurrent narration with exact PCM timing, overlapping continuation-image upload and ICE-during-TTS races, the existing device JPEG sampling contract, Friend `/ws` remaining a GizmoSession even when `GIZMO_DIRECTOR_DEVICE` is set, and Friend start/stop of the film capability.
+Regression coverage includes cloud gating and origin checks, waiting for an attached viewer before generation, cancellation, stale completion, heard-versus-interrupted context, concurrent narration with exact PCM timing, overlapping continuation-image upload and ICE-during-TTS races, adaptive device cue byte budgeting and the existing JPEG sampling contract, Friend `/ws` remaining a GizmoSession even when `GIZMO_DIRECTOR_DEVICE` is set, and Friend start/stop of the film capability.
 
 ## Remaining experience work
 

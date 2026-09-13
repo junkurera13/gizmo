@@ -430,7 +430,7 @@ class DeviceEncodingTests(unittest.IsolatedAsyncioTestCase):
         import io
 
         from gizmo_friend.brain.shows import ShowStore
-        from gizmo_friend.cinema.device import encode_segment
+        from gizmo_friend.cinema.device import FPS, encode_segment
         from PIL import Image
 
         with tempfile.TemporaryDirectory() as root:
@@ -442,7 +442,7 @@ class DeviceEncodingTests(unittest.IsolatedAsyncioTestCase):
             segment = encode_segment(images, pcm, store, "Rocket")
             self.assertEqual(segment.frames, 12)
             self.assertEqual(segment.pcm, pcm)
-            frames = store.mjpeg(segment.show.id)
+            frames = store.mjpeg(segment.show.id, fps=FPS)
             data = frames.path.read_bytes()
             self.assertTrue(data.startswith(b"\xff\xd8"))
             # Baseline 4:2:0 is accepted by the ESP ROM decoder; 4:4:4 was the old failure.
@@ -455,12 +455,45 @@ class DeviceEncodingTests(unittest.IsolatedAsyncioTestCase):
             )
             self.assertFalse(segment.show.clip_path.is_file())
 
+    def test_detailed_director_segment_adapts_to_device_byte_budget(self):
+        from gizmo_friend.brain.shows import ShowStore
+        from gizmo_friend.cinema.device import (
+            DEVICE_JPEG_QUALITY,
+            MAX_DEVICE_SEGMENT_BYTES,
+            encode_segment,
+        )
+        from PIL import Image
+
+        # Deterministic high-frequency color makes fixed-quality JPEG cues far
+        # larger than the physical device can download during five seconds.
+        pixels = bytes(
+            (index * 73 + index // 97 * 29) % 256
+            for index in range(320 * 240 * 3)
+        )
+        image = Image.frombytes("RGB", (320, 240), pixels)
+        with tempfile.TemporaryDirectory() as root:
+            store = ShowStore(
+                Path(root) / "devices" / "test-device", device_id="test-device"
+            )
+            segment = encode_segment(
+                [image] * 40,
+                b"\x00\x00" * 120_000,
+                store,
+                "Detailed world",
+            )
+            self.assertLessEqual(segment.mjpeg_bytes, MAX_DEVICE_SEGMENT_BYTES)
+            self.assertLess(segment.jpeg_quality, DEVICE_JPEG_QUALITY)
+            self.assertEqual(
+                store.mjpeg(segment.show.id, fps=8).path.stat().st_size,
+                segment.mjpeg_bytes,
+            )
+
     async def test_capture_skips_frozen_director_preroll(self):
         import io
         import wave
 
         from gizmo_friend.brain.shows import ShowStore
-        from gizmo_friend.cinema.device import DeviceFilmPlayer
+        from gizmo_friend.cinema.device import FPS, DeviceFilmPlayer
         from PIL import Image
 
         class FakeFrame:
@@ -507,8 +540,8 @@ class DeviceEncodingTests(unittest.IsolatedAsyncioTestCase):
             await asyncio.wait_for(player.capture(track, queue, prepared, 1), 2)
             segment = queue.get_nowait()
             self.assertIsNotNone(segment)
-            self.assertEqual(segment.frames, 12)
-            frames = store.mjpeg(segment.show.id)
+            self.assertEqual(segment.frames, FPS)
+            frames = store.mjpeg(segment.show.id, fps=FPS)
             data = frames.path.read_bytes()
             first = data[: data.index(b"\xff\xd9") + 2]
             image = Image.open(io.BytesIO(first))

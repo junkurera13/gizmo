@@ -328,6 +328,7 @@ bool Audio::start_clip(const int16_t* samples, size_t count) {
 
 void Audio::stop_playback() {
   if (!playing_ && !live_playing_ && !live_armed_) return;
+  report_live("interrupt");
   playing_ = false;
   live_playing_ = false;
   live_armed_ = false;
@@ -364,6 +365,17 @@ bool Audio::arm_live() {
   peak_ = 0;
   source_ = nullptr;
   live_armed_ = true;
+  if (!live_perf_active_) {
+    live_perf_active_ = true;
+    live_perf_started_ms_ = millis();
+    live_perf_last_enqueue_ms_ = 0;
+    live_perf_queued_samples_ = 0;
+    live_perf_peak_samples_ = 0;
+    live_perf_max_packet_gap_ms_ = 0;
+    live_perf_starvations_ = 0;
+    live_perf_starts_ = 0;
+    Serial.printf("audio perf: start t=%lu\n", static_cast<unsigned long>(live_perf_started_ms_));
+  }
   // PWM stays off until pump_live sees samples (no idle carrier).
   return true;
 }
@@ -372,14 +384,56 @@ size_t Audio::enqueue_live(const int16_t* samples, size_t count) {
   if (samples == nullptr || count == 0 || live_ == nullptr) return 0;
   if (recording_) return 0;
   if (!live_armed_ && !arm_live()) return 0;
-  if (live_n_ == 0) live_wait_since_ = millis();
+  const uint32_t now = millis();
+  if (live_n_ == 0) live_wait_since_ = now;
+  if (live_perf_last_enqueue_ms_ != 0) {
+    const uint32_t gap = now - live_perf_last_enqueue_ms_;
+    if (gap > live_perf_max_packet_gap_ms_) live_perf_max_packet_gap_ms_ = gap;
+  }
+  live_perf_last_enqueue_ms_ = now;
   size_t written = 0;
   while (written < count && live_n_ < live_cap_) {
     live_[live_w_] = samples[written++];
     live_w_ = (live_w_ + 1) % live_cap_;
     ++live_n_;
   }
+  live_perf_queued_samples_ += static_cast<uint32_t>(written);
+  if (live_n_ > live_perf_peak_samples_) live_perf_peak_samples_ = static_cast<uint32_t>(live_n_);
   return written;
+}
+
+void Audio::report_live(const char* reason) {
+  if (!live_perf_active_) return;
+  const uint32_t now = millis();
+  Serial.printf(
+      "audio perf: end t=%lu reason=%s elapsed_ms=%lu queued_ms=%lu peak_buffer_ms=%lu "
+      "max_packet_gap_ms=%lu starts=%lu starvations=%lu\n",
+      static_cast<unsigned long>(now), reason ? reason : "unknown",
+      static_cast<unsigned long>(now - live_perf_started_ms_),
+      static_cast<unsigned long>(uint64_t(live_perf_queued_samples_) * 1000 / kSampleRate),
+      static_cast<unsigned long>(uint64_t(live_perf_peak_samples_) * 1000 / kSampleRate),
+      static_cast<unsigned long>(live_perf_max_packet_gap_ms_),
+      static_cast<unsigned long>(live_perf_starts_),
+      static_cast<unsigned long>(live_perf_starvations_));
+  live_perf_active_ = false;
+}
+
+void Audio::diagnose_live() const {
+  if (!live_perf_active_) {
+    Serial.println("audio perf: inactive");
+    return;
+  }
+  Serial.printf(
+      "audio perf: active t=%lu elapsed_ms=%lu queued_ms=%lu buffered_ms=%lu peak_buffer_ms=%lu "
+      "max_packet_gap_ms=%lu starts=%lu starvations=%lu\n",
+      static_cast<unsigned long>(millis()),
+      static_cast<unsigned long>(millis() - live_perf_started_ms_),
+      static_cast<unsigned long>(uint64_t(live_perf_queued_samples_) * 1000 / kSampleRate),
+      static_cast<unsigned long>(uint64_t(live_n_) * 1000 / kSampleRate),
+      static_cast<unsigned long>(uint64_t(live_perf_peak_samples_) * 1000 / kSampleRate),
+      static_cast<unsigned long>(live_perf_max_packet_gap_ms_),
+      static_cast<unsigned long>(live_perf_starts_),
+      static_cast<unsigned long>(live_perf_starvations_));
 }
 
 void Audio::track_level(const int16_t* samples, size_t count) {
@@ -497,6 +551,8 @@ void Audio::pump_live() {
     if (live_playing_ && static_cast<int32_t>(millis() - live_drain_until_) >= 0 &&
         (!live_expecting_ ||
          static_cast<int32_t>(millis() - live_drain_until_) >= static_cast<int32_t>(kLiveGapHoldMs))) {
+      if (live_expecting_) ++live_perf_starvations_;
+      else report_live("complete");
       amp_stop();
       live_playing_ = false;
       playing_ = false;
@@ -509,6 +565,7 @@ void Audio::pump_live() {
     if (live_n_ < kPrebuffer && millis() - live_wait_since_ < 250) return;
     amp_clear();
     if (amp_start() != ESP_OK) return;
+    ++live_perf_starts_;
     live_playing_ = true;
     playing_ = true;
   }

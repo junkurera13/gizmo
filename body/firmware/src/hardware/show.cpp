@@ -28,9 +28,11 @@ void ShowPlayer::begin() {
   for (int b = 0; b < kDecBufs; ++b) buffers_ok = buffers_ok && dec_pixels_[b] != nullptr;
   // Both media tasks pin to core 0: unpinned they float onto core 1 and
   // preempt loopTask — mid-boot that froze the flipbook; mid-film it stalls
-  // the blit and the speaker pump.
+  // the blit and the speaker pump. Decode outranks download because the cue on
+  // screen has a 125 ms frame deadline; the next cue has almost five seconds
+  // to finish its local/TLS transfer.
   if (!jobs_ || !held_jobs_ || !results_ ||
-      xTaskCreatePinnedToCore(task, "show-download", 16384, this, 2, nullptr, 0) != pdPASS) {
+      xTaskCreatePinnedToCore(task, "show-download", 16384, this, 1, nullptr, 0) != pdPASS) {
     if (jobs_) vQueueDelete(jobs_);
     if (held_jobs_) vQueueDelete(held_jobs_);
     if (results_) vQueueDelete(results_);
@@ -38,11 +40,10 @@ void ShowPlayer::begin() {
     Serial.println("show: download task unavailable");
   }
   // Decode-ahead pins to core 0 so JPEG work runs parallel to the body loop
-  // instead of stealing the core that blits and pumps audio. Priority 2 is the
-  // next-clip GET: a starved download ends the film after one 5s segment.
-  // Decode-ahead is 1 — the ring already holds ~500 ms. friend-net stays 3.
+  // instead of stealing the core that blits and pumps audio. Decode is 2,
+  // download is 1, and friend-net remains 3 so live PCM always wins.
   if (!buffers_ok ||
-      xTaskCreatePinnedToCore(decode_task, "show-decode", 24576, this, 1, nullptr, 0) != pdPASS) {
+      xTaskCreatePinnedToCore(decode_task, "show-decode", 24576, this, 2, nullptr, 0) != pdPASS) {
     Serial.println("show: decode-ahead unavailable; sync decoding only");
   }
 }
@@ -54,20 +55,69 @@ size_t ShowPlayer::motion_index(size_t count) const {
   return static_cast<size_t>((uint64_t(uint32_t(millis() - origin)) * kShowFps / 1000) % count);
 }
 void ShowPlayer::arm_clip() {
+  report_perf("next");
   started_.store(0);
   drawn_ = -1;
   changed_ = true;
+  perf_active_ = false;
+  perf_cue_ = 0;
+  perf_started_ms_ = 0;
+  perf_last_presented_ms_ = 0;
+  perf_presented_ = 0;
+  perf_dropped_ = 0;
+  perf_repeats_ = 0;
+  perf_missed_index_ = -1;
+  perf_decode_failed_.store(0);
+  perf_decode_max_ms_.store(0);
+  perf_blit_max_us_ = 0;
+  perf_present_gap_max_ms_ = 0;
 }
-void ShowPlayer::note_presented(size_t index) {
-  if (started_.load() != 0) return;
+void ShowPlayer::note_presented(size_t index, size_t count) {
   const uint32_t now = millis();
-  const uint32_t back = static_cast<uint32_t>(index * 1000 / kShowFps);
-  uint32_t origin = now - back;
-  if (origin == 0) origin = 1;
-  started_.store(origin);
+  if (started_.load() == 0) {
+    const uint32_t back = static_cast<uint32_t>(index * 1000 / kShowFps);
+    uint32_t origin = now - back;
+    if (origin == 0) origin = 1;
+    started_.store(origin);
+    perf_active_ = true;
+    perf_cue_ = request_.cue;
+    perf_started_ms_ = now;
+    Serial.printf("show perf: start t=%lu cue=%lu fps=%d frames=%u psram_free=%u\n",
+                  static_cast<unsigned long>(now), static_cast<unsigned long>(perf_cue_), kShowFps,
+                  unsigned(count), unsigned(heap_caps_get_free_size(MALLOC_CAP_SPIRAM)));
+  } else if (drawn_ >= 0 && count > 0) {
+    const size_t distance = (index + count - static_cast<size_t>(drawn_)) % count;
+    if (distance > 1) perf_dropped_ += static_cast<uint32_t>(distance - 1);
+  }
+  if (perf_last_presented_ms_ != 0) {
+    const uint32_t gap = now - perf_last_presented_ms_;
+    if (gap > perf_present_gap_max_ms_) perf_present_gap_max_ms_ = gap;
+  }
+  perf_last_presented_ms_ = now;
+  ++perf_presented_;
+  perf_missed_index_ = -1;
+}
+void ShowPlayer::note_display(uint32_t elapsed_us) {
+  if (perf_active_ && elapsed_us > perf_blit_max_us_) perf_blit_max_us_ = elapsed_us;
+}
+void ShowPlayer::report_perf(const char* reason) {
+  if (!perf_active_) return;
+  const uint32_t now = millis();
+  Serial.printf(
+      "show perf: end t=%lu cue=%lu reason=%s elapsed_ms=%lu presented=%lu dropped=%lu repeats=%lu "
+      "decode_failed=%lu decode_max_ms=%lu blit_max_us=%lu present_gap_max_ms=%lu psram_free=%u\n",
+      static_cast<unsigned long>(now), static_cast<unsigned long>(perf_cue_), reason ? reason : "unknown",
+      static_cast<unsigned long>(now - perf_started_ms_), static_cast<unsigned long>(perf_presented_),
+      static_cast<unsigned long>(perf_dropped_), static_cast<unsigned long>(perf_repeats_),
+      static_cast<unsigned long>(perf_decode_failed_.load()),
+      static_cast<unsigned long>(perf_decode_max_ms_.load()), static_cast<unsigned long>(perf_blit_max_us_),
+      static_cast<unsigned long>(perf_present_gap_max_ms_),
+      unsigned(heap_caps_get_free_size(MALLOC_CAP_SPIRAM)));
+  perf_active_ = false;
 }
 void ShowPlayer::cancel(bool dismiss) {
   if (dismiss && *request_.still) strlcpy(dismissed_, request_.still, sizeof(dismissed_));
+  report_perf(dismiss ? "dismiss" : "clear");
   // Keep an explicit local dismissal across the server's clear acknowledgement
   // and reconnect. An already-queued old still must not revive that Show.
   ++revision_;
@@ -259,7 +309,7 @@ bool ShowPlayer::render(uint16_t* pixels, bool force) {
         if (dec_index_[b].load() == int(idx) && dec_gen_[b].load() == gen &&
             !dec_bad_[b].load() && dec_pixels_[b]) {
           memcpy(pixels, dec_pixels_[b], kDecPixels);
-          note_presented(idx);
+          note_presented(idx, media.count);
           drawn_ = int(idx);
           changed_ = false;
           return true;
@@ -281,6 +331,10 @@ bool ShowPlayer::render(uint16_t* pixels, bool force) {
         if (present((index + ahead) % media.count)) return true;
       }
     }
+    if (perf_active_ && perf_missed_index_ != static_cast<int>(index)) {
+      ++perf_repeats_;
+      perf_missed_index_ = static_cast<int>(index);
+    }
     // Never decode motion on the body loop: a ~60 ms inline decode starves the
     // speaker pump and lands the blit mid-scan. Repeat the last frame until the
     // decode-ahead ring catches up (a failed frame is skipped via dec_bad_).
@@ -300,6 +354,17 @@ void ShowPlayer::diagnose() const {
                 viewing(), unsigned(still_.length), unsigned(clip_.length), unsigned(clip_.count),
                 static_cast<unsigned long>(held_request_.cue), unsigned(held_still_.length), unsigned(held_clip_.length),
                 kShowFps, unsigned(heap_caps_get_free_size(MALLOC_CAP_SPIRAM)));
+  if (perf_active_) {
+    Serial.printf(
+        "show perf: active t=%lu cue=%lu elapsed_ms=%lu presented=%lu dropped=%lu repeats=%lu "
+        "decode_failed=%lu decode_max_ms=%lu blit_max_us=%lu present_gap_max_ms=%lu\n",
+        static_cast<unsigned long>(millis()), static_cast<unsigned long>(perf_cue_),
+        static_cast<unsigned long>(millis() - perf_started_ms_), static_cast<unsigned long>(perf_presented_),
+        static_cast<unsigned long>(perf_dropped_), static_cast<unsigned long>(perf_repeats_),
+        static_cast<unsigned long>(perf_decode_failed_.load()),
+        static_cast<unsigned long>(perf_decode_max_ms_.load()), static_cast<unsigned long>(perf_blit_max_us_),
+        static_cast<unsigned long>(perf_present_gap_max_ms_));
+  }
 }
 void ShowPlayer::task(void* context) { static_cast<ShowPlayer*>(context)->run(); }
 void ShowPlayer::publish(Media& media) {
@@ -312,6 +377,7 @@ void ShowPlayer::publish(Media& media) {
 }
 bool ShowPlayer::download(const Job& job, bool motion, Media& media) {
   const std::atomic<uint32_t>& current = job.held ? held_revision_ : revision_;
+  const uint32_t download_started = millis();
   if (job.revision != current.load()) return false;
   const ShowRequest& r = job.request;
   const char* path = motion ? r.frames : r.still;
@@ -323,8 +389,12 @@ bool ShowPlayer::download(const Job& job, bool motion, Media& media) {
   strlcpy(origin, r.base, sizeof(origin));
   if (char* slash = strchr(origin + (secure ? 8 : 7), '/')) *slash = '\0';
   char url[336];
-  snprintf(url, sizeof(url), "%s%s?w=%d&h=%d%s", origin, path, kShowWidth, kShowHeight,
-           motion ? "&fps=12" : "");
+  if (motion) {
+    snprintf(url, sizeof(url), "%s%s?w=%d&h=%d&fps=%d", origin, path,
+             kShowWidth, kShowHeight, kShowFps);
+  } else {
+    snprintf(url, sizeof(url), "%s%s?w=%d&h=%d", origin, path, kShowWidth, kShowHeight);
+  }
   // Kept-alive sockets: a held cue's still and motion (and the next cue) reuse
   // one TLS session. A fresh handshake on this chip costs more than the file.
   static WiFiClientSecure tls;
@@ -408,6 +478,11 @@ bool ShowPlayer::download(const Job& job, bool motion, Media& media) {
   media.revision = job.revision;
   media.cue = job.request.cue;
   media.held = job.held;
+  Serial.printf("show download: t=%lu cue=%lu kind=%s ms=%lu bytes=%u frames=%u psram_free=%u\n",
+                static_cast<unsigned long>(millis()), static_cast<unsigned long>(media.cue),
+                motion ? "motion" : "still", static_cast<unsigned long>(millis() - download_started),
+                unsigned(media.length), unsigned(media.count),
+                unsigned(heap_caps_get_free_size(MALLOC_CAP_SPIRAM)));
   return true;
 }
 void ShowPlayer::run() {
@@ -494,14 +569,26 @@ void ShowPlayer::decode_run() {
     }
     if (w < 0) w = dec_w_.fetch_add(1) % kDecBufs;
     bool ok = false;
+    bool attempted = false;
+    const uint32_t decode_started = millis();
     jpeg_lock();
     // Re-check under the lock: cancel() bumps the generation and drains this
     // lock, so a frame copied before the bump must skip the decoder here —
     // taking the lock itself is not proof the media is still current.
     if (media_gen_.load() == gen && dec_pixels_[w] != nullptr) {
+      attempted = true;
       ok = jpg2rgb565(dec_scratch_, length, reinterpret_cast<uint8_t*>(dec_pixels_[w]), JPG_SCALE_NONE);
     }
     jpeg_unlock();
+    const uint32_t decode_ms = millis() - decode_started;
+    // A generation can change while an old decode drains. Never attribute
+    // that cancelled work to the next cue's physical-performance report.
+    if (attempted && media_gen_.load() == gen) {
+      uint32_t previous_max = perf_decode_max_ms_.load();
+      while (decode_ms > previous_max &&
+             !perf_decode_max_ms_.compare_exchange_weak(previous_max, decode_ms)) {}
+      if (!ok) perf_decode_failed_.fetch_add(1);
+    }
     // Publish bad-flag, index, then generation last (the commit point). A
     // failed frame is marked bad so the playhead skips it — the pipeline must
     // advance, not retry the same corrupt frame forever.

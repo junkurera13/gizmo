@@ -48,7 +48,7 @@ int main(int argc,char** argv) {
     mock_media_length=int(mock_media_body.size());
     mock_media_status=200;
     mock_media_headers={{"Content-Type",motion?"video/x-motion-jpeg":"image/jpeg"},
-      {"X-Gizmo-Frame-Count","2"},{"X-Gizmo-Frame-Rate","12"},
+      {"X-Gizmo-Frame-Count","2"},{"X-Gizmo-Frame-Rate",std::to_string(kShowFps)},
       {"X-Gizmo-Frame-Width","320"},{"X-Gizmo-Frame-Height","240"}};
   };
   response(false);
@@ -65,6 +65,7 @@ int main(int argc,char** argv) {
   player.submit(request);assert(player.available());
   assert(xQueueReceive(player.jobs_,&job,0));assert(!job.still);
   response(true);assert(player.download(job,true,media));
+  assert(mock_request_url==std::string("https://brain.test")+request.frames+"?w=320&h=240&fps="+std::to_string(kShowFps));
   player.publish(media);player.update();assert(player.clip_.count==2);
   // Wire the decode-ahead path the way begin() does: buffers, muxes, task.
   player.media_mux_=xSemaphoreCreateMutex();
@@ -78,8 +79,9 @@ int main(int argc,char** argv) {
   // slow first decode cannot skip the opening frames.
   assert(wait_render(player,pixels));
   assert(player.drawn_==0);
-  mock_now+=84;assert(wait_render(player,pixels));assert(player.drawn_==1);
-  mock_now+=84;assert(wait_render(player,pixels));assert(player.drawn_==0);
+  constexpr uint32_t frame_ms=1000/kShowFps+1;
+  mock_now+=frame_ms;assert(wait_render(player,pixels));assert(player.drawn_==1);
+  mock_now+=frame_ms;assert(wait_render(player,pixels));assert(player.drawn_==0);
   // A failed frame is marked bad and skipped: render repeats the previous
   // frame instead of decoding inline, and the clip is retained. Republishing
   // bumps the generation, so the decode task re-decodes and the injected
