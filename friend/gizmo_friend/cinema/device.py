@@ -35,10 +35,10 @@ SEGMENT_SECONDS = 5
 PCM_BYTES_PER_SECOND = 24_000 * 2
 AUDIO_PACKET_BYTES = 11_520
 # Prime enough narration before asking the ESP32 to begin the next HTTPS cue
-# fetch. The physical device has a three-second live PCM ring; 1.5 seconds
-# covers the measured sub-second packet stalls without making a 250 KiB cue
-# wait so long that it misses the next five-second boundary.
-DEVICE_AUDIO_LEAD_SECONDS = 1.5
+# fetch. The physical device has a three-second live PCM ring; roughly one
+# second covers the measured 0.7-0.8 second packet stalls. A longer burst made
+# friend-net preempt the JPEG decoder enough to repeat several visible frames.
+DEVICE_AUDIO_LEAD_SECONDS = 0.96
 DEVICE_WIDTH = 320
 DEVICE_HEIGHT = 240
 CAPTION_BAND_HEIGHT = 24

@@ -8,10 +8,12 @@ from __future__ import annotations
 
 import asyncio
 import json
+import logging
 import time
 from collections.abc import Awaitable, Callable
 
 import httpx
+from aioice.ice import TransportPolicy
 from aiortc import (
     RTCConfiguration,
     RTCIceServer,
@@ -23,6 +25,43 @@ from aiortc.contrib.media import MediaRelay
 
 ENDPOINT = "https://wma.fal.run"
 MODEL = "minimax/h3-max/director"
+logger = logging.getLogger(__name__)
+
+
+def reliable_upstream_ice_servers(servers: list[RTCIceServer]) -> list[RTCIceServer]:
+    """Select Fal's TCP TURN relay instead of aiortc's first (UDP) TURN URL.
+
+    aiortc 1.15 supports one TURN server. Fal returns UDP before TCP, so passing
+    the complete list silently selects UDP even though a reliable relay is
+    available. A lost H.264 packet decodes as green/macroblock damage that then
+    gets permanently encoded into the device MJPEG cue.
+    """
+    for server in servers:
+        urls = server.urls if isinstance(server.urls, list) else [server.urls]
+        for url in urls:
+            if url.startswith("turn:") and "transport=tcp" in url:
+                return [
+                    RTCIceServer(
+                        urls=url,
+                        username=server.username,
+                        credential=server.credential,
+                        credentialType=server.credentialType,
+                    )
+                ]
+    raise RuntimeError("Director did not provide a TCP TURN relay")
+
+
+def force_relay_only(pc: RTCPeerConnection) -> None:
+    """Keep the upstream media on TURN/TCP instead of a lossy direct UDP pair."""
+    gatherers = []
+    for transceiver in pc.getTransceivers():
+        gatherers.append(transceiver.sender.transport.transport.iceGatherer)
+    if pc.sctp is not None:
+        gatherers.append(pc.sctp.transport.transport.iceGatherer)
+    for gatherer in {id(value): value for value in gatherers}.values():
+        # aiortc 1.15 does not expose iceTransportPolicy, but its pinned aioice
+        # dependency does. Set it before setLocalDescription gathers candidates.
+        gatherer._connection._transport_policy = TransportPolicy.RELAY
 
 
 class DirectorStream:
@@ -72,7 +111,10 @@ class DirectorStream:
             for row in ice.get("ice_servers", [])
         ]
         self.ice_servers = servers
-        self.pc = pc = RTCPeerConnection(RTCConfiguration(iceServers=servers))
+        upstream_servers = reliable_upstream_ice_servers(servers)
+        self.pc = pc = RTCPeerConnection(
+            RTCConfiguration(iceServers=upstream_servers)
+        )
         video = pc.addTransceiver("video", direction="recvonly")
         # Prefer H.264: the device path decodes server-side, where PyAV's VP8
         # decoder has failed on provider packets in some deploys, and H.264's
@@ -83,6 +125,8 @@ class DirectorStream:
         )
         pc.addTransceiver("audio", direction="recvonly")
         self.channel = channel = pc.createDataChannel("control")
+        force_relay_only(pc)
+        logger.info("Director upstream ICE: relay-only TURN/TCP")
 
         @channel.on("open")
         def opened():
