@@ -321,6 +321,13 @@ _register(
                         "coast, you can see floating icebergs and penguins."
                     ),
                     "reply_audio": "/static/demo-antarctica-gizmo.wav?v=antarctica3",
+                    "reply_timed": [
+                        [0.0, "Antarctica is the icy continent at the very bottom of Earth."],
+                        [5.3, "On a globe, it wraps around the South Pole."],
+                        [9.1, "Most of it is covered by a huge sheet of ice,"],
+                        [12.45, "with bright glaciers, tall mountains, and deep blue cracks."],
+                        [18.1, "Along the coast, you can see floating icebergs and penguins."],
+                    ],
                     "video": "/static/demo-antarctica.mp4?v=antarctica1",
                     "interruption": {
                         "after_ms": 22000,

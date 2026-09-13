@@ -283,17 +283,21 @@ async function playDemoRecording(src, signal, text = '', timed = null, playbackR
     await ended;
   } finally { demoCaptions = []; demoTimed = null; setCaption(); }
 }
-async function playDemoRecordingFor(src, signal, text, milliseconds, playbackRate = 1) {
+async function playDemoRecordingFor(src, signal, text, milliseconds, timed = null, playbackRate = 1) {
+  setCaption();
   demoCaptions = captionChunks(text);
-  demoTimed = null;
-  if (text) setCaption(demoCaptions[0] || text);
+  demoTimed = text ? timed : null;
   demoAudio.src = src; demoAudio.muted = muted; demoAudio.load();
   demoAudio.defaultPlaybackRate = playbackRate;
   demoAudio.playbackRate = playbackRate;
-  await startMedia(demoAudio, signal);
-  await delay(Math.max(0, Number(milliseconds) || 0), signal);
-  demoAudio.pause();
-  demoCaptions = []; demoTimed = null; setCaption();
+  try {
+    await startMedia(demoAudio, signal);
+    if (text) setCaption(timed ? timedCaptionAt(timed, demoAudio.currentTime) : demoCaptions[0] || text);
+    await delay(Math.max(0, Number(milliseconds) || 0), signal);
+  } finally {
+    demoAudio.pause();
+    demoCaptions = []; demoTimed = null; setCaption();
+  }
 }
 async function playKidRecording(src, signal) {
   demoCaptions = []; demoTimed = null; setCaption();
@@ -566,7 +570,7 @@ async function sayMoment() {
         else if (beat.video) await showDemoVideo(beat.video, signal);
         status('Gizmo is answering…', 'playing');
         if (beat.interruption) {
-          await playDemoRecordingFor(beat.reply_audio, signal, beat.reply, beat.interruption.after_ms, beat.reply_audio_rate || 1);
+          await playDemoRecordingFor(beat.reply_audio, signal, beat.reply, beat.interruption.after_ms, beat.reply_timed, beat.reply_audio_rate || 1);
         } else {
           await playDemoRecording(beat.reply_audio, signal, beat.reply, beat.reply_timed, beat.reply_audio_rate || 1);
         }

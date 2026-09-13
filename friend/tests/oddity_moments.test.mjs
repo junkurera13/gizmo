@@ -129,11 +129,11 @@ test('Pompeii plays three synchronized narrated videos', async () => {
 
 test('Antarctica locates the continent in a synchronized educational film', async () => {
   const ui = await app();
-  ui.context.recorded = []; ui.context.videos = []; ui.context.fullscreenExpansions = 0;
+  ui.context.recorded = []; ui.context.videos = []; ui.context.fullscreenExpansions = 0; ui.context.interruptedTimings = [];
   ui.run(`
     delay = async () => {};
     playDemoRecording = async (src, signal, text) => { recorded.push(src); setCaption(text); };
-    playDemoRecordingFor = async (src, signal, text) => { recorded.push(src); setCaption(text); };
+    playDemoRecordingFor = async (src, signal, text, milliseconds, timed) => { recorded.push(src); interruptedTimings.push(timed); setCaption(text); };
     showDemoVideo = async (src) => { videos.push(src); demoOwnsScene = true; };
     expandDemoSceneFullscreen = () => { fullscreenExpansions += 1; };
     moments = [{id:'antarctica', line:'What does Antarctica look like?', demo:{
@@ -141,6 +141,7 @@ test('Antarctica locates the continent in a synchronized educational film', asyn
       reply:'Antarctica surrounds the South Pole.', reply_audio:'gizmo.wav', video:'antarctica.mp4',
       beats:[
         {reply:'Antarctica has icebergs and penguins.', reply_audio:'gizmo.wav', video:'antarctica.mp4',
+          reply_timed:[[0,'Antarctica has icebergs'],[3.2,'and penguins.']],
           interruption:{after_ms:22000, prompt:'Do penguins live anywhere else besides Antarctica?',
             audio:'penguin-kid.mp3', think_wait_ms:650, fullscreen_during_prompt:true}},
         {reply:'Penguins also live in South America and the Galapagos Islands.',
@@ -151,6 +152,7 @@ test('Antarctica locates the continent in a synchronized educational film', asyn
   await ui.run('sayMoment()');
   assert.deepEqual([...ui.context.recorded], ['kid.mp3', 'gizmo.wav', 'penguin-kid.mp3', 'penguin-gizmo.wav']);
   assert.deepEqual([...ui.context.videos], ['antarctica.mp4', 'penguin-world.mp4']);
+  assert.equal(JSON.stringify(ui.context.interruptedTimings), JSON.stringify([[[0,'Antarctica has icebergs'],[3.2,'and penguins.']]]));
   assert.equal(ui.context.fullscreenExpansions, 1);
   assert.deepEqual([...ui.run('history.map(item => item.text)')], [
     'Gizmo, what does Antarctica look like?', 'Antarctica has icebergs and penguins.',

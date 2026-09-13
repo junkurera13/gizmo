@@ -138,6 +138,16 @@ class MomentCatalogTests(unittest.TestCase):
         self.assertIn("South Pole", antarctica["reply"])
         self.assertIn("penguins", antarctica["reply"])
         self.assertEqual(len(antarctica["beats"]), 2)
+        self.assertEqual(
+            antarctica["beats"][0]["reply_timed"],
+            [
+                [0.0, "Antarctica is the icy continent at the very bottom of Earth."],
+                [5.3, "On a globe, it wraps around the South Pole."],
+                [9.1, "Most of it is covered by a huge sheet of ice,"],
+                [12.45, "with bright glaciers, tall mountains, and deep blue cracks."],
+                [18.1, "Along the coast, you can see floating icebergs and penguins."],
+            ],
+        )
         interruption = antarctica["beats"][0]["interruption"]
         self.assertEqual(interruption["after_ms"], 22000)
         self.assertTrue(interruption["fullscreen_during_prompt"])
