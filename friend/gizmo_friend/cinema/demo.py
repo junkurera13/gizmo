@@ -1,10 +1,11 @@
 """Camera-demo playback: the real body film protocol over canned local media.
 
 Enabled with GIZMO_DEMO_MOMENT=<id> (e.g. "antarctica"). /ws swaps the live
-GizmoSession for DeviceDemo, a scripted loop: power -> boot -> home, first PTT
-release -> thinking -> the moment's pre-rendered film, second PTT release ->
-thinking -> the follow-up film. Nothing calls Gemini or fal, so a recorded take
-cannot stall.
+GizmoSession for DeviceDemo, a scripted loop matching the emulator's moment:
+power -> boot -> home, first PTT release -> thinking -> the pre-rendered film,
+and while that film is still playing a second PTT ask -> the follow-up film
+rolls a few seconds later with no thinking animation. Nothing calls Gemini or
+fal, so a recorded take cannot stall.
 """
 from __future__ import annotations
 
@@ -42,6 +43,9 @@ logger = logging.getLogger(__name__)
 
 STATIC = Path(__file__).resolve().parents[1] / "static"
 BOOT_SECONDS = 3.8
+# The follow-up question lands over the still-playing first film; its film
+# rolls this long after the ask, with no thinking state in between.
+FOLLOWUP_GAP_SECONDS = 5.0
 
 
 @dataclass(frozen=True)
@@ -70,7 +74,7 @@ DEMO_MOMENTS: dict[str, tuple[DemoStep, ...]] = {
             ),
         ),
         DemoStep(
-            think_seconds=5.0,
+            think_seconds=0.0,
             video="demo-antarctica-followup.mp4",
             audio="demo-antarctica-followup-gizmo.wav",
             title="Penguins beyond Antarctica",
@@ -168,8 +172,10 @@ class DeviceDemo:
         self.recording = False
         self.powered = True
         self.state = "listening"
-        self.playback: asyncio.Task | None = None
+        self.step_task: asyncio.Task | None = None
+        self.followup_task: asyncio.Task | None = None
         self.step_index = 0
+        self.playing_step: int | None = None
         self._segments: dict[int, list] = {}
 
     async def send(self, event):
@@ -195,12 +201,7 @@ class DeviceDemo:
 
     async def _play_step(self, index: int) -> None:
         step = self.steps[index]
-        self.state = "thinking"
-        await self.send({"type": "state"})
-        segments, _ = await asyncio.gather(
-            self._segments_for(index),
-            asyncio.sleep(step.think_seconds),
-        )
+        segments = await self._segments_for(index)
         captions = device_caption_timings(step_timings(step))
         position = 0.0
         pending = None
@@ -311,37 +312,52 @@ class DeviceDemo:
                 pending.cancel()
                 await asyncio.gather(pending, return_exceptions=True)
             self.acks.clear()
-        self.state = "listening"
-        await self.send({"type": "glass", "viewing": False, "text": ""})
-        await self.send({"type": "state"})
+
+    async def _run_step(self, index: int) -> None:
+        step = self.steps[index]
+        try:
+            if step.think_seconds:
+                self.state = "thinking"
+                await self.send({"type": "state"})
+                await asyncio.sleep(step.think_seconds)
+            self.playing_step = index
+            await self._play_step(index)
+        except asyncio.CancelledError:
+            raise
+        except Exception as error:  # noqa: BLE001 - never die mid-take
+            logger.warning("Demo step failed: error=%s", type(error).__name__)
+        finally:
+            self.playing_step = None
+        # Reached only on a clean finish — a cancelled film hands control to
+        # whoever cancelled it (retake, follow-up, power) without a home flash.
+        if self.powered:
+            self.state = "listening"
+            await self.send({"type": "glass", "viewing": False, "text": ""})
+            await self.send({"type": "state"})
+        self.step_index = (index + 1) % len(self.steps)
+
+    async def _followup(self) -> None:
+        """The ask lands mid-film; the follow-up rolls a beat later."""
+        await asyncio.sleep(FOLLOWUP_GAP_SECONDS)
+        task, self.step_task = self.step_task, None
+        if task and task is not asyncio.current_task():
+            task.cancel()
+            await asyncio.gather(task, return_exceptions=True)
+        await self._run_step(len(self.steps) - 1)
 
     async def _warm(self) -> None:
         """Encode every step right after connect so thinking time stays pure."""
         for index in range(len(self.steps)):
             await self._segments_for(index)
 
-    async def _cancel_playback(self) -> None:
-        playback, self.playback = self.playback, None
-        if playback and playback is not asyncio.current_task():
-            playback.cancel()
-            await asyncio.gather(playback, return_exceptions=True)
+    async def _cancel_all(self) -> None:
+        for attr in ("step_task", "followup_task"):
+            task = getattr(self, attr)
+            setattr(self, attr, None)
+            if task and task is not asyncio.current_task():
+                task.cancel()
+                await asyncio.gather(task, return_exceptions=True)
         self.acks.clear()
-
-    async def _next_step(self) -> None:
-        index = min(self.step_index, len(self.steps) - 1)
-        try:
-            await self._play_step(index)
-        except asyncio.CancelledError:
-            # Interrupted take replays the same step on the next press.
-            raise
-        except Exception as error:  # noqa: BLE001 - never die mid-take
-            logger.warning("Demo step failed: error=%s", type(error).__name__)
-            self.state = "listening"
-            await self.send({"type": "glass", "viewing": False, "text": ""})
-            await self.send({"type": "state"})
-            return
-        # A completed cycle wraps so every full pass is film one + film two.
-        self.step_index = (self.step_index + 1) % len(self.steps)
 
     async def run(self):
         await self.socket.accept()
@@ -377,7 +393,7 @@ class DeviceDemo:
                             await self.send({"type": "state"})
                     elif not on and self.powered:
                         self.powered = False
-                        await self._cancel_playback()
+                        await self._cancel_all()
                         self.state = "powered_off"
                         await self.send({"type": "glass", "viewing": False, "text": ""})
                         await self.send({"type": "state"})
@@ -388,7 +404,12 @@ class DeviceDemo:
                     if active:
                         self.recording = True
                         self.mic.clear()
-                        await self._cancel_playback()
+                        if self.playing_step == 0:
+                            # The question rides over the still-playing film.
+                            continue
+                        await self._cancel_all()
+                        # An aborted take restarts the sequence from film one.
+                        self.step_index = 0
                         self.state = "listening"
                         await self.send({"type": "interrupted"})
                         await self.send(
@@ -398,7 +419,18 @@ class DeviceDemo:
                     else:
                         self.recording = False
                         self.mic.clear()
-                        self.playback = asyncio.create_task(self._next_step())
+                        if self.playing_step == 0:
+                            if (
+                                self.followup_task is None
+                                or self.followup_task.done()
+                            ):
+                                self.followup_task = asyncio.create_task(
+                                    self._followup()
+                                )
+                        else:
+                            self.step_task = asyncio.create_task(
+                                self._run_step(self.step_index)
+                            )
                 elif kind in {"audio", "mic"} and self.recording:
                     raw = message.get("pcm", "")
                     if isinstance(raw, str) and len(raw) < 100_000:
@@ -410,21 +442,23 @@ class DeviceDemo:
                             self.mic.extend(pcm)
                 elif kind == "text":
                     if self.powered and not self.recording:
-                        self.playback = asyncio.create_task(self._next_step())
+                        self.step_task = asyncio.create_task(
+                            self._run_step(self.step_index)
+                        )
                 elif kind == "select":
                     if self.settings.select():
                         await self.send(self.settings.snapshot())
                     else:
-                        await self._cancel_playback()
+                        await self._cancel_all()
                         self.state = "listening"
                         await self.send({"type": "glass", "viewing": False, "text": ""})
                         await self.send({"type": "state"})
                 elif kind == "navigate":
                     self.settings.navigate(message.get("direction"))
                     if self.settings.open:
-                        await self._cancel_playback()
+                        await self._cancel_all()
                     await self.send(self.settings.snapshot())
         finally:
             warm.cancel()
             await asyncio.gather(warm, return_exceptions=True)
-            await self._cancel_playback()
+            await self._cancel_all()
