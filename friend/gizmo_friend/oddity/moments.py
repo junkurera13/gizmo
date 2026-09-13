@@ -160,8 +160,8 @@ _register(
             "reply_audio": "/static/demo-draw-gizmo.wav?v=draw1",
             "image": "/static/demo-draw-jake.png?v=draw1",
             "subject": "Jake the Dog from Adventure Time",
-            "keep_scene": True,
             "fullscreen_after_reply": True,
+            "post_reply_hold_ms": 5000,
         },
     ),
     Moment(

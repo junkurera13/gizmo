@@ -67,6 +67,16 @@ test('embedded player shows the current kid line on the rail', async () => {
   assert.equal(ui.element('moment-line').textContent, 'What should I draw?');
 });
 
+test('scenario navigation is available only while the device is on', async () => {
+  const ui = await app();
+  ui.run('moments = [{id:"birthday", line:"Birthday"}, {id:"draw", line:"What should I draw?"}]; syncMoment("birthday")');
+  assert.equal(ui.element('moments').hidden, false);
+  ui.run('awake = false; syncPower()');
+  assert.equal(ui.element('moments').hidden, true);
+  ui.run('awake = true; syncPower()');
+  assert.equal(ui.element('moments').hidden, false);
+});
+
 test('a single completed demo hides scenario navigation', async () => {
   const ui = await app();
   ui.run('moments = [{id:"birthday", line:"How many more days until my birthday?", demo:{prompt:"Gizmo, how many more days until my birthday?", prompt_audio:"/static/demo-birthday-kid.mp3"}}]; syncMoment("birthday")');
@@ -178,22 +188,26 @@ test('Pompeii continues with the recorded kid follow-up and its answer video', a
 test('drawing demo shows Jake before Umbriel recommends the easy drawing', async () => {
   const ui = await app();
   ui.context.recorded = []; ui.context.images = []; ui.context.fullscreenExpansions = 0;
+  ui.context.holds = []; ui.context.sceneDismissals = 0;
   ui.run(`
-    delay = async () => {};
+    delay = async (milliseconds) => { if (milliseconds === 5000) holds.push(milliseconds); };
     playDemoRecording = async (src, signal, text) => { recorded.push(src); setCaption(text); };
     showDemoImage = async (src, subject) => { images.push([src, subject]); demoOwnsScene = true; };
     expandDemoSceneFullscreen = () => { fullscreenExpansions += 1; };
+    dissolveScene = () => { sceneDismissals += 1; };
     moments = [{id:'draw', line:'What should I draw?', demo:{
       prompt:'Gizmo, what should I draw?', prompt_audio:'kid.mp3',
       reply:"You're always talking about Adventure Time, so I recommend Jake the Dog. His round body, simple legs, and big eyes make him easy and fun to draw.",
       reply_audio:'umbriel.wav', image:'jake.png', subject:'Jake the Dog from Adventure Time',
-      fullscreen_after_reply:true,
+      fullscreen_after_reply:true, post_reply_hold_ms:5000,
     }}]; syncMoment('draw');
   `);
   await ui.run('sayMoment()');
   assert.deepEqual([...ui.context.recorded], ['kid.mp3', 'umbriel.wav']);
   assert.equal(JSON.stringify(ui.context.images), JSON.stringify([['jake.png', 'Jake the Dog from Adventure Time']]));
   assert.equal(ui.context.fullscreenExpansions, 1);
+  assert.deepEqual([...ui.context.holds], [5000]);
+  assert.equal(ui.context.sceneDismissals, 1);
   assert.equal(ui.element('caption').textContent, '');
   assert.match(ui.element('status').textContent, /Demo finished/);
 });

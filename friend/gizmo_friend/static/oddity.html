@@ -7,7 +7,7 @@
   <link rel="icon" href="data:,">
   <link rel="stylesheet" href="/static/oddity-boot.css?v=gate14">
   <link rel="stylesheet" href="/static/oddity.css">
-  <link rel="stylesheet" href="/static/oddity-device.css?v=gate72">
+  <link rel="stylesheet" href="/static/oddity-device.css?v=gate80">
   <link rel="stylesheet" href="/static/oddity-experience.css">
   <link rel="preload" as="image" href="/static/device-reference-ptt-pressed.png">
   <link rel="preload" as="image" href="/static/oddity-character-half.png?v=char3">
@@ -43,7 +43,7 @@
       document.documentElement.classList.add('oddity-locked');
     }
   </script>
-  <script type="module" src="/static/oddity.js?v=gate85"></script>
+  <script type="module" src="/static/oddity.js?v=gate87"></script>
 </head>
 <body>
   <section id="preview-gate" class="preview-gate" aria-labelledby="preview-title" hidden>
@@ -64,6 +64,12 @@
   </script>
   <main>
     <section class="simulator" aria-label="Gizmo simulator">
+      <div class="power-bar">
+        <button id="power" type="button" class="power-toggle" role="switch" aria-checked="false" aria-label="Power">
+          <span class="power-track" aria-hidden="true"><span class="power-knob"></span></span>
+          <span id="power-state">Off</span>
+        </button>
+      </div>
       <div id="device" class="device" aria-label="Gizmo handheld">
         <img class="device-art device-rest" src="/static/device-reference.png" alt="" draggable="false">
         <img class="device-art device-pressed" src="/static/device-reference-ptt-pressed.png" alt="" draggable="false">
@@ -178,12 +184,6 @@
         <button id="previous" type="button" class="device-control device-up" aria-label="Navigate up" title="Up · Settings">⌃</button>
         <button id="next" type="button" class="device-control device-down" aria-label="Navigate down" title="Down · Camera">⌄</button>
         <button id="select" type="button" class="device-control device-select" aria-label="Select" title="Select · Enter">✓</button>
-      </div>
-      <div class="power-bar">
-        <button id="power" type="button" class="power-toggle" role="switch" aria-checked="false" aria-label="Power">
-          <span class="power-track" aria-hidden="true"><span class="power-knob"></span></span>
-          <span id="power-state">Off</span>
-        </button>
       </div>
       <div id="moments" class="moments" hidden>
         <button id="moment-prev" type="button" aria-label="Previous moment">‹</button>

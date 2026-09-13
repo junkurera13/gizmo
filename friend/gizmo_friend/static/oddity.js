@@ -209,7 +209,7 @@ function renderRail() {
   const rail = $('moments');
   if (!rail) return;
   const item = currentMoment();
-  if (!playMoments || !item) {
+  if (!playMoments || !item || !awake) {
     rail.hidden = true;
     return;
   }
@@ -610,6 +610,8 @@ async function sayMoment() {
     }
     setCaption();
     if (item.demo.fullscreen_after_reply) expandDemoSceneFullscreen();
+    const postReplyHoldMs = Math.max(0, Number(item.demo.post_reply_hold_ms) || 0);
+    if (postReplyHoldMs) await delay(postReplyHoldMs, signal);
     demoPlayedMoment = item.id;
     status('Demo finished. Press replay to watch it again.', 'idle');
     if (!item.demo.keep_scene) dissolveScene();
@@ -738,6 +740,7 @@ function syncPower() {
   button.setAttribute('aria-checked', String(Boolean(on)));
   button.classList.toggle?.('is-on', Boolean(on));
   $('power-state').textContent = on ? 'On' : 'Off';
+  renderRail();
 }
 function sleep() {
   stopDemo();

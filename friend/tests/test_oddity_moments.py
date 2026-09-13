@@ -93,8 +93,9 @@ class MomentCatalogTests(unittest.TestCase):
         self.assertEqual(draw["image"], "/static/demo-draw-jake.png?v=draw1")
         self.assertIn("Adventure Time", draw["reply"])
         self.assertIn("Jake the Dog", draw["reply"])
-        self.assertTrue(draw['keep_scene'])
+        self.assertFalse(draw.get('keep_scene', False))
         self.assertTrue(draw['fullscreen_after_reply'])
+        self.assertEqual(draw['post_reply_hold_ms'], 5000)
         self.assertIn("easy", draw["reply"])
         math = public[3]["demo"]
         self.assertEqual(math["prompt_audio"], "/static/demo-math-kid.mp3?v=math2")
