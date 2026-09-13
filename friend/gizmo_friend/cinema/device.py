@@ -35,6 +35,11 @@ SEGMENT_SECONDS = 5
 # High enough for deliberate limited animation on the ILI9341, with a 125 ms
 # frame budget the physical ESP can sustain while the next cue downloads.
 DEVICE_JPEG_QUALITY = 65
+# Keep every five-second cue below the measured device download budget. The
+# physical XIAO played 8 fps cues up to roughly 287 KiB without dropping a
+# frame; 256 KiB leaves room for Railway and Wi-Fi variance before the next GO.
+MAX_DEVICE_SEGMENT_BYTES = 256 * 1024
+MIN_DEVICE_JPEG_QUALITY = 1
 # aiortc drops the first Director NALs; those packets replay as one frozen
 # picture. Wait for a second distinct frame before the 5s clock starts.
 WARMUP_DISTINCT_FRAMES = 2
@@ -55,6 +60,37 @@ def jpeg_frame(image: Image.Image, *, quality: int = DEVICE_JPEG_QUALITY) -> byt
     return encoded.getvalue()
 
 
+def encode_jpeg_frames(
+    images: list[Image.Image],
+    *,
+    max_bytes: int = MAX_DEVICE_SEGMENT_BYTES,
+) -> tuple[list[bytes], int]:
+    """Use the highest shared JPEG quality that fits one held device cue."""
+    if not images:
+        raise ValueError("Empty film segment")
+    if max_bytes <= 0:
+        raise ValueError("Device film byte budget must be positive")
+
+    frames = [jpeg_frame(image) for image in images]
+    if sum(map(len, frames)) <= max_bytes:
+        return frames, DEVICE_JPEG_QUALITY
+
+    selected = None
+    low = MIN_DEVICE_JPEG_QUALITY
+    high = DEVICE_JPEG_QUALITY - 1
+    while low <= high:
+        quality = (low + high) // 2
+        candidate = [jpeg_frame(image, quality=quality) for image in images]
+        if sum(map(len, candidate)) <= max_bytes:
+            selected = candidate, quality
+            low = quality + 1
+        else:
+            high = quality - 1
+    if selected is None:
+        raise ValueError("Device film segment is too detailed for its byte budget")
+    return selected
+
+
 def frame_digest(image: Image.Image) -> bytes:
     return hashlib.md5(image.tobytes()).digest()
 
@@ -64,6 +100,8 @@ class DeviceSegment:
     show: StoredShow
     pcm: bytes
     frames: int
+    jpeg_quality: int
+    mjpeg_bytes: int
 
 
 def encode_segment(
@@ -71,7 +109,8 @@ def encode_segment(
 ) -> DeviceSegment:
     if not images or not pcm:
         raise ValueError("Empty film segment")
-    frames = [jpeg_frame(image) for image in images]
+    frames, quality = encode_jpeg_frames(images)
+    motion = b"".join(frames)
     jpeg = frames[0]
     still = ConjuredStill(
         subject=subject,
@@ -86,9 +125,16 @@ def encode_segment(
     )
     saved = store.save(still, session_id="cinema", motion=subject)
     stored = store.put_mjpeg(
-        saved.id, b"".join(frames), frame_count=len(frames), width=320, height=240, fps=FPS
+        saved.id, motion, frame_count=len(frames), width=320, height=240, fps=FPS
     )
-    return DeviceSegment(saved, pcm, stored.frame_count)
+    logger.info(
+        "Device film cue encoded frames=%d quality=%d bytes=%d budget=%d",
+        stored.frame_count,
+        quality,
+        len(motion),
+        MAX_DEVICE_SEGMENT_BYTES,
+    )
+    return DeviceSegment(saved, pcm, stored.frame_count, quality, len(motion))
 
 
 class DeviceFilmPlayer:

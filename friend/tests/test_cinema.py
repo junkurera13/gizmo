@@ -455,6 +455,39 @@ class DeviceEncodingTests(unittest.IsolatedAsyncioTestCase):
             )
             self.assertFalse(segment.show.clip_path.is_file())
 
+    def test_detailed_director_segment_adapts_to_device_byte_budget(self):
+        from gizmo_friend.brain.shows import ShowStore
+        from gizmo_friend.cinema.device import (
+            DEVICE_JPEG_QUALITY,
+            MAX_DEVICE_SEGMENT_BYTES,
+            encode_segment,
+        )
+        from PIL import Image
+
+        # Deterministic high-frequency color makes fixed-quality JPEG cues far
+        # larger than the physical device can download during five seconds.
+        pixels = bytes(
+            (index * 73 + index // 97 * 29) % 256
+            for index in range(320 * 240 * 3)
+        )
+        image = Image.frombytes("RGB", (320, 240), pixels)
+        with tempfile.TemporaryDirectory() as root:
+            store = ShowStore(
+                Path(root) / "devices" / "test-device", device_id="test-device"
+            )
+            segment = encode_segment(
+                [image] * 40,
+                b"\x00\x00" * 120_000,
+                store,
+                "Detailed world",
+            )
+            self.assertLessEqual(segment.mjpeg_bytes, MAX_DEVICE_SEGMENT_BYTES)
+            self.assertLess(segment.jpeg_quality, DEVICE_JPEG_QUALITY)
+            self.assertEqual(
+                store.mjpeg(segment.show.id, fps=8).path.stat().st_size,
+                segment.mjpeg_bytes,
+            )
+
     async def test_capture_skips_frozen_director_preroll(self):
         import io
         import wave
