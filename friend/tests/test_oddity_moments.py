@@ -194,6 +194,13 @@ class MomentCatalogTests(unittest.TestCase):
             css,
         )
 
+    def test_demo_rail_links_to_standalone_cinema(self):
+        html = (Path(__file__).resolve().parents[1] / "gizmo_friend" / "static" / "oddity.html").read_text()
+        self.assertIn(
+            'id="moment-cinema" href="https://oddware.xyz/gizmo/cinema"',
+            html,
+        )
+
     def test_birthday_seed_is_eleven_days_out(self):
         with patch.dict("os.environ", {"GIZMO_TZ": "UTC"}):
             text = lookup("birthday").seed_text()
