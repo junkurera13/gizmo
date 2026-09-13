@@ -28,9 +28,11 @@ void ShowPlayer::begin() {
   for (int b = 0; b < kDecBufs; ++b) buffers_ok = buffers_ok && dec_pixels_[b] != nullptr;
   // Both media tasks pin to core 0: unpinned they float onto core 1 and
   // preempt loopTask — mid-boot that froze the flipbook; mid-film it stalls
-  // the blit and the speaker pump.
+  // the blit and the speaker pump. Decode outranks download because the cue on
+  // screen has an 83 ms frame deadline; the next cue has almost five seconds
+  // to finish its local/TLS transfer.
   if (!jobs_ || !held_jobs_ || !results_ ||
-      xTaskCreatePinnedToCore(task, "show-download", 16384, this, 2, nullptr, 0) != pdPASS) {
+      xTaskCreatePinnedToCore(task, "show-download", 16384, this, 1, nullptr, 0) != pdPASS) {
     if (jobs_) vQueueDelete(jobs_);
     if (held_jobs_) vQueueDelete(held_jobs_);
     if (results_) vQueueDelete(results_);
@@ -38,11 +40,10 @@ void ShowPlayer::begin() {
     Serial.println("show: download task unavailable");
   }
   // Decode-ahead pins to core 0 so JPEG work runs parallel to the body loop
-  // instead of stealing the core that blits and pumps audio. Priority 2 is the
-  // next-clip GET: a starved download ends the film after one 5s segment.
-  // Decode-ahead is 1 — the ring already holds ~500 ms. friend-net stays 3.
+  // instead of stealing the core that blits and pumps audio. Decode is 2,
+  // download is 1, and friend-net remains 3 so live PCM always wins.
   if (!buffers_ok ||
-      xTaskCreatePinnedToCore(decode_task, "show-decode", 24576, this, 1, nullptr, 0) != pdPASS) {
+      xTaskCreatePinnedToCore(decode_task, "show-decode", 24576, this, 2, nullptr, 0) != pdPASS) {
     Serial.println("show: decode-ahead unavailable; sync decoding only");
   }
 }

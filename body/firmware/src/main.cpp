@@ -939,6 +939,11 @@ void loop() {
       }
       break;
     case State::kIdle:
+      // A Show owns the panel while it is available. The home flipbook state
+      // can keep evolving offscreen, but it must not force render() on every
+      // loop: doing so rewrites the same film frame continuously, saturates
+      // SPI/PSRAM, and starves the decode-ahead ring.
+      if (show_player.available()) break;
       if (wifi.card_visible()) {
         if (now - last_redraw >= 400) dirty = true;
       } else if (now - last_redraw >= kIdleRedrawMs && hud_changed(current_hud(), last_hud)) {
