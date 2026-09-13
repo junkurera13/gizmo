@@ -209,7 +209,10 @@ void ShowPlayer::hold(const ShowRequest& r) {
   xQueueOverwrite(held_jobs_, &job);
 }
 bool ShowPlayer::swap_held(const ShowRequest& r) {
-  if (!r.cue || r.cue != held_request_.cue || !held_still_.bytes || strcmp(held_request_.still, r.still)) return false;
+  // The clip alone satisfies the swap: the still URL serves the clip's first
+  // frame, so the poster materializes from it when the still has not landed.
+  if (!r.cue || r.cue != held_request_.cue || (!held_still_.bytes && !held_clip_.bytes) ||
+      strcmp(held_request_.still, r.still)) return false;
   ++revision_;  // whatever was downloading for the old picture is moot
   if (jobs_) xQueueReset(jobs_);
   if (media_mux_) xSemaphoreTake(media_mux_, portMAX_DELAY);
@@ -223,6 +226,22 @@ bool ShowPlayer::swap_held(const ShowRequest& r) {
   clip_ = held_clip_;
   held_still_ = Media{};
   held_clip_ = Media{};
+  if (!still_.bytes && clip_.bytes && clip_.count > 0) {
+    const ShowFrame& first = clip_.frames[0];
+    if (first.length > 0 && first.offset + first.length <= clip_.length) {
+      auto* copy = static_cast<uint8_t*>(heap_caps_malloc(first.length, MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT));
+      if (copy) {
+        memcpy(copy, clip_.bytes + first.offset, first.length);
+        still_.bytes = copy;
+        still_.length = first.length;
+        still_.count = 1;
+        still_.frames[0] = ShowFrame{0, first.length};
+        still_.revision = clip_.revision;
+        still_.cue = clip_.cue;
+        still_.held = true;
+      }
+    }
+  }
   if (media_mux_) xSemaphoreGive(media_mux_);
   int predecoded = 0;
   for (int b = 0; b < kDecBufs; ++b) {
@@ -285,14 +304,17 @@ void ShowPlayer::update() {
     if (media.held) {
       if (media.revision != held_revision_.load()) { release(media); continue; }
       if (request_.viewing && request_.cue && media.cue == request_.cue) {
-        // This cue already went; its late clip (or still) joins the picture on the glass.
+        // This cue already went; its late clip (or still) joins the picture on
+        // the glass. Only a clip re-arms: bumping media_gen_ for a still would
+        // retire every decoded frame mid-cue and arm_clip would restart the
+        // playhead — a still is just the poster behind the motion.
         if (media_mux_) xSemaphoreTake(media_mux_, portMAX_DELAY);
-        media_gen_.store(next_gen());
+        if (media.motion) media_gen_.store(next_gen());
         Media& target = media.motion ? clip_ : still_;
         release(target);
         target = media;
         if (media_mux_) xSemaphoreGive(media_mux_);
-        arm_clip();
+        if (media.motion) arm_clip();
       } else if (media.cue == held_request_.cue) {
         // The decode task reads held_clip_ under this same mutex.
         if (media_mux_) xSemaphoreTake(media_mux_, portMAX_DELAY);
@@ -539,23 +561,35 @@ void ShowPlayer::run() {
     // picture can wait. Held first so a slow ambient still never delays a cue.
     if (xQueueReceive(held_jobs_, &job, 0) == pdTRUE || xQueueReceive(jobs_, &job, 0) == pdTRUE) {
       Media media;
-      bool still_ok = !job.still;
-      if (job.still) {
-        if (download(job, false, media)) { publish(media); still_ok = true; }
-        else if (job.held) {
-          Media failed;
-          failed.failed = true; failed.held = true; failed.motion = false;
-          failed.cue = job.request.cue; failed.revision = job.revision;
-          publish(failed);
+      auto failed_media = [&](bool motion) {
+        Media failed;
+        failed.failed = true; failed.held = true; failed.motion = motion;
+        failed.cue = job.request.cue; failed.revision = job.revision;
+        publish(failed);
+      };
+      if (job.held) {
+        // A film cue's go is gated on the motion ack, and a landed clip
+        // pre-decodes under the held generation while the current cue plays —
+        // fetch the motion first so its opening frames exist seconds before
+        // go instead of after the still's slower fetch. The still is now only
+        // the fallback poster: swap_held materializes it from the clip's first
+        // frame, which is the same JPEG the still URL serves.
+        bool have_motion = false;
+        if (*job.request.frames) {
+          if (download(job, true, media)) { publish(media); have_motion = true; }
+          else failed_media(true);
         }
-      }
-      if (still_ok && *job.request.frames) {
-        if (download(job, true, media)) publish(media);
-        else if (job.held) {
-          Media failed;
-          failed.failed = true; failed.held = true; failed.motion = true;
-          failed.cue = job.request.cue; failed.revision = job.revision;
-          publish(failed);
+        if (job.still && !have_motion) {
+          if (download(job, false, media)) publish(media);
+          else failed_media(false);
+        }
+      } else {
+        bool still_ok = !job.still;
+        if (job.still) {
+          if (download(job, false, media)) { publish(media); still_ok = true; }
+        }
+        if (still_ok && *job.request.frames) {
+          if (download(job, true, media)) publish(media);
         }
       }
     }

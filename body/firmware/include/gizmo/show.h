@@ -20,7 +20,7 @@ class ShowPlayer {
   void cancel(bool dismiss = true);
   void update();
   bool viewing() const { return request_.viewing; }
-  bool available() const { return still_.bytes != nullptr; }
+  bool available() const { return still_.bytes != nullptr || clip_.bytes != nullptr; }
   bool motion_playing() const { return clip_.bytes != nullptr; }
   bool render(uint16_t* pixels, bool force = false);
   // Decodes under the chip-global gizmo::jpeg_lock (esp_jpg_decode is not
@@ -70,10 +70,12 @@ class ShowPlayer {
   // the media generation they came from; a stale generation is skipped.
   // kDecAhead slots look ahead for the playing clip — ~750 ms at 8 fps, enough
   // to absorb a TLS burst on core 0 without the playhead running dry. The rest
-  // pre-decode the held cue's first frames so "go" presents them at once.
-  static constexpr int kDecBufs = 8;
+  // pre-decode the held cue's first frames so "go" presents them at once; a
+  // held clip lands seconds before its go, so a full second lookahead can be
+  // waiting in the ring at the swap instead of the old single frame.
+  static constexpr int kDecBufs = 12;
   static constexpr size_t kDecAhead = 6;
-  static constexpr size_t kHeldAhead = 2;
+  static constexpr size_t kHeldAhead = 6;
   static constexpr size_t kDecScratch = 40 * 1024;
   static constexpr size_t kDecPixels = kShowWidth * kShowHeight * sizeof(uint16_t);
   static constexpr uint32_t kStallLogMs = 250;

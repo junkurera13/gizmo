@@ -201,6 +201,23 @@ int main(int argc,char** argv) {
   assert(held_decoded);
   player.cancel();
   assert(player.held_gen_.load()==0&&player.held_clip_.bytes==nullptr);
+  // The motion fetches before the still now, so a go can land while the cue
+  // has its clip but no still: the swap materializes the poster from the
+  // clip's first frame — the same JPEG the still URL serves.
+  ShowRequest held10=held7;held10.cue=10;held10.still[20]='a';
+  strcpy(held10.frames,held10.still);memcpy(held10.frames+strlen(held10.frames)-4,".mjpeg",7);
+  player.submit(held10);
+  assert(xQueueReceive(player.held_jobs_,&job,0)&&job.held&&job.request.cue==10);
+  response(true);assert(player.download(job,true,media)); // clip first, no still yet
+  player.publish(media);player.update();
+  assert(player.held_clip_.count==2&&player.held_still_.bytes==nullptr);
+  assert(player.take_glass_ready(ack)&&ack.cue==10&&ack.motion&&ack.ok);
+  ShowRequest go10=held10;go10.hold=false;go10.go=true;
+  player.submit(go10);
+  assert(player.request_.cue==10&&player.clip_.cue==10);
+  assert(player.still_.bytes!=nullptr&&player.still_.bytes!=player.clip_.bytes);
+  assert(player.still_.count==1&&player.still_.frames[0].length==player.clip_.frames[0].length);
+  assert(player.available());
   // A held fetch that fails reports so; the brain speaks over the picture it has.
   ShowPlayer::Media failed;failed.failed=true;failed.held=true;failed.cue=6;failed.revision=player.held_revision_.load();
   player.publish(failed);player.update();
