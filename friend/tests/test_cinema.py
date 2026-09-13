@@ -54,6 +54,57 @@ class FakeStream:
 
 
 class DevicePlayerTests(unittest.IsolatedAsyncioTestCase):
+    async def test_caption_changes_at_narration_boundary_inside_cue(self):
+        track = object()
+        stream = SimpleNamespace(
+            video_ready=None,
+            closed=False,
+            tracks={"video": track},
+            relay=SimpleNamespace(subscribe=Mock(return_value=track)),
+        )
+        cinema = SimpleNamespace(
+            stream=stream,
+            prepared=SimpleNamespace(
+                plan=SimpleNamespace(title="Volcano"),
+                timings=[
+                    {"start": 0.0, "end": 0.2, "narration": "Pressure builds."},
+                    {"start": 0.2, "end": 0.3, "narration": "Then it erupts."},
+                ],
+            ),
+            revision=3,
+            mark_presented=Mock(),
+            interrupt=AsyncMock(),
+            finish=AsyncMock(),
+        )
+        acks = {}
+        events = []
+
+        async def send(event):
+            events.append(event)
+            if event.get("hold"):
+                acks[(event["cue"], "motion")].set_result(True)
+
+        player = DeviceFilmPlayer(cinema, None, send, acks)
+        segment = SimpleNamespace(
+            show=SimpleNamespace(still_url="/still.jpg", frames_url="/film.mjpeg"),
+            pcm=b"\0" * 14_400,
+        )
+
+        async def capture(_track, queue, _prepared, _revision):
+            await queue.put(segment)
+            await queue.put(None)
+
+        player.capture = capture
+        await player.play(3)
+
+        go = next(event for event in events if event.get("go"))
+        self.assertEqual(go["text"], "Pressure builds.")
+        self.assertIn(
+            {"type": "line", "text": "Then it erupts."},
+            events,
+        )
+        cinema.finish.assert_awaited_once_with(3)
+
     async def test_narration_prefill_precedes_next_cue_download(self):
         track = object()
         stream = SimpleNamespace(

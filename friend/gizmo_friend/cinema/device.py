@@ -57,8 +57,32 @@ MIN_DEVICE_JPEG_QUALITY = 1
 # aiortc drops the first Director NALs; those packets replay as one frozen
 # picture. Wait for a second distinct frame before the 5s clock starts.
 WARMUP_DISTINCT_FRAMES = 2
+# Caption changes need one panel interval to reach the LCD. Beat captions are
+# otherwise sent at their spoken boundary and look slightly late to the eye.
+CAPTION_RENDER_LEAD_SECONDS = 1 / FPS
 
 logger = logging.getLogger(__name__)
+
+
+def caption_at(timings: list[dict], position: float) -> str:
+    """Return the narration beat active at an audio position."""
+    for timing in timings:
+        if timing.get("start", 0.0) <= position < timing.get("end", 0.0):
+            return str(timing.get("narration", ""))[:150]
+    return ""
+
+
+def caption_updates(
+    timings: list[dict], start: float, end: float
+) -> list[tuple[float, str]]:
+    """Caption-only events inside one device cue, relative to cue playback."""
+    updates = []
+    for timing in timings:
+        boundary = float(timing.get("start", 0.0))
+        if start < boundary < end:
+            due = max(0.0, boundary - start - CAPTION_RENDER_LEAD_SECONDS)
+            updates.append((due, str(timing.get("narration", ""))[:150]))
+    return updates
 
 
 def frame_image(frame) -> Image.Image:
@@ -315,6 +339,7 @@ class DeviceFilmPlayer:
             return segment, event, ready
 
         pending = None
+        caption_task = None
         position = 0.0
         try:
             index = 0
@@ -324,21 +349,38 @@ class DeviceFilmPlayer:
                 if not await asyncio.wait_for(ready, 10):
                     raise RuntimeError("Device could not preload film")
                 self.acks.pop((event["cue"], "motion"), None)
-                caption = ""
-                for timing in prepared.timings or []:
-                    if timing.get("start", 0.0) <= position < timing.get("end", 0.0):
-                        caption = str(timing.get("narration", ""))[:150]
-                        break
+                segment_seconds = len(segment.pcm) / PCM_BYTES_PER_SECOND
+                segment_end = position + segment_seconds
+                timings = prepared.timings or []
+                caption = caption_at(
+                    timings,
+                    min(
+                        segment_end - 1 / PCM_BYTES_PER_SECOND,
+                        position + CAPTION_RENDER_LEAD_SECONDS,
+                    ),
+                )
+                updates = caption_updates(timings, position, segment_end)
                 await self.send({**event, "go": True, "text": caption})
                 # Do not discard the buffered Live fallback until the device has
                 # actually accepted the command that starts the prepared film.
                 self.cinema.mark_presented(revision)
                 if self.on_presenting:
                     await self.on_presenting()
-                position += len(segment.pcm) / PCM_BYTES_PER_SECOND
+                position = segment_end
                 if self.on_talking:
                     await self.on_talking()
                 started = asyncio.get_running_loop().time()
+
+                async def update_captions() -> None:
+                    for due, text in updates:
+                        wait = due - (asyncio.get_running_loop().time() - started)
+                        if wait > 0:
+                            await asyncio.sleep(wait)
+                        if revision != self.cinema.revision:
+                            return
+                        await self.send({"type": "line", "text": text})
+
+                caption_task = asyncio.create_task(update_captions())
 
                 # WebSocket events are ordered. Put a narration cushion into
                 # the device's existing PCM rings before HOLD starts the next
@@ -384,10 +426,12 @@ class DeviceFilmPlayer:
                 await asyncio.sleep(
                     max(
                         0,
-                        len(segment.pcm) / PCM_BYTES_PER_SECOND
+                        segment_seconds
                         - (asyncio.get_running_loop().time() - started),
                     )
                 )
+                await caption_task
+                caption_task = None
                 item = await pending
                 pending = None
                 index += 1
@@ -408,6 +452,9 @@ class DeviceFilmPlayer:
                     }
                 )
         finally:
+            if caption_task:
+                caption_task.cancel()
+                await asyncio.gather(caption_task, return_exceptions=True)
             if pending:
                 pending.cancel()
                 await asyncio.gather(pending, return_exceptions=True)
