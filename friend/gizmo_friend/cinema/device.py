@@ -18,6 +18,7 @@ import io
 import logging
 import math
 import os
+import textwrap
 import wave
 from dataclasses import dataclass
 
@@ -42,6 +43,9 @@ DEVICE_AUDIO_LEAD_SECONDS = 0.96
 DEVICE_WIDTH = 320
 DEVICE_HEIGHT = 240
 CAPTION_BAND_HEIGHT = 24
+# The firmware's 5x7 face advances six pixels per character and leaves eight
+# pixels of inset on each side: (320 - 16 + 1) // 6 = 50 visible characters.
+MAX_DEVICE_CAPTION_CHARS = 50
 # High enough for deliberate limited animation on the ILI9341, with a 125 ms
 # frame budget the physical ESP can sustain while the next cue downloads.
 DEVICE_JPEG_QUALITY = 65
@@ -70,6 +74,37 @@ def caption_at(timings: list[dict], position: float) -> str:
         if timing.get("start", 0.0) <= position < timing.get("end", 0.0):
             return str(timing.get("narration", ""))[:150]
     return ""
+
+
+def device_caption_timings(timings: list[dict]) -> list[dict]:
+    """Split narration beats into one-line captions without dropping words."""
+    captions = []
+    for timing in timings:
+        narration = " ".join(str(timing.get("narration", "")).split())
+        chunks = textwrap.wrap(
+            narration,
+            width=MAX_DEVICE_CAPTION_CHARS,
+            break_long_words=True,
+            break_on_hyphens=False,
+        )
+        if not chunks:
+            continue
+        start = float(timing.get("start", 0.0))
+        end = max(start, float(timing.get("end", start)))
+        weights = [max(len(chunk.split()), 1) for chunk in chunks]
+        total = sum(weights)
+        consumed = 0
+        cursor = start
+        for index, (chunk, weight) in enumerate(zip(chunks, weights)):
+            consumed += weight
+            chunk_end = (
+                end
+                if index == len(chunks) - 1
+                else start + (end - start) * consumed / total
+            )
+            captions.append({"start": cursor, "end": chunk_end, "narration": chunk})
+            cursor = chunk_end
+    return captions
 
 
 def caption_updates(
@@ -341,6 +376,7 @@ class DeviceFilmPlayer:
         pending = None
         caption_task = None
         position = 0.0
+        caption_timings = device_caption_timings(prepared.timings or [])
         try:
             index = 0
             item = await preload(index)
@@ -351,15 +387,14 @@ class DeviceFilmPlayer:
                 self.acks.pop((event["cue"], "motion"), None)
                 segment_seconds = len(segment.pcm) / PCM_BYTES_PER_SECOND
                 segment_end = position + segment_seconds
-                timings = prepared.timings or []
                 caption = caption_at(
-                    timings,
+                    caption_timings,
                     min(
                         segment_end - 1 / PCM_BYTES_PER_SECOND,
                         position + CAPTION_RENDER_LEAD_SECONDS,
                     ),
                 )
-                updates = caption_updates(timings, position, segment_end)
+                updates = caption_updates(caption_timings, position, segment_end)
                 await self.send({**event, "go": True, "text": caption})
                 # Do not discard the buffered Live fallback until the device has
                 # actually accepted the command that starts the prepared film.

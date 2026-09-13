@@ -54,6 +54,34 @@ class FakeStream:
 
 
 class DevicePlayerTests(unittest.IsolatedAsyncioTestCase):
+    def test_long_narration_uses_sequential_one_line_captions(self):
+        from gizmo_friend.cinema.device import (
+            MAX_DEVICE_CAPTION_CHARS,
+            device_caption_timings,
+        )
+
+        narration = (
+            "Deep underground, pressure keeps building until hot rock forces "
+            "its way upward and the mountain finally erupts into the sky."
+        )
+        captions = device_caption_timings(
+            [{"start": 10.0, "end": 16.0, "narration": narration}]
+        )
+
+        self.assertGreater(len(captions), 1)
+        self.assertTrue(
+            all(len(row["narration"]) <= MAX_DEVICE_CAPTION_CHARS for row in captions)
+        )
+        self.assertEqual(" ".join(row["narration"] for row in captions), narration)
+        self.assertEqual(captions[0]["start"], 10.0)
+        self.assertEqual(captions[-1]["end"], 16.0)
+        self.assertTrue(
+            all(
+                left["end"] == right["start"]
+                for left, right in zip(captions, captions[1:])
+            )
+        )
+
     async def test_caption_changes_at_narration_boundary_inside_cue(self):
         track = object()
         stream = SimpleNamespace(
