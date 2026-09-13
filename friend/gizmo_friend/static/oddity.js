@@ -406,8 +406,6 @@ function showDemoMath(math, signal) {
     const value = document.createElement('span'); value.className = 'math-wrong'; value.textContent = wrong[2];
     $('math-attempt').append(value);
   }
-  $('math-base').textContent = '26';
-  $('math-rest').textContent = '16';
   $('math-make-ten').textContent = math.make_ten || '20 + 10 = 30';
   $('math-left').textContent = math.left || '6 + 6 = 12';
   $('math-answer').textContent = math.answer || '30 + 12 = 42';
@@ -508,14 +506,18 @@ async function playCameraDemo(item, signal) {
     setCaption();
     if (item.demo.math) {
       feed.pause(); glass?.closeCamera?.(); demoOwnsCamera = false;
+      // Put the worked example on screen immediately. The normal `thinking`
+      // state animates Gizmo painting, which is not part of this camera-to-
+      // calculation demo.
+      showDemoMath(item.demo.math, signal);
     }
     const replyWaitMs = Math.max(0, Number(camera.reply_wait_ms) || 0);
     if (replyWaitMs) {
-      status('Gizmo is thinking…', 'thinking');
+      status(item.demo.math ? 'Checking the calculation…' : 'Gizmo is thinking…',
+        item.demo.math ? 'playing' : 'thinking');
       await delay(replyWaitMs, signal);
     }
     status('Gizmo is answering…', 'playing');
-    if (item.demo.math) showDemoMath(item.demo.math, signal);
     await playDemoRecording(item.demo.reply_audio, signal, item.demo.reply, item.demo.reply_timed, item.demo.reply_audio_rate || 1);
   } finally {
     feed.pause();

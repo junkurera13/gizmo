@@ -111,7 +111,7 @@ class MomentCatalogTests(unittest.TestCase):
             }],
         })
         self.assertEqual(math["reply_audio"], "/static/demo-mathcheck-refreshed.wav?v=math4")
-        self.assertEqual(math["reply_audio_rate"], 1.3)
+        self.assertEqual(math["reply_audio_rate"], 1.15)
         self.assertEqual(math["math"]["attempt"], "26 + 16 = 43")
         self.assertEqual(math["math"]["make_ten"], "20 + 10 = 30")
         self.assertEqual(math["math"]["left"], "6 + 6 = 12")
@@ -131,7 +131,7 @@ class MomentCatalogTests(unittest.TestCase):
         self.assertIn("many colors", rainbow["beats"][1]["reply"])
         antarctica = public[5]["demo"]
         self.assertEqual(antarctica["prompt_audio"], "/static/demo-antarctica-kid.mp3?v=antarctica1")
-        self.assertEqual(antarctica["reply_audio"], "/static/demo-antarctica.wav?v=antarctica1")
+        self.assertEqual(antarctica["reply_audio"], "/static/demo-antarctica-gizmo.wav?v=antarctica3")
         self.assertEqual(antarctica["video"], "/static/demo-antarctica.mp4?v=antarctica1")
         self.assertIn("South Pole", antarctica["reply"])
         self.assertIn("penguins", antarctica["reply"])
@@ -144,6 +144,12 @@ class MomentCatalogTests(unittest.TestCase):
         self.assertIn("Vesuvius", public[6]["demo"]["reply"])
         self.assertTrue(lookup("trex").contract)
         self.assertIsNone(lookup("missing"))
+
+    def test_math_visual_uses_number_cards_without_agent_characters(self):
+        html = (Path(__file__).resolve().parents[1] / "gizmo_friend" / "static" / "oddity.html").read_text()
+        self.assertIn('class="math-split"', html)
+        self.assertNotIn('class="math-pals"', html)
+        self.assertNotIn('class="math-face"', html)
 
     def test_birthday_seed_is_eleven_days_out(self):
         with patch.dict("os.environ", {"GIZMO_TZ": "UTC"}):

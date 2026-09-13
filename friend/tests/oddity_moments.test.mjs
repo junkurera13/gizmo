@@ -231,12 +231,16 @@ test('plant demo keeps Camera moving while the single kid recording and Umbriel 
   assert.match(ui.element('status').textContent, /Demo finished/);
 });
 
-test('math-check closes camera before thinking and reveals math before narration', async () => {
+test('math-check closes camera and reveals math without the Gizmo painting animation', async () => {
   const ui = await app();
   ui.context.events = [];
   ui.element('camera-feed').pause = () => ui.context.events.push('pause:video');
   ui.run(`
     delay = async (milliseconds) => events.push('wait:' + milliseconds);
+    status = (text, state) => {
+      events.push('status:' + state);
+      document.getElementById('status').textContent = text;
+    };
     glass = {
       openDemoCamera(src) { events.push('open:' + src); return document.getElementById('camera-feed'); },
       closeCamera() { events.push('home'); }, syncReply() {},
@@ -260,10 +264,12 @@ test('math-check closes camera before thinking and reveals math before narration
   ui.run("showDemoMath = () => events.push('math')");
   await ui.run('sayMoment()');
   assert.deepEqual([...ui.context.events], [
-    'wait:1000', 'wait:120', 'open:math.mp4', 'wait:100', 'video',
-    'cue:1', 'audio:kid.mp3',
-    'pause:video', 'home', 'wait:2000', 'math', 'audio:umbriel.wav', 'reply-video-loop:true', 'pause:video',
+    'status:idle', 'wait:1000', 'status:idle', 'wait:120', 'open:math.mp4', 'wait:100', 'video',
+    'cue:1', 'status:listening', 'audio:kid.mp3',
+    'pause:video', 'home', 'math', 'status:playing', 'wait:2000', 'status:playing',
+    'audio:umbriel.wav', 'reply-video-loop:true', 'pause:video', 'status:idle',
   ]);
+  assert.equal(ui.context.events.includes('status:thinking'), false);
   assert.equal(ui.element('camera-feed').loop, true);
   assert.equal(ui.element('camera-feed').currentTime, 0);
   assert.deepEqual([...ui.run('history.map(item => item.text)')], [

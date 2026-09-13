@@ -425,6 +425,7 @@ class OddityRouteTests(unittest.TestCase):
                 self.assertEqual(client.get("/static/demo-antarctica-kid.mp3").status_code, 200)
                 self.assertEqual(client.get("/static/demo-antarctica.mp4").status_code, 200)
                 self.assertEqual(client.get("/static/demo-antarctica.wav").status_code, 200)
+                self.assertEqual(client.get("/static/demo-antarctica-gizmo.wav").status_code, 200)
                 self.assertEqual(client.get("/static/demo-pompeii.mp4").status_code, 200)
                 self.assertEqual(client.get("/static/demo-pompeii.wav").status_code, 200)
                 self.assertEqual(client.get("/static/demo-pompeii-kid-followup-user.mp3").status_code, 200)

@@ -93,6 +93,7 @@ ODDITY_PUBLIC_ASSETS = {
     "/static/demo-rainbow-gizmo-split.wav",
     "/static/demo-antarctica-kid.mp3",
     "/static/demo-antarctica.wav",
+    "/static/demo-antarctica-gizmo.wav",
     "/static/demo-antarctica.mp4",
     "/static/demo-pompeii-kid.mp3",
     "/static/demo-pompeii.mp4",

@@ -184,7 +184,7 @@ _register(
             ),
             "reply_audio": "/static/demo-math-gizmo.wav?v=math1",
             **_recording('mathcheck'),
-            "reply_audio_rate": 1.3,
+            "reply_audio_rate": 1.15,
             "camera": {
                 "video": "/static/demo-math-camera.mp4?v=math3",
                 "start_at": 0,
@@ -309,7 +309,7 @@ _register(
                 "you can see floating icebergs and penguins, while the middle is a cold, windy "
                 "white desert."
             ),
-            "reply_audio": "/static/demo-antarctica.wav?v=antarctica1",
+            "reply_audio": "/static/demo-antarctica-gizmo.wav?v=antarctica3",
             "video": "/static/demo-antarctica.mp4?v=antarctica1",
         },
     ),
