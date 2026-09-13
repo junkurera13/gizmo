@@ -7,6 +7,7 @@ import base64
 import hmac
 import json
 import os
+import re
 import secrets
 from pathlib import Path
 from urllib.parse import urlsplit
@@ -18,6 +19,7 @@ from gizmo_friend.brain.show_budget import ShowBudget
 from gizmo_friend.cinema.runtime import CinemaSession
 
 COOKIE = "gizmo_cinema"
+IDENTITY = re.compile(r"[0-9a-f]{32}")
 
 
 class FilmBudget(ShowBudget):
@@ -43,8 +45,15 @@ def router(root: Path, static: Path):
         } and origin.netloc == connection.headers.get("host")
 
     def identity(connection):
-        key = connection.cookies.get(COOKIE, "")
-        return key if key in credentials else ""
+        values = (
+            connection.query_params.get("key", ""),
+            connection.headers.get("x-gizmo-cinema", ""),
+            connection.cookies.get(COOKIE, ""),
+        )
+        for value in values:
+            if IDENTITY.fullmatch(value) and value in credentials:
+                return value
+        return ""
 
     @api.get("/cinema")
     async def page():
@@ -53,7 +62,7 @@ def router(root: Path, static: Path):
             headers={
                 "Cache-Control": "no-store",
                 "X-Robots-Tag": "noindex",
-                "Content-Security-Policy": "default-src 'self'; connect-src 'self' ws: wss:; media-src 'self' blob:; img-src 'self' data:; style-src 'self'; script-src 'self'; font-src 'self'; frame-ancestors 'self'",
+                "Content-Security-Policy": "default-src 'self'; connect-src 'self' ws: wss:; media-src 'self' blob:; img-src 'self' data:; style-src 'self'; script-src 'self'; font-src 'self'; frame-ancestors 'self' https://oddware.xyz https://*.oddware.xyz https://*.vercel.app http://localhost:* http://127.0.0.1:*",
                 "Permissions-Policy": "microphone=(self), camera=()",
             },
         )
@@ -68,10 +77,14 @@ def router(root: Path, static: Path):
         local = (
             request.client and request.client.host in {"127.0.0.1", "::1"} and not cloud
         )
-        if not local and (not enabled or not token):
+        if not local and not enabled:
             raise HTTPException(503, "The film preview isn't open yet.")
-        if not local and not hmac.compare_digest(
-            request.headers.get("x-gizmo-access", "").encode(), token.encode()
+        if (
+            not local
+            and token
+            and not hmac.compare_digest(
+                request.headers.get("x-gizmo-access", "").encode(), token.encode()
+            )
         ):
             raise HTTPException(401, "Access code required.")
         if not os.environ.get("FAL_KEY") or not os.environ.get("GEMINI_API_KEY"):
@@ -80,7 +93,7 @@ def router(root: Path, static: Path):
         if len(credentials) >= 64 and key not in credentials:
             raise HTTPException(503, "The preview is full.")
         credentials.add(key)
-        response = JSONResponse({"ready": True})
+        response = JSONResponse({"ready": True, "key": key})
         response.set_cookie(
             COOKIE,
             key,

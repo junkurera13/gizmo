@@ -563,6 +563,78 @@ class RouteTests(unittest.TestCase):
                 403,
             )
 
+    def open_preview(self, root, **extra):
+        return patch.dict(
+            "os.environ",
+            {
+                "RAILWAY_ENVIRONMENT_ID": "test",
+                "GIZMO_DEVICE_TOKEN": "test",
+                "GIZMO_DIRECTOR_ENABLED": "1",
+                "GIZMO_DIRECTOR_TOKEN": "",
+                "FAL_KEY": "test",
+                "GEMINI_API_KEY": "test",
+                **extra,
+            },
+        )
+
+    def test_open_preview_when_enabled_without_token(self):
+        with (
+            tempfile.TemporaryDirectory(ignore_cleanup_errors=True) as root,
+            self.open_preview(root),
+            TestClient(app_factory(Path(root))) as client,
+        ):
+            response = client.post(
+                "/cinema/session", headers={"Origin": "http://testserver"}
+            )
+            self.assertEqual(response.status_code, 200)
+            self.assertRegex(response.json()["key"], r"^[0-9a-f]{32}$")
+            self.assertIn("gizmo_cinema=", response.headers["set-cookie"])
+
+    def test_access_code_still_gates_when_token_set(self):
+        with (
+            tempfile.TemporaryDirectory(ignore_cleanup_errors=True) as root,
+            self.open_preview(root, GIZMO_DIRECTOR_TOKEN="s3cret"),
+            TestClient(app_factory(Path(root))) as client,
+        ):
+            self.assertEqual(
+                client.post(
+                    "/cinema/session", headers={"Origin": "http://testserver"}
+                ).status_code,
+                401,
+            )
+            self.assertEqual(
+                client.post(
+                    "/cinema/session",
+                    headers={
+                        "Origin": "http://testserver",
+                        "x-gizmo-access": "s3cret",
+                    },
+                ).status_code,
+                200,
+            )
+
+    def test_embedded_session_identity_uses_key_param(self):
+        # The oddware.xyz iframe is cross-site, so the strict cookie never
+        # reaches it; the page passes its key explicitly instead.
+        with (
+            tempfile.TemporaryDirectory(ignore_cleanup_errors=True) as root,
+            self.open_preview(root),
+            TestClient(app_factory(Path(root))) as client,
+        ):
+            key = client.post(
+                "/cinema/session", headers={"Origin": "http://testserver"}
+            ).json()["key"]
+            client.cookies.clear()
+            again = client.post(
+                "/cinema/session",
+                headers={"Origin": "http://testserver", "x-gizmo-cinema": key},
+            )
+            self.assertEqual(again.json()["key"], key)
+            with client.websocket_connect(
+                f"/cinema/ws?key={key}", headers={"Origin": "http://testserver"}
+            ) as socket:
+                self.assertEqual(socket.receive_json()["type"], "hello")
+
 
 class DeviceEncodingTests(unittest.IsolatedAsyncioTestCase):
     def test_director_segment_uses_existing_device_media_contract(self):

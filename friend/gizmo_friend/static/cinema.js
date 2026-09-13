@@ -1,4 +1,15 @@
 const $ = id => document.getElementById(id);
+const SESSION_KEY = 'gizmo-cinema-v1';
+function stored(key) {
+  try { return sessionStorage.getItem(key) || localStorage.getItem(key) || ''; }
+  catch { return ''; }
+}
+function remember(key, value) {
+  try { sessionStorage.setItem(key, value); } catch { /* Private mode may disable storage. */ }
+  try { localStorage.setItem(key, value); } catch { /* Private mode may disable storage. */ }
+}
+let key = stored(SESSION_KEY);
+if (new URLSearchParams(location.search).has('embedded')) document.documentElement.classList.add('embedded');
 const video = $('film'), freeze = $('freeze');
 let socket, peer, revision = 0, duration = 0, startTime = null, ending = false;
 let recorder, microphone, held = false, recordingTimer;
@@ -29,10 +40,13 @@ function interrupt() {
   $('ask').placeholder = 'Ask a question, change direction, or say “go on”…';
 }
 async function connect(code = '') {
-  const response = await fetch('/cinema/session', {method:'POST', headers:{'x-gizmo-access':code}});
+  const headers = {'x-gizmo-access':code};
+  if (key) headers['x-gizmo-cinema'] = key;
+  const response = await fetch('/cinema/session', {method:'POST', headers});
   if (response.status === 401) { $('access').showModal(); throw new Error('Enter the preview access code.'); }
   if (!response.ok) { const body = await response.json(); throw new Error(body.detail || 'Could not connect.'); }
-  const connectedSocket = new WebSocket(`${location.protocol === 'https:' ? 'wss:' : 'ws:'}//${location.host}/cinema/ws`);
+  key = (await response.json()).key; remember(SESSION_KEY, key);
+  const connectedSocket = new WebSocket(`${location.protocol === 'https:' ? 'wss:' : 'ws:'}//${location.host}/cinema/ws?key=${encodeURIComponent(key)}`);
   socket=connectedSocket;
   socket.addEventListener('message', e => {if(socket===connectedSocket)handle(JSON.parse(e.data));});
   socket.addEventListener('close', () => {
@@ -87,7 +101,7 @@ async function ensurePeer(generation) {
         pc.addEventListener('icegatheringstatechange',()=>{if(pc.iceGatheringState==='complete'){clearTimeout(timer);resolve();}});
       });
       if (peer!==pc || revision!==generation) { pc.close(); return; }
-      const response=await fetch('/cinema/offer',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({revision:generation,sdp:pc.localDescription.sdp})});
+      const response=await fetch(`/cinema/offer?key=${encodeURIComponent(key)}`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({revision:generation,sdp:pc.localDescription.sdp})});
       if(!response.ok) throw new Error('Could not receive the film.');
       const answer=await response.json();
       if(peer!==pc || revision!==generation){pc.close();return;}
