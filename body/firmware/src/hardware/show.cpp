@@ -66,6 +66,7 @@ void ShowPlayer::arm_clip() {
   perf_presented_ = 0;
   perf_dropped_ = 0;
   perf_repeats_ = 0;
+  perf_stalls_ = 0;
   perf_missed_index_ = -1;
   perf_decode_failed_.store(0);
   perf_decode_max_ms_.store(0);
@@ -92,6 +93,30 @@ void ShowPlayer::note_presented(size_t index, size_t count) {
   if (perf_last_presented_ms_ != 0) {
     const uint32_t gap = now - perf_last_presented_ms_;
     if (gap > perf_present_gap_max_ms_) perf_present_gap_max_ms_ = gap;
+    if (gap >= kStallLogMs) {
+      ++perf_stalls_;
+      int ring = 0;
+      if (count > 0) {
+        for (int b = 0; b < kDecBufs; ++b) {
+          if (dec_gen_[b].load() != media_gen_.load()) continue;
+          const int slot = dec_index_[b].load();
+          for (size_t a = 0; a < kDecAhead; ++a) {
+            if (slot == int((index + a) % count)) { ++ring; break; }
+          }
+        }
+      }
+      const uint32_t last_commit = dec_last_commit_ms_.load();
+      const uint8_t dl = downloading_.load();
+      Serial.printf(
+          "show stall: t=%lu cue=%lu index=%u gap_ms=%lu ring=%d/%d dec_idle_ms=%lu "
+          "dec_busy=%d download=%s psram_free=%u\n",
+          static_cast<unsigned long>(now), static_cast<unsigned long>(request_.cue),
+          unsigned(index), static_cast<unsigned long>(gap), ring, int(kDecAhead),
+          static_cast<unsigned long>(last_commit ? now - last_commit : 0),
+          dec_in_flight_.load() ? 1 : 0,
+          dl == 2 ? "motion" : dl == 1 ? "still" : "none",
+          unsigned(heap_caps_get_free_size(MALLOC_CAP_SPIRAM)));
+    }
   }
   perf_last_presented_ms_ = now;
   ++perf_presented_;
@@ -105,13 +130,13 @@ void ShowPlayer::report_perf(const char* reason) {
   const uint32_t now = millis();
   Serial.printf(
       "show perf: end t=%lu cue=%lu reason=%s elapsed_ms=%lu presented=%lu dropped=%lu repeats=%lu "
-      "decode_failed=%lu decode_max_ms=%lu blit_max_us=%lu present_gap_max_ms=%lu psram_free=%u\n",
+      "decode_failed=%lu decode_max_ms=%lu blit_max_us=%lu present_gap_max_ms=%lu stalls=%lu psram_free=%u\n",
       static_cast<unsigned long>(now), static_cast<unsigned long>(perf_cue_), reason ? reason : "unknown",
       static_cast<unsigned long>(now - perf_started_ms_), static_cast<unsigned long>(perf_presented_),
       static_cast<unsigned long>(perf_dropped_), static_cast<unsigned long>(perf_repeats_),
       static_cast<unsigned long>(perf_decode_failed_.load()),
       static_cast<unsigned long>(perf_decode_max_ms_.load()), static_cast<unsigned long>(perf_blit_max_us_),
-      static_cast<unsigned long>(perf_present_gap_max_ms_),
+      static_cast<unsigned long>(perf_present_gap_max_ms_), static_cast<unsigned long>(perf_stalls_),
       unsigned(heap_caps_get_free_size(MALLOC_CAP_SPIRAM)));
   perf_active_ = false;
 }
@@ -435,6 +460,7 @@ bool ShowPlayer::download(const Job& job, bool motion, Media& media) {
   http.setReuse(true);
   const char* keys[] = {"Content-Type", "X-Gizmo-Frame-Count", "X-Gizmo-Frame-Rate",
                         "X-Gizmo-Frame-Width", "X-Gizmo-Frame-Height"};
+  downloading_.store(motion ? 2 : 1);
   int status = -1;
   for (int attempt = 0; attempt < 2; ++attempt) {
     if (!(secure ? http.begin(tls, url) : http.begin(plain, url))) break;
@@ -449,7 +475,7 @@ bool ShowPlayer::download(const Job& job, bool motion, Media& media) {
     plain.stop();
     open_origin[0] = '\0';
   }
-  if (status < 0) return false;
+  if (status < 0) { downloading_.store(0); return false; }
   const int length = http.getSize();
   const int count = motion ? http.header("X-Gizmo-Frame-Count").toInt() : 1;
   const size_t limit = motion ? kShowMaxBytes : kShowMaxStillBytes;
@@ -482,6 +508,7 @@ bool ShowPlayer::download(const Job& job, bool motion, Media& media) {
     else vTaskDelay(1);
   }
   http.end();
+  downloading_.store(0);
   // Reuse the socket only after a clean fetch; a torn connection reopens.
   if (ok) strlcpy(open_origin, origin, sizeof(open_origin));
   else open_origin[0] = '\0';
@@ -635,6 +662,7 @@ void ShowPlayer::decode_run() {
     bool ok = false;
     bool attempted = false;
     const uint32_t decode_started = millis();
+    dec_in_flight_.store(true);
     jpeg_lock();
     // Re-check under the lock: cancel() bumps the generation and drains this
     // lock, so a frame copied before the bump must skip the decoder here —
@@ -644,6 +672,7 @@ void ShowPlayer::decode_run() {
       ok = jpg2rgb565(dec_scratch_, length, reinterpret_cast<uint8_t*>(dec_pixels_[w]), JPG_SCALE_NONE);
     }
     jpeg_unlock();
+    dec_in_flight_.store(false);
     const uint32_t decode_ms = millis() - decode_started;
     // A generation can change while an old decode drains. Never attribute
     // that cancelled work to the next cue's physical-performance report.
@@ -659,6 +688,7 @@ void ShowPlayer::decode_run() {
     dec_bad_[w].store(!ok);
     dec_index_[w].store(static_cast<int>(target));
     dec_gen_[w].store(gen);
+    dec_last_commit_ms_.store(millis());
     // One tick every JPEG. pdMS_TO_TICKS(1) is 0 at Arduino's 100 Hz tick, so
     // the old every-fourth-frame yield never left the core. During a film,
     // friend-net (prio 3) and this task (prio 2) then occupied CPU 0 for the

@@ -76,8 +76,15 @@ class ShowPlayer {
   static constexpr size_t kHeldAhead = 2;
   static constexpr size_t kDecScratch = 40 * 1024;
   static constexpr size_t kDecPixels = kShowWidth * kShowHeight * sizeof(uint16_t);
+  static constexpr uint32_t kStallLogMs = 250;
   uint16_t* dec_pixels_[kDecBufs] = {};
   uint8_t* dec_scratch_ = nullptr;
+  // Stall forensics: what the decode and download tasks were doing when a
+  // present gap exceeded kStallLogMs. Written by those tasks, read by
+  // note_presented() on the body loop.
+  std::atomic<uint8_t> downloading_{0};  // 0 = idle, 1 = still, 2 = motion
+  std::atomic<uint32_t> dec_last_commit_ms_{0};
+  std::atomic<bool> dec_in_flight_{false};
   // Ring slots are tagged by generation. One counter serves the playing clip
   // and the held clip so "go" can adopt the held generation as media_gen_ and
   // keep the pre-decoded frames presentable. held_gen_ == 0 means no held clip.
@@ -110,6 +117,7 @@ class ShowPlayer {
   uint32_t perf_presented_ = 0;
   uint32_t perf_dropped_ = 0;
   uint32_t perf_repeats_ = 0;
+  uint32_t perf_stalls_ = 0;
   int perf_missed_index_ = -1;
   std::atomic<uint32_t> perf_decode_failed_{0};
   std::atomic<uint32_t> perf_decode_max_ms_{0};
