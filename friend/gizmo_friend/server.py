@@ -315,6 +315,13 @@ def app_factory(data_dir: Path) -> FastAPI:
             await socket.close(code=1002, reason="unsupported body protocol")
             return
         device_id = _device_id(socket.headers.get("x-gizmo-device", ""), default_device)
+        demo_moment = os.environ.get("GIZMO_DEMO_MOMENT", "").strip().lower()
+        if demo_moment:
+            from gizmo_friend.cinema.demo import DEMO_MOMENTS, DeviceDemo
+
+            if demo_moment in DEMO_MOMENTS:
+                await DeviceDemo(socket, data_dir, device_id, demo_moment).run()
+                return
         # Cinema is a Friend capability on this same session. The old
         # GIZMO_DIRECTOR_DEVICE whole-session swap is gone; that env var now
         # only tells Friend to prefer film for this device's asks.
