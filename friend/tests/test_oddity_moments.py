@@ -174,6 +174,15 @@ class MomentCatalogTests(unittest.TestCase):
         self.assertNotIn('class="math-pals"', html)
         self.assertNotIn('class="math-face"', html)
 
+    def test_camera_caption_bar_stays_visible_while_gizmo_words_swap(self):
+        css = (Path(__file__).resolve().parents[1] / "gizmo_friend" / "static" / "oddity-device.css").read_text()
+        self.assertIn("background:#05070b;", css)
+        self.assertNotIn("background:#05070bf2;", css)
+        self.assertIn(
+            ".stage[data-glass=camera] .caption.is-swapping{opacity:1;color:transparent",
+            css,
+        )
+
     def test_birthday_seed_is_eleven_days_out(self):
         with patch.dict("os.environ", {"GIZMO_TZ": "UTC"}):
             text = lookup("birthday").seed_text()
