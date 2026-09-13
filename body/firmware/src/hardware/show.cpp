@@ -28,11 +28,11 @@ void ShowPlayer::begin() {
   for (int b = 0; b < kDecBufs; ++b) buffers_ok = buffers_ok && dec_pixels_[b] != nullptr;
   // Both media tasks pin to core 0: unpinned they float onto core 1 and
   // preempt loopTask — mid-boot that froze the flipbook; mid-film it stalls
-  // the blit and the speaker pump. Download and decode share priority so a
-  // continuously-ready decoder cannot starve the next cue's transfer. The
-  // scheduler time-slices them on core 0; friend-net remains priority 3.
+  // the blit and the speaker pump. Decode outranks download because the cue on
+  // screen has a 125 ms frame deadline; the next cue has almost five seconds
+  // to finish its local/TLS transfer.
   if (!jobs_ || !held_jobs_ || !results_ ||
-      xTaskCreatePinnedToCore(task, "show-download", 16384, this, 2, nullptr, 0) != pdPASS) {
+      xTaskCreatePinnedToCore(task, "show-download", 16384, this, 1, nullptr, 0) != pdPASS) {
     if (jobs_) vQueueDelete(jobs_);
     if (held_jobs_) vQueueDelete(held_jobs_);
     if (results_) vQueueDelete(results_);
@@ -40,7 +40,8 @@ void ShowPlayer::begin() {
     Serial.println("show: download task unavailable");
   }
   // Decode-ahead pins to core 0 so JPEG work runs parallel to the body loop
-  // instead of stealing the core that blits and pumps audio.
+  // instead of stealing the core that blits and pumps audio. Decode is 2,
+  // download is 1, and friend-net remains 3 so live PCM always wins.
   if (!buffers_ok ||
       xTaskCreatePinnedToCore(decode_task, "show-decode", 24576, this, 2, nullptr, 0) != pdPASS) {
     Serial.println("show: decode-ahead unavailable; sync decoding only");
@@ -388,8 +389,12 @@ bool ShowPlayer::download(const Job& job, bool motion, Media& media) {
   strlcpy(origin, r.base, sizeof(origin));
   if (char* slash = strchr(origin + (secure ? 8 : 7), '/')) *slash = '\0';
   char url[336];
-  snprintf(url, sizeof(url), "%s%s?w=%d&h=%d%s", origin, path, kShowWidth, kShowHeight,
-           motion ? "&fps=12" : "");
+  if (motion) {
+    snprintf(url, sizeof(url), "%s%s?w=%d&h=%d&fps=%d", origin, path,
+             kShowWidth, kShowHeight, kShowFps);
+  } else {
+    snprintf(url, sizeof(url), "%s%s?w=%d&h=%d", origin, path, kShowWidth, kShowHeight);
+  }
   // Kept-alive sockets: a held cue's still and motion (and the next cue) reuse
   // one TLS session. A fresh handshake on this chip costs more than the file.
   static WiFiClientSecure tls;
@@ -486,7 +491,6 @@ void ShowPlayer::run() {
     // A film cue is time-critical (its segment plays next); a conversational
     // picture can wait. Held first so a slow ambient still never delays a cue.
     if (xQueueReceive(held_jobs_, &job, 0) == pdTRUE || xQueueReceive(jobs_, &job, 0) == pdTRUE) {
-      if (job.held) wait_for_decode_headroom(job);
       Media media;
       bool still_ok = !job.still;
       if (job.still) {
@@ -510,54 +514,6 @@ void ShowPlayer::run() {
     }
     vTaskDelay(pdMS_TO_TICKS(5));
   }
-}
-size_t ShowPlayer::decoded_headroom(bool& active) {
-  active = false;
-  size_t index = 0;
-  size_t count = 0;
-  uint32_t gen = 0;
-  if (media_mux_ != nullptr && xSemaphoreTake(media_mux_, portMAX_DELAY) == pdTRUE) {
-    if (clip_.motion && clip_.bytes != nullptr && clip_.count > 0) {
-      active = true;
-      index = motion_index(clip_.count);
-      count = clip_.count;
-      gen = media_gen_.load();
-    }
-    xSemaphoreGive(media_mux_);
-  }
-  if (!active) return 0;
-
-  size_t ready = 0;
-  const size_t wanted = min(static_cast<size_t>(kDecBufs), count);
-  for (size_t ahead = 0; ahead < wanted; ++ahead) {
-    const int target = static_cast<int>((index + ahead) % count);
-    bool found = false;
-    for (int b = 0; b < kDecBufs; ++b) {
-      if (dec_gen_[b].load() == gen && dec_index_[b].load() == target && !dec_bad_[b].load()) {
-        found = true;
-        break;
-      }
-    }
-    if (!found) break;
-    ++ready;
-  }
-  return ready;
-}
-void ShowPlayer::wait_for_decode_headroom(const Job& job) {
-  bool active = false;
-  size_t ready = decoded_headroom(active);
-  if (!active) return;  // First cue: there is no film on screen to protect yet.
-
-  const uint32_t started = millis();
-  while (ready < kDownloadHeadroom && job.revision == held_revision_.load() &&
-         uint32_t(millis() - started) < 1200) {
-    vTaskDelay(pdMS_TO_TICKS(5));
-    ready = decoded_headroom(active);
-    if (!active) break;
-  }
-  Serial.printf("show: download gate cue=%lu headroom=%u wait_ms=%lu\n",
-                static_cast<unsigned long>(job.request.cue), unsigned(ready),
-                static_cast<unsigned long>(millis() - started));
 }
 void ShowPlayer::decode_task(void* context) { static_cast<ShowPlayer*>(context)->decode_run(); }
 void ShowPlayer::decode_run() {

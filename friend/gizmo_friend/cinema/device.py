@@ -30,10 +30,10 @@ from gizmo_friend.cinema.routes import FilmBudget
 from gizmo_friend.cinema.runtime import CinemaSession
 from gizmo_friend.settings import DeviceSettings
 
-FPS = 12
+FPS = 8
 SEGMENT_SECONDS = 5
-# Heavy enough to read on the ILI9341, light enough that a 50 ms ESP JPEG
-# decode stays inside the 83 ms 12 fps budget while the next cue downloads.
+# High enough for deliberate limited animation on the ILI9341, with a 125 ms
+# frame budget the physical ESP can sustain while the next cue downloads.
 DEVICE_JPEG_QUALITY = 65
 # aiortc drops the first Director NALs; those packets replay as one frozen
 # picture. Wait for a second distinct frame before the 5s clock starts.

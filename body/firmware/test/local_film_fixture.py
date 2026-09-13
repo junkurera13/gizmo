@@ -36,7 +36,7 @@ from gizmo_friend.brain.show_media import encode_mjpeg
 
 WIDTH = 320
 HEIGHT = 240
-FPS = 12
+FPS = 8
 SECONDS = 30
 SEGMENT_SECONDS = 5
 WIRE_RATE = 24_000

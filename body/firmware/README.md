@@ -9,7 +9,7 @@ Firmware now consumes Friend's `glass.still`, `glass.frames`, and
 `glass.viewing:false` events. It downloads a 320×240 JPEG and paints it over
 home, without HUD or captions. When motion arrives, the still stays visible
 until the entire silent MJPEG sequence is downloaded and validated, then loops
-at 12 fps. Select dismisses the picture; opening Settings or Camera dismisses
+at a fixed 8 fps. Select dismisses the picture; opening Settings or Camera dismisses
 it too. PTT can continue while the picture is visible.
 
 The device requests media from the configured brain using its existing bearer
@@ -25,7 +25,8 @@ disconnect invalidate pending results. `?` reports Show state, media sizes,
 frame count, and free PSRAM.
 
 See [SHOW_TESTING.md](SHOW_TESTING.md) for software verification and the required
-flash/panel pass. The 12 fps target is provisional until measured on hardware.
+flash/panel pass. The original 12 fps target missed its decoder deadline on
+hardware; the fixed 8 fps checkpoint prioritizes even motion and narration sync.
 
 Current scope is a **local terminal OS** on the breadboard hardware showing the
 same boot and home as the Mac simulator: the Glass boot flipbook (1.25 s drop,

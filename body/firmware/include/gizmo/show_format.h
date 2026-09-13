@@ -3,7 +3,9 @@
 #include <stdint.h>
 
 namespace gizmo {
-constexpr int kShowWidth = 320, kShowHeight = 240, kShowFps = 12;
+// Twelve fps misses its 83 ms deadline on the physical XIAO even with no
+// download active. Eight evenly paced frames fit the measured decoder budget.
+constexpr int kShowWidth = 320, kShowHeight = 240, kShowFps = 8;
 // Two clips can be resident at once (the one on the glass and the next beat,
 // held), plus a 20 s speaker ring, inside the 8 MiB PSRAM.
 constexpr size_t kShowMaxBytes = 2560 * 1024;

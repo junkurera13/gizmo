@@ -430,7 +430,7 @@ class DeviceEncodingTests(unittest.IsolatedAsyncioTestCase):
         import io
 
         from gizmo_friend.brain.shows import ShowStore
-        from gizmo_friend.cinema.device import encode_segment
+        from gizmo_friend.cinema.device import FPS, encode_segment
         from PIL import Image
 
         with tempfile.TemporaryDirectory() as root:
@@ -442,7 +442,7 @@ class DeviceEncodingTests(unittest.IsolatedAsyncioTestCase):
             segment = encode_segment(images, pcm, store, "Rocket")
             self.assertEqual(segment.frames, 12)
             self.assertEqual(segment.pcm, pcm)
-            frames = store.mjpeg(segment.show.id)
+            frames = store.mjpeg(segment.show.id, fps=FPS)
             data = frames.path.read_bytes()
             self.assertTrue(data.startswith(b"\xff\xd8"))
             # Baseline 4:2:0 is accepted by the ESP ROM decoder; 4:4:4 was the old failure.
@@ -460,7 +460,7 @@ class DeviceEncodingTests(unittest.IsolatedAsyncioTestCase):
         import wave
 
         from gizmo_friend.brain.shows import ShowStore
-        from gizmo_friend.cinema.device import DeviceFilmPlayer
+        from gizmo_friend.cinema.device import FPS, DeviceFilmPlayer
         from PIL import Image
 
         class FakeFrame:
@@ -507,8 +507,8 @@ class DeviceEncodingTests(unittest.IsolatedAsyncioTestCase):
             await asyncio.wait_for(player.capture(track, queue, prepared, 1), 2)
             segment = queue.get_nowait()
             self.assertIsNotNone(segment)
-            self.assertEqual(segment.frames, 12)
-            frames = store.mjpeg(segment.show.id)
+            self.assertEqual(segment.frames, FPS)
+            frames = store.mjpeg(segment.show.id, fps=FPS)
             data = frames.path.read_bytes()
             first = data[: data.index(b"\xff\xd9") + 2]
             image = Image.open(io.BytesIO(first))

@@ -64,7 +64,7 @@ Each run must show six `HOLD -> READY -> GO` cues on the fixture console and six
 - no reboot, Guru Meditation, watchdog, JPEG error, `motion unavailable`, or
   audio overflow;
 - `decode_failed=0`, `dropped=0`, and ideally `repeats=0` for every cue;
-- `present_gap_max_ms` stays below 170 ms and `blit_max_us` below 25000;
+- `present_gap_max_ms` stays below 220 ms and `blit_max_us` below 25000;
 - the final `audio perf: end` reports `queued_ms` near 30000, `starts=1`, and
   `starvations=0`;
 - motion never races through missed frames, and the audible tick stays aligned
@@ -72,9 +72,9 @@ Each run must show six `HOLD -> READY -> GO` cues on the fixture console and six
 - no horizontal tear is visible in the moving scan bar.
 
 Send `?` during cue 3 and again after completion. Return the full timestamped
-serial log, fixture-console log, and uncut phone video. If 12 fps misses this
-bar, stop here: retest the identical fixture at a lower fixed cadence before
-reintroducing the cloud, Fal, H3, or Railway. Restore the production URL afterward
+serial log, fixture-console log, and uncut phone video. This fixture now runs
+at the hardware-derived fixed 8 fps; do not reintroduce the cloud, Fal, H3, or
+Railway until its cadence passes. Restore the production URL afterward
 with `Fhttps://gizmo-brain-production.up.railway.app`.
 
 ## Build and flash
@@ -101,7 +101,7 @@ in [README.md](README.md). Do not include credentials in returned logs.
    agent can choose words; absence of a `glass` media event is distinct from
    download/render failure.
 2. Ask to make that picture move. The still should remain until
-   `show: ready motion frames=... bytes=... 320x240 fps=12`, followed by silent
+   `show: ready motion frames=... bytes=... 320x240 fps=8`, followed by silent
    looping motion. The device does not play the source MP4 or its audio.
 3. While it moves, ask a spoken follow-up. Check that PTT, the whole spoken
    reply, and buttons remain responsive with no watchdog reset or audio gaps.
