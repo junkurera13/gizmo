@@ -269,8 +269,8 @@ test('math-check closes camera and reveals math without the Gizmo painting anima
       prompt:'Gizmo, did I get this right?', prompt_audio:'kid.mp3',
       reply:'Almost! Two blue parts out of four is two-fourths, or one-half.',
       reply_audio:'umbriel.wav', reply_audio_rate:1, math:{attempt:'2/3'},
-      camera:{video:'fraction.mp4', start_at:5.2, home_wait_ms:1000, reply_wait_ms:900, loop:true, cues:[
-        {at:6, prompt:'Gizmo, did I get this right?', audio:'kid.mp3'},
+      camera:{video:'fraction.mp4', start_at:0, home_wait_ms:1000, post_question_hold_ms:4000, reply_wait_ms:900, loop:true, cues:[
+        {at:0.8, prompt:'Gizmo, did I get this right?', audio:'kid.mp3'},
       ]},
     }}]; syncMoment('mathcheck');
   `);
@@ -278,13 +278,14 @@ test('math-check closes camera and reveals math without the Gizmo painting anima
   await ui.run('sayMoment()');
   assert.deepEqual([...ui.context.events], [
     'status:idle', 'wait:1000', 'status:idle', 'wait:120', 'open:fraction.mp4', 'wait:100', 'video',
-    'cue:6', 'status:listening', 'audio:kid.mp3',
+    'cue:0.8', 'status:listening', 'audio:kid.mp3',
+    'status:idle', 'wait:4000',
     'pause:video', 'home', 'math', 'status:playing', 'wait:900', 'status:playing',
     'audio:umbriel.wav', 'reply-video-loop:true', 'pause:video', 'status:idle',
   ]);
   assert.equal(ui.context.events.includes('status:thinking'), false);
   assert.equal(ui.element('camera-feed').loop, true);
-  assert.equal(ui.element('camera-feed').currentTime, 5.2);
+  assert.equal(ui.element('camera-feed').currentTime, 0);
   assert.deepEqual([...ui.run('history.map(item => item.text)')], [
     'Gizmo, did I get this right?',
     'Almost! Two blue parts out of four is two-fourths, or one-half.',

@@ -498,6 +498,11 @@ async function playCameraDemo(item, signal) {
       }
       history.push({role:'user', text:cue.prompt}); renderNotes();
     }
+    const postQuestionHoldMs = Math.max(0, Number(camera.post_question_hold_ms) || 0);
+    if (postQuestionHoldMs) {
+      status('Gizmo is looking at the problem…', 'idle');
+      await delay(postQuestionHoldMs, signal);
+    }
     setCaption();
     if (item.demo.math) {
       feed.pause(); glass?.closeCamera?.(); demoOwnsCamera = false;

@@ -99,13 +99,14 @@ class MomentCatalogTests(unittest.TestCase):
         math = public[3]["demo"]
         self.assertEqual(math["prompt_audio"], "/static/demo-math-kid.mp3?v=math2")
         self.assertEqual(math["camera"], {
-                "video": "/static/demo-math-fraction-camera.mp4?v=fraction1",
-                "start_at": 5.2,
+                "video": "/static/demo-math-fraction-camera.mp4?v=fraction2",
+                "start_at": 0,
                 "home_wait_ms": 1000,
+                "post_question_hold_ms": 4000,
                 "reply_wait_ms": 900,
                 "loop": True,
             "cues": [{
-                "at": 6.0,
+                "at": 0.8,
                 "prompt": "Gizmo, did I get this right?",
                 "audio": "/static/demo-math-kid.mp3?v=math2",
             }],

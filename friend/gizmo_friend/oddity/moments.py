@@ -186,14 +186,15 @@ _register(
             "reply_audio": "/static/demo-math-fraction-gizmo.wav?v=fraction1",
             "reply_audio_rate": 1.0,
             "camera": {
-                "video": "/static/demo-math-fraction-camera.mp4?v=fraction1",
-                "start_at": 5.2,
+                "video": "/static/demo-math-fraction-camera.mp4?v=fraction2",
+                "start_at": 0,
                 "home_wait_ms": 1000,
+                "post_question_hold_ms": 4000,
                 "reply_wait_ms": 900,
                 "loop": True,
                 "cues": [
                     {
-                        "at": 6.0,
+                        "at": 0.8,
                         "prompt": "Gizmo, did I get this right?",
                         "audio": "/static/demo-math-kid.mp3?v=math2",
                     },
