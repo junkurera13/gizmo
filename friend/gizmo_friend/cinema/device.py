@@ -39,6 +39,10 @@ AUDIO_PACKET_BYTES = 11_520
 # second covers the measured 0.7-0.8 second packet stalls. A longer burst made
 # friend-net preempt the JPEG decoder enough to repeat several visible frames.
 DEVICE_AUDIO_LEAD_SECONDS = 0.96
+# The device is still draining its PCM ring when the server's send clock
+# reaches the end of narration (measured 0.26-0.53 s on hardware). Keep the
+# last picture up that long before "ended" clears the glass.
+DEVICE_END_HOLD_SECONDS = 0.8
 DEVICE_WIDTH = 320
 DEVICE_HEIGHT = 240
 CAPTION_BAND_HEIGHT = 24
@@ -392,6 +396,7 @@ class DeviceFilmPlayer:
                 pending = None
                 index += 1
             if revision == self.cinema.revision:
+                await asyncio.sleep(DEVICE_END_HOLD_SECONDS)
                 await self.cinema.finish(revision)
         except asyncio.CancelledError:
             raise

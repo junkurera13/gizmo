@@ -6,7 +6,7 @@ from types import SimpleNamespace
 from unittest.mock import AsyncMock, Mock, patch
 
 from fastapi.testclient import TestClient
-from gizmo_friend.cinema.device import DeviceFilmPlayer
+from gizmo_friend.cinema.device import DEVICE_END_HOLD_SECONDS, DeviceFilmPlayer
 from gizmo_friend.cinema.plan import FilmBeat, FilmPlan, PreparedFilm
 from gizmo_friend.cinema.runtime import CinemaSession
 from gizmo_friend.server import app_factory
@@ -93,7 +93,8 @@ class DevicePlayerTests(unittest.IsolatedAsyncioTestCase):
             await queue.put(None)
 
         player.capture = capture
-        await player.play(2)
+        with patch("gizmo_friend.cinema.device.DEVICE_END_HOLD_SECONDS", 0):
+            await player.play(2)
 
         first_go = next(
             index
@@ -163,6 +164,53 @@ class DevicePlayerTests(unittest.IsolatedAsyncioTestCase):
         cinema.mark_presented.assert_not_called()
         cinema.interrupt.assert_awaited_once()
         player.on_failed.assert_awaited_once()
+
+    async def test_last_picture_holds_for_device_drain_before_finish(self):
+        track = object()
+        stream = SimpleNamespace(
+            video_ready=None,
+            closed=False,
+            tracks={"video": track},
+            relay=SimpleNamespace(subscribe=Mock(return_value=track)),
+        )
+        events = []
+        cinema = SimpleNamespace(
+            stream=stream,
+            prepared=SimpleNamespace(
+                plan=SimpleNamespace(title="Ship"),
+                timings=[],
+            ),
+            revision=2,
+            mark_presented=Mock(),
+            interrupt=AsyncMock(),
+            finish=AsyncMock(side_effect=lambda _revision: events.append("finish")),
+        )
+        acks = {}
+
+        async def send(event):
+            if event.get("hold"):
+                acks[(event["cue"], "motion")].set_result(True)
+
+        player = DeviceFilmPlayer(cinema, None, send, acks)
+        segment = SimpleNamespace(
+            show=SimpleNamespace(still_url="/still.jpg", frames_url="/film.mjpeg"),
+            pcm=b"\0\0",
+        )
+
+        async def capture(_track, queue, _prepared, _revision):
+            await queue.put(segment)
+            await queue.put(None)
+
+        player.capture = capture
+        with patch(
+            "gizmo_friend.cinema.device.asyncio.sleep",
+            side_effect=lambda seconds: events.append(seconds),
+        ):
+            await player.play(2)
+
+        self.assertEqual(events[-2:], [DEVICE_END_HOLD_SECONDS, "finish"])
+        self.assertEqual(events.count(DEVICE_END_HOLD_SECONDS), 1)
+        cinema.finish.assert_awaited_once_with(2)
 
 
 class RuntimeTests(unittest.IsolatedAsyncioTestCase):
