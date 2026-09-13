@@ -54,6 +54,66 @@ class FakeStream:
 
 
 class DevicePlayerTests(unittest.IsolatedAsyncioTestCase):
+    async def test_narration_prefill_precedes_next_cue_download(self):
+        track = object()
+        stream = SimpleNamespace(
+            video_ready=None,
+            closed=False,
+            tracks={"video": track},
+            relay=SimpleNamespace(subscribe=Mock(return_value=track)),
+        )
+        cinema = SimpleNamespace(
+            stream=stream,
+            prepared=SimpleNamespace(
+                plan=SimpleNamespace(title="Ship"),
+                timings=[],
+            ),
+            revision=2,
+            mark_presented=Mock(),
+            interrupt=AsyncMock(),
+            finish=AsyncMock(),
+        )
+        acks = {}
+        events = []
+
+        async def send(event):
+            events.append(event)
+            if event.get("hold"):
+                acks[(event["cue"], "motion")].set_result(True)
+
+        player = DeviceFilmPlayer(cinema, None, send, acks)
+        segment = SimpleNamespace(
+            show=SimpleNamespace(still_url="/still.jpg", frames_url="/film.mjpeg"),
+            pcm=b"\0\0",
+        )
+
+        async def capture(_track, queue, _prepared, _revision):
+            await queue.put(segment)
+            await queue.put(segment)
+            await queue.put(None)
+
+        player.capture = capture
+        await player.play(2)
+
+        first_go = next(
+            index
+            for index, event in enumerate(events)
+            if event.get("go") and event["cue"] == 201
+        )
+        first_audio = next(
+            index
+            for index, event in enumerate(events)
+            if event.get("type") == "audio"
+        )
+        second_hold = next(
+            index
+            for index, event in enumerate(events)
+            if event.get("hold") and event["cue"] == 202
+        )
+        self.assertLess(first_go, first_audio)
+        self.assertLess(first_audio, second_hold)
+        cinema.finish.assert_awaited_once_with(2)
+
     async def test_failed_go_does_not_discard_the_live_fallback(self):
         track = object()
         stream = SimpleNamespace(
@@ -459,6 +519,7 @@ class DeviceEncodingTests(unittest.IsolatedAsyncioTestCase):
         from gizmo_friend.brain.shows import ShowStore
         from gizmo_friend.cinema.device import (
             DEVICE_JPEG_QUALITY,
+            MAX_DEVICE_FRAME_BYTES,
             MAX_DEVICE_SEGMENT_BYTES,
             encode_segment,
         )
@@ -482,11 +543,21 @@ class DeviceEncodingTests(unittest.IsolatedAsyncioTestCase):
                 "Detailed world",
             )
             self.assertLessEqual(segment.mjpeg_bytes, MAX_DEVICE_SEGMENT_BYTES)
+            self.assertLessEqual(segment.max_jpeg_bytes, MAX_DEVICE_FRAME_BYTES)
             self.assertLess(segment.jpeg_quality, DEVICE_JPEG_QUALITY)
             self.assertEqual(
                 store.mjpeg(segment.show.id, fps=8).path.stat().st_size,
                 segment.mjpeg_bytes,
             )
+
+    def test_director_frame_uses_only_the_real_caption_band(self):
+        from gizmo_friend.cinema.device import CAPTION_BAND_HEIGHT, frame_image
+        from PIL import Image
+
+        source = Image.new("RGB", (640, 360), (220, 40, 30))
+        image = frame_image(SimpleNamespace(to_image=lambda: source))
+        self.assertEqual(image.getpixel((160, 240 - CAPTION_BAND_HEIGHT - 1)), (220, 40, 30))
+        self.assertEqual(image.getpixel((160, 240 - CAPTION_BAND_HEIGHT)), (5, 17, 31))
 
     async def test_capture_skips_frozen_director_preroll(self):
         import io
@@ -497,9 +568,11 @@ class DeviceEncodingTests(unittest.IsolatedAsyncioTestCase):
         from PIL import Image
 
         class FakeFrame:
-            def __init__(self, time, color):
+            def __init__(self, time, color, *, key_frame=True, is_corrupt=False):
                 self.time = time
                 self._image = Image.new("RGB", (640, 360), color)
+                self.key_frame = key_frame
+                self.is_corrupt = is_corrupt
 
             def to_image(self):
                 return self._image.copy()
@@ -518,9 +591,15 @@ class DeviceEncodingTests(unittest.IsolatedAsyncioTestCase):
             def stop(self):
                 self.stopped = True
 
+        damaged = [
+            FakeFrame(-0.04, (0, 255, 0), is_corrupt=True),
+            FakeFrame(-0.02, (0, 0, 255), key_frame=False),
+        ]
         frozen = [(i / 50, (10, 10, 10)) for i in range(8)]
         moving = [(0.2 + i / 12, (min(i * 12, 240), 40, 80)) for i in range(16)]
-        track = FakeTrack([FakeFrame(t, color) for t, color in frozen + moving])
+        track = FakeTrack(
+            damaged + [FakeFrame(t, color) for t, color in frozen + moving]
+        )
         wav = io.BytesIO()
         with wave.open(wav, "wb") as audio:
             audio.setnchannels(1)
@@ -545,8 +624,10 @@ class DeviceEncodingTests(unittest.IsolatedAsyncioTestCase):
             data = frames.path.read_bytes()
             first = data[: data.index(b"\xff\xd9") + 2]
             image = Image.open(io.BytesIO(first))
-            # The frozen gray preroll must not be the first encoded picture.
-            self.assertNotEqual(image.getpixel((160, 96)), (10, 10, 10))
+            # Corrupt, pre-keyframe, and frozen preroll must all be gone.
+            pixel = image.getpixel((160, 96))
+            self.assertLess(abs(pixel[1] - 40), 10)
+            self.assertLess(abs(pixel[2] - 80), 10)
 
 
 class AudioTimelineTests(unittest.IsolatedAsyncioTestCase):

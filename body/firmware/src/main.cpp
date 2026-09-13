@@ -191,8 +191,7 @@ void paint_home_base() {
 
 void paint_camera(bool viewfinder_ready, const char* status) {
   if (!ensure_framebuffer()) return;
-  ensure_home_base();
-  gizmo::render_camera_world(canvas, home_base, viewfinder_ready, status);
+  gizmo::render_camera_world(canvas, viewfinder_ready, status);
   display.blit_rgb565(framebuffer, canvas.width, canvas.height);
   show_band_painted = false;
   last_redraw = millis();

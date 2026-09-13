@@ -32,6 +32,16 @@ from gizmo_friend.settings import DeviceSettings
 
 FPS = 8
 SEGMENT_SECONDS = 5
+PCM_BYTES_PER_SECOND = 24_000 * 2
+AUDIO_PACKET_BYTES = 11_520
+# Prime enough narration before asking the ESP32 to begin the next HTTPS cue
+# fetch. The physical device has a three-second live PCM ring; roughly one
+# second covers the measured 0.7-0.8 second packet stalls. A longer burst made
+# friend-net preempt the JPEG decoder enough to repeat several visible frames.
+DEVICE_AUDIO_LEAD_SECONDS = 0.96
+DEVICE_WIDTH = 320
+DEVICE_HEIGHT = 240
+CAPTION_BAND_HEIGHT = 24
 # High enough for deliberate limited animation on the ILI9341, with a 125 ms
 # frame budget the physical ESP can sustain while the next cue downloads.
 DEVICE_JPEG_QUALITY = 65
@@ -39,6 +49,10 @@ DEVICE_JPEG_QUALITY = 65
 # physical XIAO played 8 fps cues up to roughly 287 KiB without dropping a
 # frame; 256 KiB leaves room for Railway and Wi-Fi variance before the next GO.
 MAX_DEVICE_SEGMENT_BYTES = 256 * 1024
+# A cue can meet its total budget while one unusually detailed JPEG still
+# takes longer than the 125 ms display interval to decode. The accepted local
+# film peaked near 7 KiB per frame, so bound both the cue and each frame.
+MAX_DEVICE_FRAME_BYTES = 7 * 1024
 MIN_DEVICE_JPEG_QUALITY = 1
 # aiortc drops the first Director NALs; those packets replay as one frozen
 # picture. Wait for a second distinct frame before the 5s clock starts.
@@ -49,8 +63,14 @@ logger = logging.getLogger(__name__)
 
 def frame_image(frame) -> Image.Image:
     """Fit the film above a bottom caption bar, matching the emulator layout."""
-    canvas = Image.new("RGB", (320, 240), (5, 17, 31))
-    canvas.paste(ImageOps.fit(frame.to_image(), (320, 192)), (0, 0))
+    canvas = Image.new("RGB", (DEVICE_WIDTH, DEVICE_HEIGHT), (5, 17, 31))
+    canvas.paste(
+        ImageOps.fit(
+            frame.to_image(),
+            (DEVICE_WIDTH, DEVICE_HEIGHT - CAPTION_BAND_HEIGHT),
+        ),
+        (0, 0),
+    )
     return canvas
 
 
@@ -64,15 +84,22 @@ def encode_jpeg_frames(
     images: list[Image.Image],
     *,
     max_bytes: int = MAX_DEVICE_SEGMENT_BYTES,
+    max_frame_bytes: int = MAX_DEVICE_FRAME_BYTES,
 ) -> tuple[list[bytes], int]:
-    """Use the highest shared JPEG quality that fits one held device cue."""
+    """Use the highest shared quality that fits the cue and decoder budgets."""
     if not images:
         raise ValueError("Empty film segment")
-    if max_bytes <= 0:
-        raise ValueError("Device film byte budget must be positive")
+    if max_bytes <= 0 or max_frame_bytes <= 0:
+        raise ValueError("Device film byte budgets must be positive")
+
+    def fits(candidate: list[bytes]) -> bool:
+        return (
+            sum(map(len, candidate)) <= max_bytes
+            and max(map(len, candidate)) <= max_frame_bytes
+        )
 
     frames = [jpeg_frame(image) for image in images]
-    if sum(map(len, frames)) <= max_bytes:
+    if fits(frames):
         return frames, DEVICE_JPEG_QUALITY
 
     selected = None
@@ -81,7 +108,7 @@ def encode_jpeg_frames(
     while low <= high:
         quality = (low + high) // 2
         candidate = [jpeg_frame(image, quality=quality) for image in images]
-        if sum(map(len, candidate)) <= max_bytes:
+        if fits(candidate):
             selected = candidate, quality
             low = quality + 1
         else:
@@ -102,6 +129,7 @@ class DeviceSegment:
     frames: int
     jpeg_quality: int
     mjpeg_bytes: int
+    max_jpeg_bytes: int
 
 
 def encode_segment(
@@ -128,13 +156,21 @@ def encode_segment(
         saved.id, motion, frame_count=len(frames), width=320, height=240, fps=FPS
     )
     logger.info(
-        "Device film cue encoded frames=%d quality=%d bytes=%d budget=%d",
+        "Device film cue encoded frames=%d quality=%d bytes=%d max_frame_bytes=%d budget=%d",
         stored.frame_count,
         quality,
         len(motion),
+        max(map(len, frames)),
         MAX_DEVICE_SEGMENT_BYTES,
     )
-    return DeviceSegment(saved, pcm, stored.frame_count, quality, len(motion))
+    return DeviceSegment(
+        saved,
+        pcm,
+        stored.frame_count,
+        quality,
+        len(motion),
+        max(map(len, frames)),
+    )
 
 
 class DeviceFilmPlayer:
@@ -183,12 +219,19 @@ class DeviceFilmPlayer:
         pcm_offset = 0
         last_digest = None
         distinct = 0
+        key_frame_seen = False
         with wave.open(io.BytesIO(prepared.wav), "rb") as audio:
             pcm = audio.readframes(audio.getnframes())
         target_frames = math.ceil(prepared.duration * FPS)
         try:
             while revision == self.cinema.revision and next_frame < target_frames:
                 frame = await track.recv()
+                if getattr(frame, "is_corrupt", False):
+                    continue
+                if first_time is None and not key_frame_seen:
+                    if not getattr(frame, "key_frame", True):
+                        continue
+                    key_frame_seen = True
                 image = await asyncio.to_thread(frame_image, frame)
                 digest = frame_digest(image)
                 changed = digest != last_digest
@@ -292,17 +335,41 @@ class DeviceFilmPlayer:
                 self.cinema.mark_presented(revision)
                 if self.on_presenting:
                     await self.on_presenting()
-                position += len(segment.pcm) / 48000
-                # The next held cue downloads during this segment's narration.
-                pending = asyncio.create_task(preload(index + 1))
+                position += len(segment.pcm) / PCM_BYTES_PER_SECOND
                 if self.on_talking:
                     await self.on_talking()
                 started = asyncio.get_running_loop().time()
-                for offset in range(0, len(segment.pcm), 11520):
+
+                # WebSocket events are ordered. Put a narration cushion into
+                # the device's existing PCM rings before HOLD starts the next
+                # HTTPS download; previously HOLD went first, so TLS bursts
+                # could interrupt the very first audio packets of every cue.
+                prefill_packets = math.ceil(
+                    DEVICE_AUDIO_LEAD_SECONDS
+                    * PCM_BYTES_PER_SECOND
+                    / AUDIO_PACKET_BYTES
+                )
+                prefill_end = min(
+                    len(segment.pcm), prefill_packets * AUDIO_PACKET_BYTES
+                )
+                for offset in range(0, prefill_end, AUDIO_PACKET_BYTES):
+                    await self.send(
+                        {
+                            "type": "audio",
+                            "pcm": base64.b64encode(
+                                segment.pcm[offset : offset + AUDIO_PACKET_BYTES]
+                            ).decode(),
+                        }
+                    )
+
+                # The next held cue downloads while the protected narration
+                # lead drains. Capture itself has continued in parallel.
+                pending = asyncio.create_task(preload(index + 1))
+                for offset in range(prefill_end, len(segment.pcm), AUDIO_PACKET_BYTES):
                     wait = (
-                        offset / 48000
+                        offset / PCM_BYTES_PER_SECOND
                         - (asyncio.get_running_loop().time() - started)
-                        - 0.48
+                        - DEVICE_AUDIO_LEAD_SECONDS
                     )
                     if wait > 0:
                         await asyncio.sleep(wait)
@@ -310,14 +377,14 @@ class DeviceFilmPlayer:
                         {
                             "type": "audio",
                             "pcm": base64.b64encode(
-                                segment.pcm[offset : offset + 11520]
+                                segment.pcm[offset : offset + AUDIO_PACKET_BYTES]
                             ).decode(),
                         }
                     )
                 await asyncio.sleep(
                     max(
                         0,
-                        len(segment.pcm) / 48000
+                        len(segment.pcm) / PCM_BYTES_PER_SECOND
                         - (asyncio.get_running_loop().time() - started),
                     )
                 )
