@@ -152,7 +152,7 @@ if(video.requestVideoFrameCallback)video.requestVideoFrameCallback(presented);
 else video.addEventListener('timeupdate',()=>{if(!video.paused){document.body.dataset.hasFilm='true';freeze.hidden=true;phase('playing', 'Hold the pink button to ask something.');if(startTime===null)startTime=video.currentTime;if(video.currentTime-startTime>=duration&&!ending){ending=true;freezeFilm();send({type:'finished',revision});}}});
 $('question').addEventListener('submit',e=>{e.preventDefault();ask($('ask').value);});
 $('pause').onclick=interrupt;
-$('sound').onclick=()=>{muted=!muted;video.muted=muted;$('sound').textContent=muted?'Sound off':'Sound on';$('sound').setAttribute('aria-label',muted?'Unmute sound':'Mute sound');};
+$('sound').onclick=()=>{muted=!muted;video.muted=muted;$('sound').classList.toggle('is-muted',muted);$('sound').setAttribute('aria-label',muted?'Unmute sound':'Mute sound');$('sound').title=muted?'Unmute sound':'Mute sound';};
 $('resume').onclick=async()=>{video.muted=muted;await video.play();$('resume').hidden=true;};
 $('access').addEventListener('close',async()=>{try{await connect($('code').value);$('code').value='';phase('idle','');}catch(error){$('access-error').textContent=error.message;}});
 async function startRecording() {
