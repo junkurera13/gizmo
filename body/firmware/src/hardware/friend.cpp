@@ -662,6 +662,9 @@ void FriendConnection::on_message(const char* json, size_t len) {
         if (show_.viewing && show_path(frames, device_id_, ".mjpeg") && show_same(show_.still, frames)) {
           strlcpy(show_.frames, frames, sizeof(show_.frames));
           show_changed_ = true;
+        } else if (show_.viewing && show_.frames[0] && !frames[0]) {
+          show_.frames[0] = '\0';
+          show_changed_ = true;
         }
       }
     }

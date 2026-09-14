@@ -18,9 +18,9 @@ constexpr int kDmaFrames = 256;
 constexpr int32_t kMicGain = 3;
 constexpr int kMaxRecordChunksPerUpdate = 16;
 constexpr int kMaxPlaybackChunksPerUpdate = 32;
-// Held-cue GET can starve the PCM socket for seconds. The PWM ISR already
-// fades an empty ring to silence; keeping the amp up avoids a clicky restart.
-constexpr uint32_t kLiveGapHoldMs = 8000;
+// Held-cue GET can starve the PCM socket. Fade the empty ring to silence and
+// stop the PWM carrier; the next spoken packet fades the amp back in. Keeping
+// a 50% idle carrier is the LiPo whistle.
 constexpr uint32_t kVuDecayMs = 60;
 
 #ifdef ARDUINO
@@ -542,23 +542,19 @@ void Audio::pump_playback() {
 }
 
 void Audio::pump_live() {
-  if (live_n_ == 0) {
-    // Empty software ring does not mean the ISR has played its tail. Keep the
-    // bitstream running for at least the hardware depth after the last write.
-    // While Friend is still in this turn (thinking or talking) a gap is radio
-    // starvation: the ISR fades to silence so resumed PCM does not click
-    // through a restart. Once the turn ends, the normal drain deadline applies.
-    if (live_playing_ && static_cast<int32_t>(millis() - live_drain_until_) >= 0 &&
-        (!live_expecting_ ||
-         static_cast<int32_t>(millis() - live_drain_until_) >= static_cast<int32_t>(kLiveGapHoldMs))) {
-      if (live_expecting_) ++live_perf_starvations_;
-      else report_live("complete");
-      amp_stop();
-      live_playing_ = false;
-      playing_ = false;
+    if (live_n_ == 0) {
+      // Empty software ring does not mean the ISR has played its tail. Keep the
+      // bitstream running only for the hardware depth after the last write, then
+      // drop the PWM carrier so an idle STEMMA is silent on battery.
+      if (live_playing_ && static_cast<int32_t>(millis() - live_drain_until_) >= 0) {
+        if (live_expecting_) ++live_perf_starvations_;
+        else report_live("complete");
+        amp_stop();
+        live_playing_ = false;
+        playing_ = false;
+      }
+      return;
     }
-    return;
-  }
   if (!live_playing_) {
     // ~200 ms prebuffer so the first WS jitter does not underrun later.
     constexpr size_t kPrebuffer = kSampleRate / 5;

@@ -82,6 +82,12 @@ int main(int argc,char** argv) {
   constexpr uint32_t frame_ms=1000/kShowFps+1;
   mock_now+=frame_ms;assert(wait_render(player,pixels));assert(player.drawn_==1);
   mock_now+=frame_ms;assert(wait_render(player,pixels));assert(player.drawn_==0);
+  // Same still with no frames must freeze: drop the looping cue, keep the poster.
+  ShowRequest freeze=request;freeze.frames[0]=0;freeze.go=true;
+  player.submit(freeze);
+  assert(player.available());
+  assert(player.clip_.bytes==nullptr);
+  assert(wait_render(player,pixels));
   // A failed frame is marked bad and skipped: render repeats the previous
   // frame instead of decoding inline, and the clip is retained. Republishing
   // bumps the generation, so the decode task re-decodes and the injected

@@ -896,7 +896,7 @@ void loop() {
   gizmo::GlassReady glass_ack;
   while (show_player.take_glass_ready(glass_ack)) friend_link.send_glass_ready(glass_ack);
   if (had_show != show_player.available()) dirty = true;
-  audio.set_live_expecting(friend_link.session_talking() || friend_link.session_thinking());
+  audio.set_live_expecting(friend_link.session_talking());
   audio.update();
   pump_friend_audio();
   // The memo limit also applies while the camera owns the visible state.

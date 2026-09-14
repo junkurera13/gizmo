@@ -110,34 +110,32 @@ class DeviceDemoTest(unittest.IsolatedAsyncioTestCase):
         # An unanswered film one resets the sequence once the window lapses.
         self.assertEqual(demo.step_index, 0)
 
-    async def test_question_mid_film_rolls_followup_with_no_thinking(self):
+    async def test_question_mid_film_pauses_then_thinks_into_followup(self):
         socket = FakeSocket()
-        demo_module.FOLLOWUP_GAP_SECONDS = 0.05
-        self.addCleanup(setattr, demo_module, "FOLLOWUP_GAP_SECONDS", 4.7)
+        demo_module.FOLLOWUP_THINK_SECONDS = 0.05
+        self.addCleanup(setattr, demo_module, "FOLLOWUP_THINK_SECONDS", 3.0)
         with tempfile.TemporaryDirectory() as tmp:
             demo = DeviceDemo(socket, Path(tmp), "demo-device", "antarctica")
             demo.steps[0] = DemoStep(0.01, "v.mp4", "a.wav", "S0", ((0.0, "x"),))
             demo.steps[1] = DemoStep(0.0, "v2.mp4", "a2.wav", "S1", ((0.0, "y"),))
-            # Film one must outlast the question + gap.
             demo._segments[0] = [fake_segment(3.0), fake_segment(3.0)]
             demo._segments[1] = [fake_segment(0.2)]
             run = asyncio.create_task(demo.run())
             acked = set()
             try:
                 socket.script.append({"type": "ptt", "active": False})
-                # Wait until film one is actually on screen.
                 deadline = asyncio.get_running_loop().time() + 10
                 while demo.playing_step != 0:
                     self.assertLess(asyncio.get_running_loop().time(), deadline)
                     await ack_holds(socket, acked)
                     await asyncio.sleep(0.005)
-                # The interruption: ask over the still-playing film.
                 socket.script.append({"type": "ptt", "active": True})
                 await asyncio.sleep(0.02)
-                self.assertFalse(
+                self.assertTrue(
                     any(e.get("type") == "interrupted" for e in socket.sent),
-                    "pressing PTT mid-film must not interrupt the take",
+                    "pressing PTT mid-film must mute and freeze immediately",
                 )
+                self.assertIsNone(demo.playing_step)
                 socket.script.append({"type": "ptt", "active": False})
                 while not any(
                     e.get("go") and e.get("subject") == "S1" for e in socket.sent
@@ -156,16 +154,16 @@ class DeviceDemoTest(unittest.IsolatedAsyncioTestCase):
                     pass
 
         states = [e["state"] for e in socket.sent if e.get("type") == "state"]
-        self.assertEqual(states.count("thinking"), 1)
+        self.assertEqual(states.count("thinking"), 2)
         subjects = [e["subject"] for e in socket.sent if e.get("go")]
         self.assertEqual(subjects[:1] + subjects[-1:], ["S0", "S1"])
         self.assertIn(201, acked)
 
     async def test_held_frame_covers_a_late_followup_ask(self):
         socket = FakeSocket()
-        demo_module.FOLLOWUP_GAP_SECONDS = 0.05
+        demo_module.FOLLOWUP_THINK_SECONDS = 0.05
         demo_module.FOLLOWUP_HOLD_SECONDS = 5.0
-        self.addCleanup(setattr, demo_module, "FOLLOWUP_GAP_SECONDS", 4.7)
+        self.addCleanup(setattr, demo_module, "FOLLOWUP_THINK_SECONDS", 3.0)
         self.addCleanup(setattr, demo_module, "FOLLOWUP_HOLD_SECONDS", 15.0)
         with tempfile.TemporaryDirectory() as tmp:
             demo = DeviceDemo(socket, Path(tmp), "demo-device", "antarctica")
@@ -189,7 +187,7 @@ class DeviceDemoTest(unittest.IsolatedAsyncioTestCase):
                     if e.get("type") == "glass" and e.get("viewing") is False
                 ]
                 self.assertEqual(len(clears), 1)  # only the connect-time clear
-                # The late ask rides the frozen frame into film two.
+                # The late ask freezes, then paints, then rolls film two.
                 socket.script.append({"type": "ptt", "active": True})
                 await asyncio.sleep(0.02)
                 socket.script.append({"type": "ptt", "active": False})
@@ -199,14 +197,12 @@ class DeviceDemoTest(unittest.IsolatedAsyncioTestCase):
                     self.assertLess(asyncio.get_running_loop().time(), deadline)
                     await ack_holds(socket, acked)
                     await asyncio.sleep(0.005)
-                clears = [
+                thinking_clears = [
                     e
                     for e in socket.sent
                     if e.get("type") == "glass" and e.get("viewing") is False
                 ]
-                self.assertEqual(
-                    len(clears), 1, "no home flash between film one and two"
-                )
+                self.assertGreaterEqual(len(thinking_clears), 2)
                 while demo.followup_task and not demo.followup_task.done():
                     await ack_holds(socket, acked)
                     await asyncio.sleep(0.005)

@@ -3,10 +3,10 @@
 Enabled with GIZMO_DEMO_MOMENT=<id> (e.g. "antarctica"). /ws swaps the live
 GizmoSession for DeviceDemo for matching devices. Set GIZMO_DEMO_DEVICE to a
 body id to leave other clients on live Friend; omit it to script every /ws.
-power -> boot -> home, first PTT release -> thinking -> the pre-rendered film,
-and while that film is still playing a second PTT ask -> the follow-up film
-rolls a few seconds later with no thinking animation. Nothing calls Gemini or
-fal, so a recorded take cannot stall.
+power -> boot -> home, first PTT release -> thinking -> the pre-rendered film.
+A second PTT press pauses and mutes immediately; release shows the painting
+screen for a beat, then the follow-up film. Nothing calls Gemini or fal, so a
+recorded take cannot stall.
 """
 from __future__ import annotations
 
@@ -45,14 +45,12 @@ logger = logging.getLogger(__name__)
 
 STATIC = Path(__file__).resolve().parents[1] / "static"
 BOOT_SECONDS = 3.8
-# The follow-up question lands over the still-playing first film; its film
-# rolls this long after the ask begins — question length plus a beat — with no
-# thinking state in between. Pressing at ~22s cuts to the follow-up exactly as
-# the first film ends.
-FOLLOWUP_GAP_SECONDS = 4.7
-# When a non-final film finishes, its last frame stays on the glass through
+# After the follow-up PTT release, the painting screen holds this long before
+# film two so the cut does not land on a looping last cue.
+FOLLOWUP_THINK_SECONDS = 3.0
+# When a non-final film finishes, its last still stays on the glass through
 # this window instead of flashing home — a pending or late follow-up ask cuts
-# straight into the next film. The window lapsing drops home and resets.
+# into thinking, then the next film. The window lapsing drops home and resets.
 FOLLOWUP_HOLD_SECONDS = 15.0
 
 
@@ -210,6 +208,8 @@ class DeviceDemo:
         self.step_index = 0
         self.playing_step: int | None = None
         self.held_frame = False
+        self.awaiting_followup = False
+        self.last_still = ""
         self._segments: dict[int, list] = {}
 
     async def send(self, event):
@@ -284,6 +284,7 @@ class DeviceDemo:
                     ),
                 )
                 updates = caption_updates(captions, position, segment_end)
+                self.last_still = segment.show.still_url
                 await self.send({**event, "go": True, "text": caption})
                 self.state = "talking"
                 await self.send({"type": "state"})
@@ -375,8 +376,11 @@ class DeviceDemo:
             return
         self.step_index = (index + 1) % len(self.steps)
         if index + 1 < len(self.steps):
-            # Hold the last frame through the follow-up window so a late or
-            # mistimed ask still cuts straight into the next film.
+            # Freeze the last still so the cue does not loop while the kid
+            # lines up the follow-up ask.
+            await self._freeze_glass()
+            self.state = "listening"
+            await self.send({"type": "state"})
             self.held_frame = True
             try:
                 await asyncio.sleep(FOLLOWUP_HOLD_SECONDS)
@@ -389,13 +393,42 @@ class DeviceDemo:
         await self.send({"type": "glass", "viewing": False, "text": ""})
         await self.send({"type": "state"})
 
-    async def _followup(self) -> None:
-        """The ask lands mid-film; the follow-up rolls a beat later."""
-        await asyncio.sleep(FOLLOWUP_GAP_SECONDS)
+    async def _freeze_glass(self) -> None:
+        """Keep the current picture, drop motion, and mute leftover PCM."""
+        await self.send({"type": "interrupted"})
+        if not self.last_still:
+            return
+        await self.send(
+            {
+                "type": "glass",
+                "viewing": True,
+                "still": self.last_still,
+                "frames": "",
+                "text": "",
+                "go": True,
+            }
+        )
+
+    async def _pause_film(self) -> None:
+        """PTT down: stop the looping cue and mute as soon as the ask starts."""
         task, self.step_task = self.step_task, None
         if task and task is not asyncio.current_task():
             task.cancel()
             await asyncio.gather(task, return_exceptions=True)
+        self.held_frame = False
+        self.playing_step = None
+        await self._freeze_glass()
+        self.state = "listening"
+        await self.send({"type": "state"})
+
+    async def _followup(self) -> None:
+        """PTT up: painting screen, then the canned follow-up film."""
+        self.state = "thinking"
+        await self.send({"type": "glass", "viewing": False, "text": ""})
+        await self.send({"type": "state"})
+        await asyncio.sleep(FOLLOWUP_THINK_SECONDS)
+        if not self.powered:
+            return
         await self._run_step(len(self.steps) - 1)
 
     async def _warm(self) -> None:
@@ -410,6 +443,7 @@ class DeviceDemo:
             if task and task is not asyncio.current_task():
                 task.cancel()
                 await asyncio.gather(task, return_exceptions=True)
+        self.awaiting_followup = False
         self.acks.clear()
 
     async def run(self):
@@ -457,16 +491,14 @@ class DeviceDemo:
                     if active:
                         self.recording = True
                         self.mic.clear()
-                        if self.playing_step == 0 or self.held_frame:
-                            # The ask lands mid-film or on its held last frame;
-                            # the follow-up rolls a fixed beat after it starts.
-                            if (
-                                self.followup_task is None
-                                or self.followup_task.done()
-                            ):
-                                self.followup_task = asyncio.create_task(
-                                    self._followup()
-                                )
+                        if (
+                            self.playing_step == 0
+                            or self.held_frame
+                            or self.awaiting_followup
+                        ):
+                            # Pause and mute on the press; thinking waits for release.
+                            self.awaiting_followup = True
+                            await self._pause_film()
                             continue
                         await self._cancel_all()
                         # An aborted take restarts the sequence from film one.
@@ -480,6 +512,16 @@ class DeviceDemo:
                     else:
                         self.recording = False
                         self.mic.clear()
+                        if self.awaiting_followup:
+                            self.awaiting_followup = False
+                            if (
+                                self.followup_task is None
+                                or self.followup_task.done()
+                            ):
+                                self.followup_task = asyncio.create_task(
+                                    self._followup()
+                                )
+                            continue
                         if self.playing_step == 0 or self.held_frame:
                             continue
                         self.step_task = asyncio.create_task(

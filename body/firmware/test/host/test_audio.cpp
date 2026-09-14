@@ -30,15 +30,14 @@ int main() {
   for(auto p:mock_written)assert(p==500);
   // An explicit interrupt must discard the pending tail immediately.
   audio.stop_live();assert(!audio.playing());
-  // A turn still in flight (thinking ack or talking) must not restart the amp
-  // across a GET-sized gap; dropping expecting releases the drain immediately.
+  // An empty ring must stop the PWM carrier even while a turn is in flight.
+  // Holding a 50% idle duty is the LiPo whistle; speech fades the amp back in.
   mock_written.clear();
   audio.set_live_expecting(true);
   audio.enqueue_live(pcm,256);mock_now+=250;audio.update();assert(audio.playing());
-  const int held_stops=mock_amp_stops;
-  mock_now+=2000;audio.update();assert(audio.playing());
-  assert(mock_amp_stops==held_stops);
-  audio.set_live_expecting(false);audio.update();assert(!audio.playing());
-  audio.stop_live();
-  puts("audio: jitter, DMA drain, partial timeout, interrupt passed");
+  mock_now+=2000;audio.update();assert(!audio.playing());
+  audio.enqueue_live(pcm,256);mock_now+=250;audio.update();assert(audio.playing());
+  audio.set_live_expecting(false);audio.update();
+  audio.stop_live();assert(!audio.playing());
+  puts("audio: jitter, DMA drain, partial timeout, interrupt, silent-idle passed");
 }

@@ -28,6 +28,8 @@ int main() {
   assert(!c.take_show(show));
   message(c, ("{\"type\":\"glass\",\"frames\":\"" + base + ".mjpeg\",\"viewing\":true}").c_str());
   assert(c.take_show(show) && gizmo::show_same(show.still, show.frames));
+  message(c, ("{\"type\":\"glass\",\"still\":\"" + base + ".jpg\",\"frames\":\"\",\"viewing\":true,\"go\":true}").c_str());
+  assert(c.take_show(show) && show.viewing && show.go && show.frames[0] == 0);
   message(c, "{\"type\":\"glass\",\"emotion\":\"happy\"}");
   assert(!c.take_show(show)); // ordinary character updates preserve the picture
   c.send_select();
