@@ -194,15 +194,27 @@ class MomentCatalogTests(unittest.TestCase):
             css,
         )
 
-    def test_power_bar_links_to_standalone_cinema(self):
+    def test_power_bar_switches_to_inline_cinema(self):
         html = (Path(__file__).resolve().parents[1] / "gizmo_friend" / "static" / "oddity.html").read_text()
         power_bar = html[html.index('<div class="power-bar">'):html.index('<div id="device"')]
         demo_rail = html[html.index('<div id="moments"'):html.index('</section>', html.index('<div id="moments"'))]
-        self.assertIn(
-            'id="power-cinema" href="https://oddware.xyz/gizmo/cinema" target="_top"',
-            power_bar,
-        )
+        self.assertIn('id="power-cinema" type="button" aria-pressed="false"', power_bar)
+        self.assertNotIn("/gizmo/cinema", power_bar)
         self.assertNotIn("power-cinema", demo_rail)
+
+    def test_inline_cinema_replaces_demo_rail_with_composer(self):
+        static = Path(__file__).resolve().parents[1] / "gizmo_friend" / "static"
+        html = (static / "oddity.html").read_text()
+        script = (static / "oddity.js").read_text()
+        controller = (static / "oddity-cinema.mjs").read_text()
+        self.assertIn('id="cinema-controls"', html)
+        self.assertIn('id="cinema-question"', html)
+        self.assertIn('id="cinema-ask"', html)
+        self.assertIn('id="cinema-access"', html)
+        self.assertIn("createCinemaMode", script)
+        self.assertIn("rail.hidden = true", script)
+        self.assertIn("fetch('/cinema/session'", controller)
+        self.assertIn("'x-gizmo-access': code", controller)
 
     def test_embedded_device_omits_navigation_controls(self):
         html = (Path(__file__).resolve().parents[1] / "gizmo_friend" / "static" / "oddity.html").read_text()

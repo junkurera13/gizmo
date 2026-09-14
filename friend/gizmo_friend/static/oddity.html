@@ -7,7 +7,7 @@
   <link rel="icon" href="data:,">
   <link rel="stylesheet" href="/static/oddity-boot.css?v=gate15">
   <link rel="stylesheet" href="/static/oddity.css">
-  <link rel="stylesheet" href="/static/oddity-device.css?v=gate85">
+  <link rel="stylesheet" href="/static/oddity-device.css?v=gate87">
   <link rel="stylesheet" href="/static/oddity-experience.css">
   <link rel="preload" as="image" href="/static/device-reference-ptt-pressed.png">
   <link rel="preload" as="image" href="/static/oddity-character-half.png?v=char3">
@@ -34,17 +34,17 @@
   <link rel="preload" as="image" href="/static/oddity-boot-12.jpg?v=boot2">
   <link rel="preload" as="image" href="/static/oddity-boot-13.jpg?v=boot2">
   <link rel="preload" as="image" href="/static/oddity-boot-14.jpg?v=boot2">
-  <script type="module" src="/static/oddity.js?v=gate91"></script>
+  <script type="module" src="/static/oddity.js?v=gate93"></script>
 </head>
 <body>
   <main>
-    <section class="simulator" aria-label="Gizmo simulator">
+    <section id="simulator" class="simulator" aria-label="Gizmo simulator">
       <div class="power-bar">
         <button id="power" type="button" class="power-toggle" role="switch" aria-checked="false" aria-label="Power">
           <span class="power-track" aria-hidden="true"><span class="power-knob"></span></span>
           <span id="power-state">Off</span>
         </button>
-        <a id="power-cinema" href="https://oddware.xyz/gizmo/cinema" target="_top">Try Cinema</a>
+        <button id="power-cinema" type="button" aria-pressed="false">Try Cinema</button>
       </div>
       <div id="device" class="device" aria-label="Gizmo handheld">
         <img class="device-art device-rest" src="/static/device-reference.png" alt="" draggable="false">
@@ -90,8 +90,10 @@
               </div>
             </div>
             <div id="scene" class="scene">
+              <img id="cinema-poster" class="cinema-poster" src="/static/cinema-poster.jpg" alt="An illustrated rocket climbing into space" hidden>
               <img id="still" alt="" hidden>
               <video id="film" muted playsinline preload="auto" hidden></video>
+              <canvas id="cinema-freeze" hidden></canvas>
               <canvas id="orbit" class="orbit-canvas" aria-label="Orbit experiment: a satellite falling around Earth" hidden></canvas>
               <div id="demo-math" class="demo-math" role="img" hidden>
                 <div class="math-cloud math-cloud-one" aria-hidden="true"></div>
@@ -148,6 +150,11 @@
                 </svg>
               </div>
             </div>
+            <div id="cinema-overlay" class="cinema-overlay" hidden>
+              <p id="cinema-status" aria-live="polite">Ask something. See where it takes us.</p>
+              <div id="cinema-progress" role="progressbar" aria-label="Film progress" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0"><i></i></div>
+              <button id="cinema-resume" type="button" hidden>Play with sound</button>
+            </div>
             <div id="caption" class="caption" aria-live="polite"></div>
             <div id="interaction" class="interaction" aria-label="Explore with Gizmo" hidden></div>
             <button id="play-blocked" class="play-blocked" hidden>Tap to play narration</button>
@@ -166,10 +173,33 @@
         </div>
         <button id="moment-next" type="button" aria-label="Next moment">›</button>
       </div>
+      <section id="cinema-controls" class="cinema-controls" aria-label="Cinema controls" hidden>
+        <div class="cinema-bottom">
+          <button id="cinema-pause" type="button" aria-label="Interrupt film" title="Interrupt film" hidden>Ⅱ</button>
+          <form id="cinema-question">
+            <label class="sr-only" for="cinema-ask">Ask Gizmo</label>
+            <input id="cinema-ask" autocomplete="off" maxlength="1200" placeholder="What are you curious about?">
+            <button id="cinema-send" type="submit" aria-label="Send question">↑</button>
+          </form>
+          <button id="cinema-talk" type="button" aria-label="Hold to talk" title="Hold to talk">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" aria-hidden="true"><rect x="9" y="3" width="6" height="12" rx="3"/><path d="M5 10v2a7 7 0 0014 0v-2M12 19v3m-4 0h8"/></svg>
+          </button>
+        </div>
+        <p class="cinema-hint">Hold the pink button to talk · You can interrupt anytime</p>
+      </section>
     </section>
   </main>
   <audio id="voice" preload="auto"></audio>
   <audio id="demo-audio" preload="auto"></audio>
   <audio id="glass-boot-audio" src="/static/oddity-boot.wav" preload="auto"></audio>
+  <dialog id="cinema-access" class="cinema-access">
+    <form id="cinema-access-form">
+      <h2>Come on in.</h2>
+      <label for="cinema-code">Preview access code</label>
+      <input id="cinema-code" type="password" autocomplete="off">
+      <button type="submit">Continue</button>
+      <p id="cinema-access-error" role="alert"></p>
+    </form>
+  </dialog>
 </body>
 </html>

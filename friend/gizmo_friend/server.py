@@ -130,6 +130,7 @@ ODDITY_PUBLIC_ASSETS = {
     "/static/oddity-boot-13.jpg",
     "/static/oddity-boot-14.jpg",
     "/static/oddity-interaction.mjs",
+    "/static/oddity-cinema.mjs",
     "/static/oddity-experience.css",
     "/static/oddity-boot.css",
     "/static/oddity.css",

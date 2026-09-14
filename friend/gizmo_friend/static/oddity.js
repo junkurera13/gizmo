@@ -3,6 +3,7 @@ import {mountDevice} from './oddity-device.mjs';
 import {createOrbit} from './oddity-orbit.mjs';
 import {createInteraction} from './oddity-interaction.mjs';
 import {createGlass} from './oddity-glass.mjs?v=gate36';
+import {createCinemaMode} from './oddity-cinema.mjs?v=cinema1';
 const $ = (id) => document.getElementById(id);
 const stage = $('stage'), voice = $('voice'), film = $('film'), demoAudio = $('demo-audio'), cameraFeed = $('camera-feed');
 let socket, awake = false, turn = '', queue = [], ready = false, playing = false;
@@ -12,7 +13,7 @@ let micMeter = null, micLevel = 0, micLoud = 0;
 let microphoneAttempt = 0, mediaWaitResolve, audioUnlock, expectedClose = false;
 let captions = [], filmTimed = [];
 let orbitView, invitation, restoredInvitation, screenOrbit = false;
-let glass, peer, pendingFilm = null;
+let glass, peer, pendingFilm = null, cinemaMode = null;
 function orbit() { return orbitView ||= createOrbit($('orbit')); }
 function interactionUI() {
   return invitation ||= createInteraction($('interaction'), stage, orbit(), {
@@ -25,16 +26,6 @@ function interactionUI() {
     reply: () => $('talk').focus(),
   });
 }
-window.addEventListener('load', () => {
-  const parentOrigin = location.ancestorOrigins?.[0];
-  if (!parentOrigin) return;
-  try {
-    const cinema = new URL('/gizmo/cinema', parentOrigin);
-    if (cinema.protocol === 'http:' || cinema.protocol === 'https:') {
-      $('power-cinema').href = cinema.href;
-    }
-  } catch { /* Keep the canonical production destination as the fallback. */ }
-});
 function invite(beat) {
   setCaption();
   interactionUI().show(beat.interaction);
@@ -180,6 +171,10 @@ function currentMoment() {
 function renderRail() {
   const rail = $('moments');
   if (!rail) return;
+  if ($('simulator').dataset.mode === 'cinema') {
+    rail.hidden = true;
+    return;
+  }
   const item = currentMoment();
   if (!playMoments || !item || !awake) {
     rail.hidden = true;
@@ -704,6 +699,7 @@ function syncPower() {
   renderRail();
 }
 function sleep() {
+  if (cinemaMode?.active) leaveCinemaMode();
   stopDemo();
   glass.powerOff();
 }
@@ -731,6 +727,7 @@ function wake() {
 function onGlassReady() {
   awake = true;
   syncPower();
+  if (cinemaMode?.active) return;
   if (restoredInvitation) {
     const beat = archive.find(b => b.id === restoredInvitation.id);
     if (beat?.interaction) {
@@ -1044,10 +1041,18 @@ function pressTalk(event) {
     try { $('talk').setPointerCapture(event.pointerId); } catch { /* Capture is best-effort. */ }
   }
   setTalkPressed(true);
+  if (cinemaMode?.active) {
+    cinemaMode.startRecording();
+    return;
+  }
   startRecording();
 }
 function releaseTalk() {
   setTalkPressed(false);
+  if (cinemaMode?.active) {
+    cinemaMode.stopRecording();
+    return;
+  }
   if (held) stopRecording();
 }
 function cancelRecording() {
@@ -1127,11 +1132,38 @@ function stopRecording() {
   $('talk').classList.remove('recording'); $('listening').hidden = true;
   status('Listening back…');
 }
+
+async function enterCinemaMode() {
+  if (cinemaMode?.active) return;
+  $('simulator').dataset.mode = 'cinema';
+  $('power-cinema').textContent = 'Back to demos';
+  $('power-cinema').setAttribute('aria-pressed', 'true');
+  restoredInvitation = null;
+  stopDemo();
+  if (awake) goHome();
+  else interrupt();
+  renderRail();
+  if (!awake) wake();
+  await cinemaMode?.enter();
+  if (cinemaMode?.active && !$('cinema-access').open) $('cinema-ask').focus();
+}
+
+function leaveCinemaMode() {
+  if (!cinemaMode?.active) return;
+  cinemaMode.exit();
+  delete $('simulator').dataset.mode;
+  $('power-cinema').textContent = 'Try Cinema';
+  $('power-cinema').setAttribute('aria-pressed', 'false');
+  if (awake) goHome();
+  renderRail();
+}
+
 $('power').onclick = () => (awake || glass.booting) ? sleep() : wake();
+$('power-cinema').onclick = () => cinemaMode?.active ? leaveCinemaMode() : enterCinemaMode();
 $('talk').onpointerdown = (event) => { if (demoRunning) stopDemo(); pressTalk(event); };
 $('talk').onpointerup = releaseTalk;
-$('talk').onpointercancel = () => { setTalkPressed(false); cancelRecording(); };
-$('talk').onlostpointercapture = () => { if (held) releaseTalk(); };
+$('talk').onpointercancel = releaseTalk;
+$('talk').onlostpointercapture = releaseTalk;
 $('talk').oncontextmenu = (event) => event.preventDefault();
 $('home').onclick = goHome;
 $('moment-prev').onclick = () => selectMoment(momentIndex - 1);
@@ -1149,12 +1181,12 @@ const typing = () => (document.activeElement?.id !== 'talk' && ['INPUT','TEXTARE
 window.addEventListener('keydown', (event) => {
   if (event.repeat || typing()) return;
   if (event.code === 'Space') { event.preventDefault(); pressTalk(); }
-  if (event.code === 'Escape') goHome();
+  if (event.code === 'Escape') cinemaMode?.active ? leaveCinemaMode() : goHome();
 });
 window.addEventListener('keyup', (event) => { if (event.code === 'Space') { event.preventDefault(); releaseTalk(); } });
-window.addEventListener('blur', () => { setTalkPressed(false); if (held) cancelRecording(); });
-document.addEventListener('visibilitychange', () => { if (document.hidden) { setTalkPressed(false); cancelRecording(); if (playing && !paused) togglePause(); } });
-window.addEventListener('pagehide', () => { expectedClose = true; stopDemo(); setTalkPressed(false); cancelRecording(); stopPlayer(); socket?.close(); });
+window.addEventListener('blur', () => { setTalkPressed(false); cinemaMode?.stopRecording(); if (held) cancelRecording(); });
+document.addEventListener('visibilitychange', () => { if (document.hidden) { setTalkPressed(false); cinemaMode?.interrupt(); cancelRecording(); if (playing && !paused) togglePause(); } });
+window.addEventListener('pagehide', () => { expectedClose = true; cinemaMode?.exit(); stopDemo(); setTalkPressed(false); cancelRecording(); stopPlayer(); socket?.close(); });
 syncPower();
 setInterval(faceTick, 50);
 glass = createGlass(stage, {
@@ -1163,6 +1195,25 @@ glass = createGlass(stage, {
   clearShow() { if (stage.classList.contains('has-scene')) goHome(); },
   volume(level) { if (!muted) { voice.volume = level; film.volume = level; } },
 });
+cinemaMode = createCinemaMode({
+  stage,
+  video: film,
+  poster: $('cinema-poster'),
+  freeze: $('cinema-freeze'),
+  overlay: $('cinema-overlay'),
+  status: $('cinema-status'),
+  progress: $('cinema-progress'),
+  resume: $('cinema-resume'),
+  controls: $('cinema-controls'),
+  pause: $('cinema-pause'),
+  question: $('cinema-question'),
+  askInput: $('cinema-ask'),
+  talk: $('cinema-talk'),
+  access: $('cinema-access'),
+  accessForm: $('cinema-access-form'),
+  accessCode: $('cinema-code'),
+  accessError: $('cinema-access-error'),
+}, {setPressed: setTalkPressed});
 try {
   await connect();
 }
