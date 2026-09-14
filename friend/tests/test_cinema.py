@@ -734,7 +734,7 @@ class DeviceEncodingTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(image.getpixel((160, 240 - CAPTION_BAND_HEIGHT - 1)), (220, 40, 30))
         self.assertEqual(image.getpixel((160, 240 - CAPTION_BAND_HEIGHT)), (5, 17, 31))
 
-    def test_jpeg_optimize_stays_within_budget_and_420(self):
+    def test_device_jpeg_is_baseline_420(self):
         import io
 
         from gizmo_friend.cinema.device import jpeg_frame
@@ -742,8 +742,11 @@ class DeviceEncodingTests(unittest.IsolatedAsyncioTestCase):
 
         image = Image.new("RGB", (320, 240), (40, 80, 120))
         encoded = jpeg_frame(image, quality=65)
+        self.assertIn(b"\xff\xc0", encoded)
+        self.assertNotIn(b"\xff\xc2", encoded)
         decoded = Image.open(io.BytesIO(encoded))
         self.assertEqual(decoded.size, (320, 240))
+        self.assertFalse(decoded.info.get("progression"))
         self.assertEqual(
             [(component[1], component[2]) for component in decoded.layer],
             [(2, 2), (1, 1), (1, 1)],

@@ -100,14 +100,14 @@ DEMO_MOMENTS: dict[str, tuple[DemoStep, ...]] = {
 def _decode_filter() -> str:
     width, height = FILM_CONTENT_SIZE
     return (
-        f"fps={FPS},scale={width}:{height}:force_original_aspect_ratio=increase:flags=lanczos,"
+        f"fps={FPS},scale={width}:{height}:force_original_aspect_ratio=increase:flags=bilinear,"
         f"crop={width}:{height}:exact=1"
     )
 
 
 def _decode_frames(video: Path, workdir: Path) -> list[Image.Image]:
-    # PNG keeps the source until the budget JPEG; an extra q=3 JPEG here was
-    # softening every cue before the 256 KiB encode.
+    # PNG avoids a second generation-loss JPEG. Bilinear (not Lanczos) keeps
+    # the cue inside the ESP decoder's 125 ms budget so playback can finish.
     subprocess.run(
         [
             imageio_ffmpeg.get_ffmpeg_exe(),

@@ -242,14 +242,14 @@ class DeviceDemoTest(unittest.IsolatedAsyncioTestCase):
             self.assertLess(row["start"], spoken)
         self.assertIn("icy", captions[-1]["narration"])
 
-    def test_demo_decode_filter_uses_lanczos_cover(self):
+    def test_demo_decode_filter_uses_bilinear_cover(self):
         from gizmo_friend.cinema.demo import _decode_filter
         from gizmo_friend.cinema.device import FILM_CONTENT_SIZE
 
         width, height = FILM_CONTENT_SIZE
         self.assertEqual(
             _decode_filter(),
-            f"fps=8,scale={width}:{height}:force_original_aspect_ratio=increase:flags=lanczos,"
+            f"fps=8,scale={width}:{height}:force_original_aspect_ratio=increase:flags=bilinear,"
             f"crop={width}:{height}:exact=1",
         )
 

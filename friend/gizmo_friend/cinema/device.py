@@ -156,11 +156,12 @@ FILM_CONTENT_SIZE = (DEVICE_WIDTH, DEVICE_HEIGHT - CAPTION_BAND_HEIGHT)
 
 
 def fit_film_picture(image: Image.Image) -> Image.Image:
-    """Cover-crop onto the glass with Lanczos so downscale stays sharp at 320x240."""
+    """Cover-crop onto the glass. Bicubic, not Lanczos: extra high-frequency
+    detail made TJpgDec miss the 125 ms frame budget, repeat, then watchdog."""
     return ImageOps.fit(
         image.convert("RGB"),
         FILM_CONTENT_SIZE,
-        method=Image.Resampling.LANCZOS,
+        method=Image.Resampling.BICUBIC,
         centering=(0.5, 0.5),
     )
 
@@ -174,10 +175,21 @@ def frame_image(frame) -> Image.Image:
 
 def jpeg_frame(image: Image.Image, *, quality: int = DEVICE_JPEG_QUALITY) -> bytes:
     encoded = io.BytesIO()
-    # Huffman optimize shrinks the same pixels so the 256 KiB / 7 KiB caps can
-    # keep a higher quality number. Do not raise fps, size, or those caps.
-    image.save(encoded, "JPEG", quality=quality, subsampling=2, optimize=True)
-    return encoded.getvalue()
+    # Baseline 4:2:0 with standard Huffman tables. optimize=True writes custom
+    # DHT markers that jpg2rgb565/TJpgDec rejects; the player then repeats,
+    # cancels the still, returns home, and can trip the IDLE0 watchdog.
+    image.save(
+        encoded,
+        "JPEG",
+        quality=quality,
+        subsampling=2,
+        optimize=False,
+        progressive=False,
+    )
+    data = encoded.getvalue()
+    if b"\xff\xc2" in data:
+        raise ValueError("Device JPEG must be baseline sequential, not progressive")
+    return data
 
 
 def encode_jpeg_frames(
