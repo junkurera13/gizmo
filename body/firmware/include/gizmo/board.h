@@ -41,6 +41,8 @@ constexpr int sd_cs = 21;
 // Adafruit STEMMA Speaker 3885 (PAM8302A Class-D + 1 W / 8 Ω). Analog IN only:
 // STEMMA white → D9/GPIO8 (LEDC PWM), red → 3V3, black → GND. GPIO8 is also
 // Sense microSD MISO; SD CS stays HIGH. On-board trim pot is analog gain.
+// PAM8302A also accepts the switched LiPo rail; 3V3 plus Wi-Fi TX browns
+// out the XIAO LDO when VUSB is unregulated battery.
 constexpr int amp_out = 8;
 
 // Controls. PTT is the 5-way switch centre click on D1, active-LOW, internal

@@ -1,6 +1,7 @@
 #include <Arduino.h>
 #include <Preferences.h>
 #include <esp_heap_caps.h>
+#include <esp_system.h>
 #include <string.h>
 #include <sys/time.h>
 #include <time.h>
@@ -102,6 +103,29 @@ uint32_t blit_failures = 0;
 
 const char* backlight_wiring() {
   return gizmo::board::display_bl < 0 ? "tied_3v3" : "gpio";
+}
+
+const char* reset_reason_name(esp_reset_reason_t reason) {
+  switch (reason) {
+    case ESP_RST_POWERON: return "power-on";
+    case ESP_RST_EXT: return "external";
+    case ESP_RST_SW: return "software";
+    case ESP_RST_PANIC: return "panic";
+    case ESP_RST_INT_WDT: return "int-wdt";
+    case ESP_RST_TASK_WDT: return "task-wdt";
+    case ESP_RST_WDT: return "wdt";
+    case ESP_RST_DEEPSLEEP: return "deepsleep";
+    case ESP_RST_BROWNOUT: return "brownout";
+    case ESP_RST_SDIO: return "sdio";
+    default: return "other";
+  }
+}
+
+void pulse_haptic(uint16_t ms) {
+  // Coin motor is on the same 3V3 LDO as Wi-Fi. Skip it on LiPo so a click
+  // cannot brown the rail out.
+  if (battery.present()) return;
+  haptic.pulse(ms);
 }
 
 bool ensure_framebuffer() {
@@ -387,7 +411,7 @@ void start_recording() {
   }
   if (audio.start_recording()) {
     record_started = millis();
-    haptic.pulse(30);
+    pulse_haptic(30);
     if (state != State::kCamera) enter(State::kRecording);
   } else {
     Serial.println("ptt: start_recording failed");
@@ -397,7 +421,7 @@ void start_recording() {
 void finish_recording(bool replay) {
   audio.stop_recording();
   Serial.printf("memo: %u ms, peak=%d\n", audio.memo_ms(), audio.last_peak());
-  haptic.pulse(20);
+  pulse_haptic(20);
   if (state != State::kRecording) return;
   if (replay) start_playback();
   if (state == State::kRecording) enter(State::kIdle);
@@ -409,7 +433,7 @@ void start_playback() {
     return;
   }
   if (audio.start_playback()) {
-    haptic.pulse(20);
+    pulse_haptic(20);
     enter(State::kPlayback);
   } else {
     Serial.println("playback: start failed");
@@ -534,7 +558,7 @@ void on_button(const gizmo::InputEvent& event) {
 
   if (!event.pressed || (event.button == Button::kSelect && event.repeat)) return;
   if (state == State::kBoot || state == State::kRecording) return;
-  if (!event.repeat) haptic.pulse(12);
+  if (!event.repeat) pulse_haptic(12);
 
   switch (state) {
     case State::kIdle:
@@ -785,6 +809,9 @@ void setup() {
   pinMode(gizmo::board::sd_cs, OUTPUT);
   digitalWrite(gizmo::board::sd_cs, HIGH);
   haptic.begin();
+  battery.begin();
+  wifi.set_battery_budget(battery.present());
+  if (battery.present()) setCpuFrequencyMhz(160);
 
   const auto panel = display.begin();
   load_settings();
@@ -802,7 +829,16 @@ void setup() {
     delay(10);
   }
   Serial.println("Gizmo / XIAO ESP32S3 Sense / terminal OS");
-  Serial.printf("flash=%u psram=%u\n", ESP.getFlashChipSize(), ESP.getPsramSize());
+  Serial.printf("reset: %s (%d)\n", reset_reason_name(esp_reset_reason()),
+                static_cast<int>(esp_reset_reason()));
+  Serial.printf("flash=%u psram=%u cpu=%uMHz\n", ESP.getFlashChipSize(), ESP.getPsramSize(),
+                getCpuFrequencyMhz());
+  if (battery.present()) {
+    Serial.printf("power: battery %umV %u%% — radio stays off until boot ends, then 8.5dBm\n",
+                  battery.millivolts(), battery.percent());
+  } else {
+    Serial.println("power: USB — radio stays off until boot ends, then 15dBm");
+  }
   Serial.printf("display begin: %s ILI9341 %dx%d sck=%d mosi=%d cs=%d dc=%d rst=tied_3v3 bl=%s pixel_gain=%u\n",
                 esp_err_to_name(panel), display.width(), display.height(),
                 gizmo::board::display_sck, gizmo::board::display_mosi,
@@ -816,7 +852,6 @@ void setup() {
                 gizmo::assets::kClockAtlasWidth, gizmo::assets::kClockAtlasHeight, gizmo::assets::kClockWeight);
 
   input.begin();
-  battery.begin();
   const auto sound = audio.begin();
   audio_ok = sound == ESP_OK;
   apply_volume();
@@ -838,9 +873,9 @@ void setup() {
   Serial.println("      tHH:MM<enter> = set clock, i = input voltages, n = wifi, w = forget wifi / reopen portal,");
   Serial.println("      F<url><enter> / K<token><enter> = Friend brain, f = friend status,");
   Serial.println("      d = camera (same as Down), c/x = camera start/stop, r = rotate, ? = status");
-  // Boot clock starts here. Friend and show tasks stay down until the last
-  // flipbook slot has actually been drawn — TLS and JPEG-ahead used to land
-  // inside this window and skip beats. STA join can still run in the SDK.
+  // Boot clock starts here. Friend, show decode, and the Wi-Fi radio stay
+  // down until the last flipbook slot has actually been drawn — TLS, JPEG
+  // ahead, and 19.5 dBm TX used to land inside this window.
   state_since = millis();
   boot_slot_drawn = -1;
   boot_chimed = false;
@@ -863,7 +898,9 @@ void loop() {
     const uint32_t now = millis();
     if (!boot_chimed && audio_ok && now - state_since >= gizmo::assets::kBootChimeAtMs) {
       boot_chimed = true;
-      if (!audio.start_clip(gizmo::assets::chime(), gizmo::assets::kChimeSamples)) {
+      if (battery.present()) {
+        Serial.println("boot chime: skipped on battery");
+      } else if (!audio.start_clip(gizmo::assets::chime(), gizmo::assets::kChimeSamples)) {
         Serial.println("boot chime: start failed");
       }
     }
@@ -908,6 +945,7 @@ void loop() {
     finish_recording(false);
   }
   battery.update();
+  wifi.set_battery_budget(battery.present());
   haptic.update();
   const auto wifi_phase = wifi.phase();
   const bool wifi_card = wifi.card_visible();

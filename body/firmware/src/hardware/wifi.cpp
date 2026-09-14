@@ -283,7 +283,7 @@ void WifiLink::bring_up_ap() {
   WiFi.persistent(false);
   WiFi.mode(WIFI_AP);
   WiFi.setSleep(false);
-  WiFi.setTxPower(WIFI_POWER_19_5dBm);
+  apply_tx_power();
   WiFi.softAPConfig(IPAddress(192, 168, 4, 1), IPAddress(192, 168, 4, 1), IPAddress(255, 255, 255, 0));
   const bool ok = WiFi.softAP(ap_ssid_, nullptr, 6, false, 4);
   delay(150);
@@ -367,7 +367,7 @@ void WifiLink::start_sta(const char* ssid, const char* pass, bool from_portal) {
   delay(50);
   WiFi.mode(WIFI_STA);
   WiFi.setSleep(false);
-  WiFi.setTxPower(WIFI_POWER_19_5dBm);
+  apply_tx_power();
   WiFi.setHostname("gizmo");
   WiFi.setAutoReconnect(false);
   g_sta_disconnect_reason = 0;
@@ -399,6 +399,7 @@ void WifiLink::finish_online() {
   stop_portal();
   WiFi.mode(WIFI_STA);
   WiFi.setSleep(false);
+  apply_tx_power();
   WiFi.setAutoReconnect(true);
   snprintf(detail_, sizeof(detail_), "ONLINE %s", ip_.toString().c_str());
   if (time(nullptr) < kTlsClockFloor) {
@@ -447,19 +448,38 @@ void WifiLink::begin() {
     g_wifi_events_bound = true;
   }
   saved_attempts_ = 0;
+  phase_ = WifiPhase::kOff;
+  strncpy(detail_, "WAITING FOR BOOT", sizeof(detail_) - 1);
+  detail_[sizeof(detail_) - 1] = '\0';
   if (load_credentials()) {
-    Serial.printf("wifi: rejoining saved \"%s\"\n", sta_ssid_);
-    start_sta(sta_ssid_, sta_pass_, false);
+    Serial.printf("wifi: saved \"%s\"; radio after boot\n", sta_ssid_);
   } else {
-    phase_ = WifiPhase::kOff;
-    strncpy(detail_, "WAITING FOR BOOT", sizeof(detail_) - 1);
-    detail_[sizeof(detail_) - 1] = '\0';
     Serial.printf("wifi: no saved network; portal after boot on \"%s\"\n", ap_ssid_);
   }
 }
 
+void WifiLink::set_battery_budget(bool on_battery) {
+  if (battery_budget_ == on_battery) return;
+  battery_budget_ = on_battery;
+  if (phase_ != WifiPhase::kOff) apply_tx_power();
+}
+
+void WifiLink::apply_tx_power() {
+  // 19.5 dBm TX plus the 3V3 speaker, haptic, and tied-high backlight is
+  // enough to brown out the hub: LiPo is wired to the XIAO 5V pin, not a
+  // regulated 5 V rail, so the 3.3 V LDO has almost no dropout left.
+  const wifi_power_t p = battery_budget_ ? WIFI_POWER_8_5dBm : WIFI_POWER_15dBm;
+  WiFi.setTxPower(p);
+  Serial.printf("wifi: tx %s\n", battery_budget_ ? "8.5dBm (battery)" : "15dBm");
+}
+
 void WifiLink::start_portal_if_unconfigured() {
-  if (phase_ == WifiPhase::kOff) start_portal();
+  if (phase_ != WifiPhase::kOff) return;
+  if (sta_ssid_[0] != '\0') {
+    start_sta(sta_ssid_, sta_pass_, false);
+    return;
+  }
+  start_portal();
 }
 
 void WifiLink::forget() {
