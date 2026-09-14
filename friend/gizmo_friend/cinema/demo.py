@@ -21,7 +21,7 @@ from dataclasses import dataclass
 from pathlib import Path
 
 import imageio_ffmpeg
-from PIL import Image, ImageOps
+from PIL import Image
 
 from gizmo_friend.brain.shows import ShowStore
 from gizmo_friend.cinema.device import (
@@ -30,7 +30,7 @@ from gizmo_friend.cinema.device import (
     DEVICE_AUDIO_LEAD_SECONDS,
     DEVICE_HEIGHT,
     DEVICE_WIDTH,
-    CAPTION_BAND_HEIGHT,
+    FILM_CONTENT_SIZE,
     FPS,
     PCM_BYTES_PER_SECOND,
     SEGMENT_SECONDS,
@@ -38,6 +38,7 @@ from gizmo_friend.cinema.device import (
     caption_updates,
     device_caption_timings,
     encode_segment,
+    fit_film_picture,
 )
 from gizmo_friend.settings import DeviceSettings
 
@@ -96,7 +97,17 @@ DEMO_MOMENTS: dict[str, tuple[DemoStep, ...]] = {
 }
 
 
+def _decode_filter() -> str:
+    width, height = FILM_CONTENT_SIZE
+    return (
+        f"fps={FPS},scale={width}:{height}:force_original_aspect_ratio=increase:flags=lanczos,"
+        f"crop={width}:{height}:exact=1"
+    )
+
+
 def _decode_frames(video: Path, workdir: Path) -> list[Image.Image]:
+    # PNG keeps the source until the budget JPEG; an extra q=3 JPEG here was
+    # softening every cue before the 256 KiB encode.
     subprocess.run(
         [
             imageio_ffmpeg.get_ffmpeg_exe(),
@@ -106,24 +117,16 @@ def _decode_frames(video: Path, workdir: Path) -> list[Image.Image]:
             "-i",
             str(video),
             "-vf",
-            f"fps={FPS}",
-            "-q:v",
-            "3",
-            str(workdir / "f%04d.jpg"),
+            _decode_filter(),
+            str(workdir / "f%04d.png"),
         ],
         check=True,
     )
     images = []
-    for frame_path in sorted(workdir.glob("f*.jpg")):
+    for frame_path in sorted(workdir.glob("f*.png")):
         with Image.open(frame_path) as raw:
             canvas = Image.new("RGB", (DEVICE_WIDTH, DEVICE_HEIGHT), (5, 17, 31))
-            canvas.paste(
-                ImageOps.fit(
-                    raw.convert("RGB"),
-                    (DEVICE_WIDTH, DEVICE_HEIGHT - CAPTION_BAND_HEIGHT),
-                ),
-                (0, 0),
-            )
+            canvas.paste(fit_film_picture(raw), (0, 0))
             images.append(canvas)
     return images
 

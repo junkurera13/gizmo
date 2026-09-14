@@ -152,22 +152,31 @@ def caption_updates(
     return updates
 
 
+FILM_CONTENT_SIZE = (DEVICE_WIDTH, DEVICE_HEIGHT - CAPTION_BAND_HEIGHT)
+
+
+def fit_film_picture(image: Image.Image) -> Image.Image:
+    """Cover-crop onto the glass with Lanczos so downscale stays sharp at 320x240."""
+    return ImageOps.fit(
+        image.convert("RGB"),
+        FILM_CONTENT_SIZE,
+        method=Image.Resampling.LANCZOS,
+        centering=(0.5, 0.5),
+    )
+
+
 def frame_image(frame) -> Image.Image:
     """Fit the film above a bottom caption bar, matching the emulator layout."""
     canvas = Image.new("RGB", (DEVICE_WIDTH, DEVICE_HEIGHT), (5, 17, 31))
-    canvas.paste(
-        ImageOps.fit(
-            frame.to_image(),
-            (DEVICE_WIDTH, DEVICE_HEIGHT - CAPTION_BAND_HEIGHT),
-        ),
-        (0, 0),
-    )
+    canvas.paste(fit_film_picture(frame.to_image()), (0, 0))
     return canvas
 
 
 def jpeg_frame(image: Image.Image, *, quality: int = DEVICE_JPEG_QUALITY) -> bytes:
     encoded = io.BytesIO()
-    image.save(encoded, "JPEG", quality=quality, subsampling=2)
+    # Huffman optimize shrinks the same pixels so the 256 KiB / 7 KiB caps can
+    # keep a higher quality number. Do not raise fps, size, or those caps.
+    image.save(encoded, "JPEG", quality=quality, subsampling=2, optimize=True)
     return encoded.getvalue()
 
 

@@ -734,6 +734,21 @@ class DeviceEncodingTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(image.getpixel((160, 240 - CAPTION_BAND_HEIGHT - 1)), (220, 40, 30))
         self.assertEqual(image.getpixel((160, 240 - CAPTION_BAND_HEIGHT)), (5, 17, 31))
 
+    def test_jpeg_optimize_stays_within_budget_and_420(self):
+        import io
+
+        from gizmo_friend.cinema.device import jpeg_frame
+        from PIL import Image
+
+        image = Image.new("RGB", (320, 240), (40, 80, 120))
+        encoded = jpeg_frame(image, quality=65)
+        decoded = Image.open(io.BytesIO(encoded))
+        self.assertEqual(decoded.size, (320, 240))
+        self.assertEqual(
+            [(component[1], component[2]) for component in decoded.layer],
+            [(2, 2), (1, 1), (1, 1)],
+        )
+
     async def test_capture_skips_frozen_director_preroll(self):
         import io
         import wave
