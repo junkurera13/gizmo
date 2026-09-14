@@ -689,6 +689,8 @@ class DeviceEncodingTests(unittest.IsolatedAsyncioTestCase):
                 [(2, 2), (1, 1), (1, 1)],
             )
             self.assertFalse(segment.show.clip_path.is_file())
+            self.assertTrue(segment.end_still_url.endswith(".jpg"))
+            self.assertNotEqual(segment.end_still_url, segment.show.still_url)
 
     def test_detailed_director_segment_adapts_to_device_byte_budget(self):
         from gizmo_friend.brain.shows import ShowStore

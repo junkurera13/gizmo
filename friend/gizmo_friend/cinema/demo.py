@@ -142,22 +142,44 @@ def _read_pcm(audio: Path) -> bytes:
         return source.readframes(source.getnframes())
 
 
+PCM_BYTES_PER_FRAME = PCM_BYTES_PER_SECOND // FPS
+
+
+def pad_demo_timeline(
+    images: list[Image.Image], pcm: bytes
+) -> tuple[list[Image.Image], bytes]:
+    """Cover the wav and fill the last 5s cue by freezing the last picture.
+
+    A remainder cue of ~2s is what froze the Galapagos follow-up: the XIAO
+    cleared that stub clip and returned home before the line finished.
+    """
+    if not images:
+        raise ValueError("No frames decoded")
+    cue_frames = FPS * SEGMENT_SECONDS
+    spoken_frames = math.ceil(len(pcm) / PCM_BYTES_PER_FRAME) if pcm else len(images)
+    needed = max(len(images), spoken_frames)
+    extra = needed % cue_frames
+    if extra:
+        needed += cue_frames - extra
+    if len(images) < needed:
+        images = list(images) + [images[-1]] * (needed - len(images))
+    needed_pcm = needed * PCM_BYTES_PER_FRAME
+    if len(pcm) < needed_pcm:
+        pcm = pcm + b"\x00" * (needed_pcm - len(pcm))
+    return images, pcm[:needed_pcm]
+
+
 def encode_step(step: DemoStep, store: ShowStore) -> list:
     """Decode one canned step into held-cue segments the body already speaks."""
     with tempfile.TemporaryDirectory(prefix="gizmo-demo-") as tmp:
         images = _decode_frames(STATIC / step.video, Path(tmp))
-    if not images:
-        raise ValueError(f"No frames decoded from {step.video}")
     pcm = _read_pcm(STATIC / step.audio)
-    # The narration clock drives playback; pad a short tail of video silence.
-    needed = math.ceil(len(images) * PCM_BYTES_PER_SECOND / FPS)
-    if len(pcm) < needed:
-        pcm += b"\x00" * (needed - len(pcm))
+    images, pcm = pad_demo_timeline(images, pcm)
     segments = []
     cue_frames = FPS * SEGMENT_SECONDS
     for index in range(0, len(images), cue_frames):
         chunk = images[index : index + cue_frames]
-        audio_slice = pcm[index * 6000 : (index + len(chunk)) * 6000]
+        audio_slice = pcm[index * PCM_BYTES_PER_FRAME : (index + len(chunk)) * PCM_BYTES_PER_FRAME]
         segments.append(encode_segment(chunk, audio_slice, store, step.title))
     return segments
 
@@ -287,7 +309,7 @@ class DeviceDemo:
                     ),
                 )
                 updates = caption_updates(captions, position, segment_end)
-                self.last_still = segment.show.still_url
+                self.last_still = getattr(segment, "end_still_url", None) or segment.show.still_url
                 await self.send({**event, "go": True, "text": caption})
                 self.state = "talking"
                 await self.send({"type": "state"})
@@ -425,11 +447,7 @@ class DeviceDemo:
         await self.send({"type": "state"})
 
     async def _followup(self) -> None:
-        """PTT up: painting screen, then the canned follow-up film."""
-        self.state = "thinking"
-        await self.send({"type": "glass", "viewing": False, "text": ""})
-        await self.send({"type": "state"})
-        await asyncio.sleep(FOLLOWUP_THINK_SECONDS)
+        """PTT up: keep film one's last frame up, then roll the follow-up."""
         if not self.powered:
             return
         await self._run_step(len(self.steps) - 1)

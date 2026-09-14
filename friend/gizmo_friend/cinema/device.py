@@ -242,17 +242,11 @@ class DeviceSegment:
     jpeg_quality: int
     mjpeg_bytes: int
     max_jpeg_bytes: int
+    end_still_url: str = ""
 
 
-def encode_segment(
-    images: list[Image.Image], pcm: bytes, store: ShowStore, subject: str
-) -> DeviceSegment:
-    if not images or not pcm:
-        raise ValueError("Empty film segment")
-    frames, quality = encode_jpeg_frames(images)
-    motion = b"".join(frames)
-    jpeg = frames[0]
-    still = ConjuredStill(
+def _still_from_jpeg(jpeg: bytes, subject: str) -> ConjuredStill:
+    return ConjuredStill(
         subject=subject,
         jpeg=jpeg,
         prompt=subject,
@@ -263,10 +257,27 @@ def encode_segment(
         source_height=240,
         latency_seconds=0,
     )
-    saved = store.save(still, session_id="cinema", motion=subject)
+
+
+def encode_segment(
+    images: list[Image.Image], pcm: bytes, store: ShowStore, subject: str
+) -> DeviceSegment:
+    if not images or not pcm:
+        raise ValueError("Empty film segment")
+    frames, quality = encode_jpeg_frames(images)
+    motion = b"".join(frames)
+    jpeg = frames[0]
+    saved = store.save(_still_from_jpeg(jpeg, subject), session_id="cinema", motion=subject)
     stored = store.put_mjpeg(
         saved.id, motion, frame_count=len(frames), width=320, height=240, fps=FPS
     )
+    end_url = saved.still_url
+    if frames[-1] != jpeg:
+        end_saved = store.save(
+            _still_from_jpeg(frames[-1], f"{subject} last"),
+            session_id="cinema",
+        )
+        end_url = end_saved.still_url
     logger.info(
         "Device film cue encoded frames=%d quality=%d bytes=%d max_frame_bytes=%d budget=%d",
         stored.frame_count,
@@ -282,6 +293,7 @@ def encode_segment(
         quality,
         len(motion),
         max(map(len, frames)),
+        end_url,
     )
 
 

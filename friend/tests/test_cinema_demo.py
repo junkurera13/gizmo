@@ -9,6 +9,7 @@ from gizmo_friend.cinema.demo import (
     DEMO_MOMENTS,
     DeviceDemo,
     DemoStep,
+    pad_demo_timeline,
     spoken_seconds,
     step_timings,
 )
@@ -154,7 +155,7 @@ class DeviceDemoTest(unittest.IsolatedAsyncioTestCase):
                     pass
 
         states = [e["state"] for e in socket.sent if e.get("type") == "state"]
-        self.assertEqual(states.count("thinking"), 2)
+        self.assertEqual(states.count("thinking"), 1)
         subjects = [e["subject"] for e in socket.sent if e.get("go")]
         self.assertEqual(subjects[:1] + subjects[-1:], ["S0", "S1"])
         self.assertIn(201, acked)
@@ -202,7 +203,7 @@ class DeviceDemoTest(unittest.IsolatedAsyncioTestCase):
                     for e in socket.sent
                     if e.get("type") == "glass" and e.get("viewing") is False
                 ]
-                self.assertGreaterEqual(len(thinking_clears), 2)
+                self.assertEqual(len(thinking_clears), 1)
                 while demo.followup_task and not demo.followup_task.done():
                     await ack_holds(socket, acked)
                     await asyncio.sleep(0.005)
@@ -241,6 +242,32 @@ class DeviceDemoTest(unittest.IsolatedAsyncioTestCase):
         for row in captions:
             self.assertLess(row["start"], spoken)
         self.assertIn("icy", captions[-1]["narration"])
+
+    def test_pad_demo_timeline_fills_a_short_last_cue(self):
+        from PIL import Image
+
+        from gizmo_friend.cinema.device import FPS, PCM_BYTES_PER_SECOND, SEGMENT_SECONDS
+
+        last = Image.new("RGB", (320, 240), (9, 9, 9))
+        images = [Image.new("RGB", (320, 240), (n, 0, 0)) for n in range(16)] + [last]
+        pcm = b"\x00\x01" * 24_000 * 2  # 2s of audio
+        padded, pcm_out = pad_demo_timeline(images, pcm)
+        cue = FPS * SEGMENT_SECONDS
+        self.assertEqual(len(padded) % cue, 0)
+        self.assertGreaterEqual(len(padded), cue)
+        self.assertEqual(padded[-1].tobytes(), last.tobytes())
+        self.assertEqual(len(pcm_out), len(padded) * (PCM_BYTES_PER_SECOND // FPS))
+
+    def test_pad_demo_timeline_covers_narration_longer_than_video(self):
+        from PIL import Image
+
+        from gizmo_friend.cinema.device import FPS, SEGMENT_SECONDS
+
+        images = [Image.new("RGB", (320, 240), (1, 2, 3)) for _ in range(8)]
+        pcm = b"\x00\x00" * 24_000 * 7
+        padded, _pcm_out = pad_demo_timeline(images, pcm)
+        self.assertGreaterEqual(len(padded), 7 * FPS)
+        self.assertEqual(len(padded) % (FPS * SEGMENT_SECONDS), 0)
 
     def test_demo_decode_filter_uses_bilinear_cover(self):
         from gizmo_friend.cinema.demo import _decode_filter
