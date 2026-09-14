@@ -46,8 +46,8 @@ logger = logging.getLogger(__name__)
 
 STATIC = Path(__file__).resolve().parents[1] / "static"
 BOOT_SECONDS = 3.8
-# After the follow-up PTT release, the painting screen holds this long before
-# film two so the cut does not land on a looping last cue.
+# After the follow-up PTT release, keep the painting screen up this long
+# before film two. Shorter than this reads as a one-frame flash.
 FOLLOWUP_THINK_SECONDS = 3.0
 # When a non-final film finishes, its last still stays on the glass through
 # this window instead of flashing home — a pending or late follow-up ask cuts
@@ -358,10 +358,13 @@ class DeviceDemo:
                             ).decode(),
                         }
                     )
+                # MJPEG cues wrap to frame 0. Cut to the next held cue one
+                # frame early so the playhead never rewinds mid-sentence.
                 await asyncio.sleep(
                     max(
                         0,
                         segment_seconds
+                        - (1 / FPS)
                         - (asyncio.get_running_loop().time() - started),
                     )
                 )
@@ -418,21 +421,29 @@ class DeviceDemo:
         await self.send({"type": "glass", "viewing": False, "text": ""})
         await self.send({"type": "state"})
 
-    async def _freeze_glass(self) -> None:
-        """Keep the current picture, drop motion, and mute leftover PCM."""
-        await self.send({"type": "interrupted"})
-        if not self.last_still:
+    async def _hold_last_picture(self, segment=None) -> None:
+        """Stop motion on the last JPEG without muting leftover PCM."""
+        still = None
+        if segment is not None:
+            still = getattr(segment, "end_still_url", None) or segment.show.still_url
+        still = still or self.last_still
+        if not still:
             return
+        self.last_still = still
         await self.send(
             {
                 "type": "glass",
                 "viewing": True,
-                "still": self.last_still,
+                "still": still,
                 "frames": "",
-                "text": "",
                 "go": True,
             }
         )
+
+    async def _freeze_glass(self) -> None:
+        """Keep the current picture, drop motion, and mute leftover PCM."""
+        await self.send({"type": "interrupted"})
+        await self._hold_last_picture()
 
     async def _pause_film(self) -> None:
         """PTT down: stop the looping cue and mute as soon as the ask starts."""
@@ -447,7 +458,11 @@ class DeviceDemo:
         await self.send({"type": "state"})
 
     async def _followup(self) -> None:
-        """PTT up: keep film one's last frame up, then roll the follow-up."""
+        """PTT up: thinking screen for a beat, then the canned follow-up film."""
+        self.state = "thinking"
+        await self.send({"type": "glass", "viewing": False, "text": ""})
+        await self.send({"type": "state"})
+        await asyncio.sleep(FOLLOWUP_THINK_SECONDS)
         if not self.powered:
             return
         await self._run_step(len(self.steps) - 1)

@@ -40,6 +40,7 @@ def fake_segment(pcm_seconds=0.5, show_id="x"):
             still_url=f"/shows/d/{show_id}.jpg", frames_url=f"/shows/d/{show_id}.mjpeg"
         ),
         pcm=b"\x01\x00" * int(24_000 * pcm_seconds),
+        end_still_url=f"/shows/d/{show_id}-end.jpg",
     )
 
 
@@ -98,10 +99,26 @@ class DeviceDemoTest(unittest.IsolatedAsyncioTestCase):
         self.assertIn("talking", states)
         self.assertEqual(states[-1], "listening")
         holds = [e for e in socket.sent if e.get("hold")]
-        gos = [e for e in socket.sent if e.get("go")]
+        motion_gos = [e for e in socket.sent if e.get("go") and e.get("frames")]
+        pins = [e for e in socket.sent if e.get("go") and e.get("frames") == ""]
         self.assertEqual([e["cue"] for e in holds], [101, 102])
-        self.assertEqual(len(gos), 2)
-        self.assertTrue(all(e["subject"] == "Antarctica" for e in gos))
+        self.assertEqual(len(motion_gos), 2)
+        # Pin only after the film, never between cues — a mid-film pin
+        # re-blits that cue's poster and looks like a few-frame rewind.
+        first_go = next(i for i, e in enumerate(socket.sent) if e.get("go") and e.get("frames"))
+        second_go = next(
+            i
+            for i, e in enumerate(socket.sent)
+            if e.get("go") and e.get("frames") and i > first_go
+        )
+        self.assertFalse(
+            any(
+                e.get("go") and e.get("frames") == ""
+                for e in socket.sent[first_go:second_go]
+            )
+        )
+        self.assertGreaterEqual(len(pins), 1)
+        self.assertTrue(all(e["subject"] == "Antarctica" for e in motion_gos))
         audio = [e for e in socket.sent if e.get("type") == "audio"]
         self.assertGreater(len(audio), 0)
         self.assertEqual(
@@ -130,6 +147,12 @@ class DeviceDemoTest(unittest.IsolatedAsyncioTestCase):
                     self.assertLess(asyncio.get_running_loop().time(), deadline)
                     await ack_holds(socket, acked)
                     await asyncio.sleep(0.005)
+                while not any(
+                    e.get("go") and e.get("subject") == "S0" for e in socket.sent
+                ):
+                    self.assertLess(asyncio.get_running_loop().time(), deadline)
+                    await ack_holds(socket, acked)
+                    await asyncio.sleep(0.005)
                 socket.script.append({"type": "ptt", "active": True})
                 await asyncio.sleep(0.02)
                 self.assertTrue(
@@ -155,8 +178,8 @@ class DeviceDemoTest(unittest.IsolatedAsyncioTestCase):
                     pass
 
         states = [e["state"] for e in socket.sent if e.get("type") == "state"]
-        self.assertEqual(states.count("thinking"), 1)
-        subjects = [e["subject"] for e in socket.sent if e.get("go")]
+        self.assertEqual(states.count("thinking"), 2)
+        subjects = [e["subject"] for e in socket.sent if e.get("go") and e.get("subject")]
         self.assertEqual(subjects[:1] + subjects[-1:], ["S0", "S1"])
         self.assertIn(201, acked)
 
@@ -203,7 +226,7 @@ class DeviceDemoTest(unittest.IsolatedAsyncioTestCase):
                     for e in socket.sent
                     if e.get("type") == "glass" and e.get("viewing") is False
                 ]
-                self.assertEqual(len(thinking_clears), 1)
+                self.assertGreaterEqual(len(thinking_clears), 2)
                 while demo.followup_task and not demo.followup_task.done():
                     await ack_holds(socket, acked)
                     await asyncio.sleep(0.005)
@@ -282,6 +305,9 @@ class DeviceDemoTest(unittest.IsolatedAsyncioTestCase):
 
     def test_unknown_moment_name_absent(self):
         self.assertNotIn("troy", DEMO_MOMENTS)
+
+    def test_followup_think_holds_at_least_three_seconds(self):
+        self.assertGreaterEqual(demo_module.FOLLOWUP_THINK_SECONDS, 3.0)
 
 
 if __name__ == "__main__":

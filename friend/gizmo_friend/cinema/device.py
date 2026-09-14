@@ -527,6 +527,7 @@ class DeviceFilmPlayer:
                     max(
                         0,
                         segment_seconds
+                        - (1 / FPS)
                         - (asyncio.get_running_loop().time() - started),
                     )
                 )
