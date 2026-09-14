@@ -292,6 +292,27 @@ class DeviceDemoTest(unittest.IsolatedAsyncioTestCase):
         self.assertGreaterEqual(len(padded), 7 * FPS)
         self.assertEqual(len(padded) % (FPS * SEGMENT_SECONDS), 0)
 
+    def test_full_film_pad_does_not_round_to_a_cue_boundary(self):
+        from PIL import Image
+
+        from gizmo_friend.cinema.device import FPS, PCM_BYTES_PER_SECOND
+
+        images = [Image.new("RGB", (320, 240), (1, 2, 3)) for _ in range(8)]
+        pcm = b"\x00\x00" * 24_000 * 7
+        padded, pcm_out = pad_demo_timeline(images, pcm, align_to_cue=False)
+        self.assertEqual(len(padded), 7 * FPS)
+        self.assertEqual(len(pcm_out), 7 * PCM_BYTES_PER_SECOND)
+
+    def test_antarctica_films_fit_on_one_device_clip(self):
+        import math
+
+        from gizmo_friend.cinema.device import FPS
+
+        for step in DEMO_MOMENTS["antarctica"]:
+            spoken = spoken_seconds(step)
+            self.assertIsNotNone(spoken)
+            self.assertLessEqual(math.ceil(spoken * FPS), demo_module.DEMO_MAX_FRAMES)
+
     def test_demo_decode_filter_uses_bilinear_cover(self):
         from gizmo_friend.cinema.demo import _decode_filter
         from gizmo_friend.cinema.device import FILM_CONTENT_SIZE

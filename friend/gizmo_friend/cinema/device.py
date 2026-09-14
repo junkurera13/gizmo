@@ -260,11 +260,16 @@ def _still_from_jpeg(jpeg: bytes, subject: str) -> ConjuredStill:
 
 
 def encode_segment(
-    images: list[Image.Image], pcm: bytes, store: ShowStore, subject: str
+    images: list[Image.Image],
+    pcm: bytes,
+    store: ShowStore,
+    subject: str,
+    *,
+    max_bytes: int = MAX_DEVICE_SEGMENT_BYTES,
 ) -> DeviceSegment:
     if not images or not pcm:
         raise ValueError("Empty film segment")
-    frames, quality = encode_jpeg_frames(images)
+    frames, quality = encode_jpeg_frames(images, max_bytes=max_bytes)
     motion = b"".join(frames)
     jpeg = frames[0]
     saved = store.save(_still_from_jpeg(jpeg, subject), session_id="cinema", motion=subject)
@@ -284,7 +289,7 @@ def encode_segment(
         quality,
         len(motion),
         max(map(len, frames)),
-        MAX_DEVICE_SEGMENT_BYTES,
+        max_bytes,
     )
     return DeviceSegment(
         saved,

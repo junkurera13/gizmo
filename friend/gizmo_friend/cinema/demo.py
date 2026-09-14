@@ -46,6 +46,12 @@ logger = logging.getLogger(__name__)
 
 STATIC = Path(__file__).resolve().parents[1] / "static"
 BOOT_SECONDS = 3.8
+# Firmware kShowMaxFrames / kShowMaxBytes. A canned film that fits here is
+# one MJPEG so the decode-ahead ring never resets mid-sentence.
+DEMO_MAX_FRAMES = 240
+DEMO_MAX_BYTES = 2 * 1024 * 1024
+# Held-cue HTTPS can take this long for a full-film download during thinking.
+CUE_READY_SECONDS = 35.0
 # After the follow-up PTT release, keep the painting screen up this long
 # before film two. Shorter than this reads as a one-frame flash.
 FOLLOWUP_THINK_SECONDS = 3.0
@@ -146,23 +152,32 @@ PCM_BYTES_PER_FRAME = PCM_BYTES_PER_SECOND // FPS
 
 
 def pad_demo_timeline(
-    images: list[Image.Image], pcm: bytes
+    images: list[Image.Image],
+    pcm: bytes,
+    *,
+    align_to_cue: bool = True,
 ) -> tuple[list[Image.Image], bytes]:
-    """Cover the wav and fill the last 5s cue by freezing the last picture.
+    """Cover the wav, optionally rounding up to a 5s cue by freezing the last picture.
 
     A remainder cue of ~2s is what froze the Galapagos follow-up: the XIAO
     cleared that stub clip and returned home before the line finished.
+    Full-film cues skip that round-up so the playhead never crosses a seam.
     """
     if not images:
         raise ValueError("No frames decoded")
-    cue_frames = FPS * SEGMENT_SECONDS
     spoken_frames = math.ceil(len(pcm) / PCM_BYTES_PER_FRAME) if pcm else len(images)
     needed = max(len(images), spoken_frames)
-    extra = needed % cue_frames
-    if extra:
-        needed += cue_frames - extra
+    if align_to_cue:
+        cue_frames = FPS * SEGMENT_SECONDS
+        extra = needed % cue_frames
+        if extra:
+            needed += cue_frames - extra
+    if needed > DEMO_MAX_FRAMES:
+        needed = DEMO_MAX_FRAMES
     if len(images) < needed:
         images = list(images) + [images[-1]] * (needed - len(images))
+    elif len(images) > needed:
+        images = list(images[:needed])
     needed_pcm = needed * PCM_BYTES_PER_FRAME
     if len(pcm) < needed_pcm:
         pcm = pcm + b"\x00" * (needed_pcm - len(pcm))
@@ -170,18 +185,22 @@ def pad_demo_timeline(
 
 
 def encode_step(step: DemoStep, store: ShowStore) -> list:
-    """Decode one canned step into held-cue segments the body already speaks."""
+    """Decode one canned step into a single held cue the body already speaks."""
     with tempfile.TemporaryDirectory(prefix="gizmo-demo-") as tmp:
         images = _decode_frames(STATIC / step.video, Path(tmp))
     pcm = _read_pcm(STATIC / step.audio)
-    images, pcm = pad_demo_timeline(images, pcm)
-    segments = []
-    cue_frames = FPS * SEGMENT_SECONDS
-    for index in range(0, len(images), cue_frames):
-        chunk = images[index : index + cue_frames]
-        audio_slice = pcm[index * PCM_BYTES_PER_FRAME : (index + len(chunk)) * PCM_BYTES_PER_FRAME]
-        segments.append(encode_segment(chunk, audio_slice, store, step.title))
-    return segments
+    images, pcm = pad_demo_timeline(images, pcm, align_to_cue=False)
+    if not images:
+        raise ValueError("No frames decoded")
+    return [
+        encode_segment(
+            images,
+            pcm,
+            store,
+            step.title,
+            max_bytes=DEMO_MAX_BYTES,
+        )
+    ]
 
 
 def spoken_seconds(step: DemoStep) -> float | None:
@@ -258,8 +277,12 @@ class DeviceDemo:
             self._segments[index] = cached
         return cached
 
-    async def _play_step(self, index: int) -> None:
+    async def _play_step(self, index: int, think_seconds: float = 0.0) -> None:
         step = self.steps[index]
+        if think_seconds:
+            self.state = "thinking"
+            await self.send({"type": "state"})
+        think_until = asyncio.get_running_loop().time() + think_seconds
         segments = await self._segments_for(index)
         film_seconds = sum(len(segment.pcm) for segment in segments) / PCM_BYTES_PER_SECOND
         spoken = spoken_seconds(step)
@@ -296,8 +319,15 @@ class DeviceDemo:
             number = 0
             while item is not None:
                 segment, event, ready = item
-                if not await asyncio.wait_for(ready, 10):
+                if not await asyncio.wait_for(ready, CUE_READY_SECONDS):
                     raise RuntimeError("Device could not preload film")
+                remaining = think_until - asyncio.get_running_loop().time()
+                if remaining > 0:
+                    await asyncio.sleep(remaining)
+                    think_until = 0.0
+                if not self.powered:
+                    return
+                self.playing_step = index
                 self.acks.pop((event["cue"], "motion"), None)
                 segment_seconds = len(segment.pcm) / PCM_BYTES_PER_SECOND
                 segment_end = position + segment_seconds
@@ -382,15 +412,11 @@ class DeviceDemo:
                 await asyncio.gather(pending, return_exceptions=True)
             self.acks.clear()
 
-    async def _run_step(self, index: int) -> None:
+    async def _run_step(self, index: int, think_seconds: float | None = None) -> None:
         step = self.steps[index]
+        think = step.think_seconds if think_seconds is None else think_seconds
         try:
-            if step.think_seconds:
-                self.state = "thinking"
-                await self.send({"type": "state"})
-                await asyncio.sleep(step.think_seconds)
-            self.playing_step = index
-            await self._play_step(index)
+            await self._play_step(index, think_seconds=think)
         except asyncio.CancelledError:
             raise
         except Exception as error:  # noqa: BLE001 - never die mid-take
@@ -459,16 +485,13 @@ class DeviceDemo:
 
     async def _followup(self) -> None:
         """PTT up: thinking screen for a beat, then the canned follow-up film."""
-        self.state = "thinking"
         await self.send({"type": "glass", "viewing": False, "text": ""})
-        await self.send({"type": "state"})
-        await asyncio.sleep(FOLLOWUP_THINK_SECONDS)
         if not self.powered:
             return
-        await self._run_step(len(self.steps) - 1)
+        await self._run_step(len(self.steps) - 1, think_seconds=FOLLOWUP_THINK_SECONDS)
 
     async def _warm(self) -> None:
-        """Encode every step right after connect so thinking time stays pure."""
+        """Encode every step on connect so the first hold can start immediately."""
         for index in range(len(self.steps)):
             await self._segments_for(index)
 
