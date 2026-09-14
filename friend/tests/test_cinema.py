@@ -82,6 +82,30 @@ class DevicePlayerTests(unittest.IsolatedAsyncioTestCase):
             )
         )
 
+    def test_overflow_caption_pages_keep_every_word(self):
+        from gizmo_friend.cinema.device import (
+            MAX_DEVICE_CAPTION_CHARS,
+            device_caption_timings,
+            wrap_device_caption,
+        )
+
+        narration = (
+            "Yes! Penguins also live in South America, southern Africa, Australia, "
+            "New Zealand, and the Galapagos Islands. Not every penguin lives somewhere icy."
+        )
+        pages = wrap_device_caption(narration)
+        self.assertGreater(len(pages), 1)
+        self.assertTrue(all(len(page) <= MAX_DEVICE_CAPTION_CHARS for page in pages))
+        self.assertEqual(" ".join(pages), narration)
+        self.assertTrue(pages[-1].endswith("icy."))
+
+        captions = device_caption_timings(
+            [{"start": 0.0, "end": 12.66, "narration": narration}]
+        )
+        self.assertEqual(len(captions), len(pages))
+        self.assertLess(captions[-1]["start"], 12.66)
+        self.assertEqual(captions[-1]["end"], 12.66)
+
     async def test_caption_changes_at_narration_boundary_inside_cue(self):
         track = object()
         stream = SimpleNamespace(

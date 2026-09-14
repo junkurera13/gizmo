@@ -161,14 +161,30 @@ def encode_step(step: DemoStep, store: ShowStore) -> list:
     return segments
 
 
-def step_timings(step: DemoStep) -> list[dict]:
+def spoken_seconds(step: DemoStep) -> float | None:
+    """Length of the canned narration, ignoring any silent video pad."""
+    path = STATIC / step.audio
+    if not path.is_file():
+        return None
+    with wave.open(str(path), "rb") as source:
+        rate = source.getframerate()
+        if rate <= 0:
+            return None
+        return source.getnframes() / float(rate)
+
+
+def step_timings(step: DemoStep, duration: float | None = None) -> list[dict]:
+    """Caption windows follow the next beat, or the spoken wav if that is last."""
+    if duration is None:
+        duration = spoken_seconds(step)
     timings = []
     for index, (start, text) in enumerate(step.beats):
-        end = (
-            step.beats[index + 1][0]
-            if index + 1 < len(step.beats)
-            else start + 30.0
-        )
+        if index + 1 < len(step.beats):
+            end = step.beats[index + 1][0]
+        elif duration is not None:
+            end = max(float(start), float(duration))
+        else:
+            end = start + 30.0
         timings.append({"start": start, "end": end, "narration": text})
     return timings
 
@@ -220,7 +236,13 @@ class DeviceDemo:
     async def _play_step(self, index: int) -> None:
         step = self.steps[index]
         segments = await self._segments_for(index)
-        captions = device_caption_timings(step_timings(step))
+        film_seconds = sum(len(segment.pcm) for segment in segments) / PCM_BYTES_PER_SECOND
+        spoken = spoken_seconds(step)
+        captions = device_caption_timings(
+            step_timings(step, duration=spoken if spoken is not None else film_seconds)
+        )
+        if captions and film_seconds > captions[-1]["end"]:
+            captions[-1] = {**captions[-1], "end": film_seconds}
         position = 0.0
         pending = None
         caption_task = None

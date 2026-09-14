@@ -61,9 +61,9 @@ MIN_DEVICE_JPEG_QUALITY = 1
 # aiortc drops the first Director NALs; those packets replay as one frozen
 # picture. Wait for a second distinct frame before the 5s clock starts.
 WARMUP_DISTINCT_FRAMES = 2
-# Caption changes need one panel interval to reach the LCD. Beat captions are
-# otherwise sent at their spoken boundary and look slightly late to the eye.
-CAPTION_RENDER_LEAD_SECONDS = 1 / FPS
+# Caption changes need a couple of panel intervals to reach the LCD. Beat
+# captions sent at their spoken boundary look slightly late to the eye.
+CAPTION_RENDER_LEAD_SECONDS = 2 / FPS
 
 logger = logging.getLogger(__name__)
 
@@ -76,17 +76,49 @@ def caption_at(timings: list[dict], position: float) -> str:
     return ""
 
 
+def wrap_device_caption(narration: str) -> list[str]:
+    """Fit every spoken word onto successive one-line device captions."""
+    words = str(narration or "").split()
+    chunks: list[str] = []
+    line = ""
+    for word in words:
+        pieces = (
+            textwrap.wrap(
+                word,
+                width=MAX_DEVICE_CAPTION_CHARS,
+                break_long_words=True,
+                break_on_hyphens=False,
+            )
+            or [word[:MAX_DEVICE_CAPTION_CHARS]]
+        )
+        for piece in pieces:
+            candidate = piece if not line else f"{line} {piece}"
+            if line and len(candidate) > MAX_DEVICE_CAPTION_CHARS:
+                chunks.append(line)
+                line = piece
+            else:
+                line = candidate
+            if not line:
+                continue
+            # Page at sentence ends, and at commas once the line is already a
+            # readable caption, so overflow words start a new line with speech.
+            if line[-1] in ".!?" and len(line) >= 8:
+                chunks.append(line)
+                line = ""
+            elif line[-1] == "," and len(line) >= 32:
+                chunks.append(line)
+                line = ""
+    if line:
+        chunks.append(line)
+    return chunks
+
+
 def device_caption_timings(timings: list[dict]) -> list[dict]:
     """Split narration beats into one-line captions without dropping words."""
     captions = []
     for timing in timings:
         narration = " ".join(str(timing.get("narration", "")).split())
-        chunks = textwrap.wrap(
-            narration,
-            width=MAX_DEVICE_CAPTION_CHARS,
-            break_long_words=True,
-            break_on_hyphens=False,
-        )
+        chunks = wrap_device_caption(narration)
         if not chunks:
             continue
         start = float(timing.get("start", 0.0))

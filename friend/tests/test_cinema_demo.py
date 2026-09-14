@@ -5,7 +5,14 @@ from pathlib import Path
 from types import SimpleNamespace
 
 import gizmo_friend.cinema.demo as demo_module
-from gizmo_friend.cinema.demo import DEMO_MOMENTS, DeviceDemo, DemoStep, step_timings
+from gizmo_friend.cinema.demo import (
+    DEMO_MOMENTS,
+    DeviceDemo,
+    DemoStep,
+    spoken_seconds,
+    step_timings,
+)
+from gizmo_friend.cinema.device import MAX_DEVICE_CAPTION_CHARS, device_caption_timings
 
 
 class FakeSocket:
@@ -217,6 +224,27 @@ class DeviceDemoTest(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(timings[0]["start"], 0.0)
         self.assertEqual(timings[1]["end"], timings[2]["start"])
         self.assertGreater(timings[-1]["end"], timings[-1]["start"])
+        spoken = spoken_seconds(DEMO_MOMENTS["antarctica"][0])
+        self.assertIsNotNone(spoken)
+        self.assertAlmostEqual(timings[-1]["end"], spoken)
+
+    def test_followup_captions_page_every_word_to_speech(self):
+        step = DEMO_MOMENTS["antarctica"][1]
+        spoken = spoken_seconds(step)
+        self.assertIsNotNone(spoken)
+        self.assertLess(spoken, 20.0)
+        narration = " ".join(text for _, text in step.beats)
+        captions = device_caption_timings(step_timings(step, duration=spoken))
+        self.assertGreater(len(captions), 1)
+        self.assertTrue(
+            all(len(row["narration"]) <= MAX_DEVICE_CAPTION_CHARS for row in captions)
+        )
+        self.assertEqual(" ".join(row["narration"] for row in captions), narration)
+        self.assertAlmostEqual(captions[0]["start"], 0.0)
+        self.assertAlmostEqual(captions[-1]["end"], spoken)
+        for row in captions:
+            self.assertLess(row["start"], spoken)
+        self.assertIn("icy", captions[-1]["narration"])
 
     def test_unknown_moment_name_absent(self):
         self.assertNotIn("troy", DEMO_MOMENTS)
