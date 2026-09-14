@@ -357,7 +357,9 @@ void render() {
       gizmo::render_caption(canvas, caption_line);
       break;
     case State::kRecording:
-      paint_home_base();
+      // Friend PTT over a film must not paint home. The last show pixels stay
+      // in the framebuffer; local memo (no Friend) still uses the idle face.
+      if (!friend_ptt_) paint_home_base();
       gizmo::render_recording_overlay(canvas, audio.vu_level(), now - record_started, audio.capacity_ms());
       break;
     case State::kPlayback:

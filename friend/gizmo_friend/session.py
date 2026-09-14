@@ -919,13 +919,16 @@ class GizmoSession:
         if kind == "audio":
             if self._suppress_live_output:
                 return
+            pcm = event.pcm or b""
+            if not any(pcm):
+                return
             if self._visual_turn_open and not self._voice_started:
                 self._voice_started = True
                 logger.info("Turn latency: stage=voice-first seconds=%.3f", self._visual_elapsed())
             await self._start_talking()
             self._item_id = event.item_id or self._item_id
-            self.mouth.speak_pcm(event.pcm)
-            await self.emit({"type": "audio", "pcm": base64.b64encode(event.pcm).decode("ascii")})
+            self.mouth.speak_pcm(pcm)
+            await self.emit({"type": "audio", "pcm": base64.b64encode(pcm).decode("ascii")})
             return
         if kind == "transcript_delta":
             if self._suppress_live_output:

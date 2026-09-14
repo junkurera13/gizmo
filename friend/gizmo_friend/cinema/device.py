@@ -500,13 +500,8 @@ class DeviceFilmPlayer:
                     len(segment.pcm), prefill_packets * AUDIO_PACKET_BYTES
                 )
                 for offset in range(0, prefill_end, AUDIO_PACKET_BYTES):
-                    await self.send(
-                        {
-                            "type": "audio",
-                            "pcm": base64.b64encode(
-                                segment.pcm[offset : offset + AUDIO_PACKET_BYTES]
-                            ).decode(),
-                        }
+                    await self._send_speech(
+                        segment.pcm[offset : offset + AUDIO_PACKET_BYTES]
                     )
 
                 # The next held cue downloads while the protected narration
@@ -520,13 +515,8 @@ class DeviceFilmPlayer:
                     )
                     if wait > 0:
                         await asyncio.sleep(wait)
-                    await self.send(
-                        {
-                            "type": "audio",
-                            "pcm": base64.b64encode(
-                                segment.pcm[offset : offset + AUDIO_PACKET_BYTES]
-                            ).decode(),
-                        }
+                    await self._send_speech(
+                        segment.pcm[offset : offset + AUDIO_PACKET_BYTES]
                     )
                 await asyncio.sleep(
                     max(
@@ -567,6 +557,18 @@ class DeviceFilmPlayer:
             capture.cancel()
             await asyncio.gather(capture, return_exceptions=True)
             self.acks.clear()
+            await self.send({"type": "interrupted"})
+
+    async def _send_speech(self, pcm: bytes) -> None:
+        """Queue spoken PCM. All-zero pads must not start the PWM carrier."""
+        if not pcm or not any(pcm):
+            return
+        await self.send(
+            {
+                "type": "audio",
+                "pcm": base64.b64encode(pcm).decode(),
+            }
+        )
 
 
 class DeviceFilm:

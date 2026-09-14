@@ -573,10 +573,23 @@ void FriendConnection::on_message(const char* json, size_t len) {
     const int rc =
         mbedtls_base64_decode(decoded, bound, &decoded_len, reinterpret_cast<const unsigned char*>(b64), b64_len);
     if (rc == 0 && decoded_len >= 2 && (decoded_len % 2) == 0) {
+      const int16_t* samples = reinterpret_cast<const int16_t*>(decoded);
+      const size_t count = decoded_len / 2;
+      bool silent = true;
+      for (size_t i = 0; i < count; ++i) {
+        if (samples[i] != 0) {
+          silent = false;
+          break;
+        }
+      }
+      if (silent) {
+        free(decoded);
+        return;
+      }
       if (speaker_n_ == 0) {
         Serial.printf("friend speaker: start %u pcm bytes\n", static_cast<unsigned>(decoded_len));
       }
-      if (!enqueue_speaker(reinterpret_cast<const int16_t*>(decoded), decoded_len / 2)) {
+      if (!enqueue_speaker(samples, count)) {
         // can_receive() already backpressures the socket for a full ring, so
         // this is a defensive drop — a lost chunk must never reset the device.
         free(decoded);
@@ -651,7 +664,17 @@ void FriendConnection::on_message(const char* json, size_t len) {
         }
       } else {
         const bool go = document["go"] | false;
-        if (show_path(still, device_id_, ".jpg")) {
+        // A freeze names no MJPEG. Keep the on-screen still even if Friend
+        // sends a different poster URL — wiping show_ here releases the
+        // framebuffer and the next blit is the home character.
+        const bool freeze = go && frames[0] == '\0' && show_.viewing && show_.still[0];
+        if (freeze) {
+          if (show_.frames[0] || show_.go != go) {
+            show_.frames[0] = '\0';
+            show_.go = true;
+            show_changed_ = true;
+          }
+        } else if (show_path(still, device_id_, ".jpg")) {
           if (strcmp(show_.still, still)) show_ = ShowRequest{};
           strlcpy(show_.still, still, sizeof(show_.still));
           show_.viewing = true;
@@ -659,10 +682,11 @@ void FriendConnection::on_message(const char* json, size_t len) {
           show_.go = go;
           show_changed_ = true;
         }
-        if (show_.viewing && show_path(frames, device_id_, ".mjpeg") && show_same(show_.still, frames)) {
+        if (!freeze && show_.viewing && show_path(frames, device_id_, ".mjpeg") &&
+            show_same(show_.still, frames)) {
           strlcpy(show_.frames, frames, sizeof(show_.frames));
           show_changed_ = true;
-        } else if (show_.viewing && show_.frames[0] && !frames[0]) {
+        } else if (!freeze && show_.viewing && show_.frames[0] && !frames[0]) {
           show_.frames[0] = '\0';
           show_changed_ = true;
         }

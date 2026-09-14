@@ -9,6 +9,9 @@ constexpr uint8_t kPwmAudioBits = 9;
 constexpr uint32_t kPwmAudioLevels = 1u << kPwmAudioBits;
 // Condition 16 kHz PCM boundaries before interpolating onto the PWM clock.
 // Only stream boundaries are faded; continuous PCM retains its full amplitude.
+// Analog mute is PCM -32768 (0% duty, GPIO sits low). PCM 0 is mid-rail 50%
+// duty — that carrier is the idle LiPo whistle and must not run without speech.
+constexpr int16_t kPwmAnalogMute = -32768;
 struct PwmAudio {
   static constexpr int kFadeSamples = 64;  // 4 ms at 16 kHz
   int16_t current = 0;
@@ -36,7 +39,10 @@ struct PwmAudio {
       }
       gap = true;
       if (fade_left > 0) --fade_left;
-      current = static_cast<int16_t>(static_cast<int32_t>(fade_from) * fade_left / kFadeSamples);
+      current = static_cast<int16_t>(
+          (static_cast<int32_t>(fade_from) * fade_left +
+           static_cast<int32_t>(kPwmAnalogMute) * (kFadeSamples - fade_left)) /
+          kFadeSamples);
     }
     return static_cast<int16_t>((static_cast<int32_t>(previous) + current) / 2);
   }

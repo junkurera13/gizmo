@@ -139,7 +139,7 @@ class DevicePlayerTests(unittest.IsolatedAsyncioTestCase):
         player = DeviceFilmPlayer(cinema, None, send, acks)
         segment = SimpleNamespace(
             show=SimpleNamespace(still_url="/still.jpg", frames_url="/film.mjpeg"),
-            pcm=b"\0" * 14_400,
+            pcm=b"\x01\x00" * 7_200,
         )
 
         async def capture(_track, queue, _prepared, _revision):
@@ -187,7 +187,7 @@ class DevicePlayerTests(unittest.IsolatedAsyncioTestCase):
         player = DeviceFilmPlayer(cinema, None, send, acks)
         segment = SimpleNamespace(
             show=SimpleNamespace(still_url="/still.jpg", frames_url="/film.mjpeg"),
-            pcm=b"\0\0",
+            pcm=b"\x01\x00",
         )
 
         async def capture(_track, queue, _prepared, _revision):

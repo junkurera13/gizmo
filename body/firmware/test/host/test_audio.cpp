@@ -30,14 +30,19 @@ int main() {
   for(auto p:mock_written)assert(p==500);
   // An explicit interrupt must discard the pending tail immediately.
   audio.stop_live();assert(!audio.playing());
-  // An empty ring must stop the PWM carrier even while a turn is in flight.
-  // Holding a 50% idle duty is the LiPo whistle; speech fades the amp back in.
+  // While a turn is in flight the ISR holds analog mute (0% duty), not a 50%
+  // mid-rail carrier. Restarting LEDC on every Gemini gap is the crack.
   mock_written.clear();
   audio.set_live_expecting(true);
   audio.enqueue_live(pcm,256);mock_now+=250;audio.update();assert(audio.playing());
-  mock_now+=2000;audio.update();assert(!audio.playing());
+  mock_now+=2000;audio.update();assert(audio.playing());
   audio.enqueue_live(pcm,256);mock_now+=250;audio.update();assert(audio.playing());
-  audio.set_live_expecting(false);audio.update();
+  audio.set_live_expecting(false);audio.update();assert(!audio.playing());
   audio.stop_live();assert(!audio.playing());
+  // Digital silence must not start the PWM carrier.
+  int16_t zeros[256]{};
+  audio.enqueue_live(zeros,256);
+  mock_now+=250;audio.update();
+  assert(!audio.playing());
   puts("audio: jitter, DMA drain, partial timeout, interrupt, silent-idle passed");
 }

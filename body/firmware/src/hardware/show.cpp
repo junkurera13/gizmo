@@ -215,23 +215,27 @@ void ShowPlayer::submit(const ShowRequest& r) {
     }
     return;
   }
-    const bool same = !strcmp(request_.still, r.still) && !strcmp(request_.base, r.base) &&
-                      !strcmp(request_.device, r.device) && !strcmp(request_.token, r.token);
-    if (same && !*r.frames && clip_.bytes) {
-      // Same poster, no motion: freeze the last picture instead of looping the cue.
-      if (media_mux_) xSemaphoreTake(media_mux_, portMAX_DELAY);
-      ++media_gen_;
-      release(clip_);
-      if (media_mux_) xSemaphoreGive(media_mux_);
-      request_ = r;
+    if (!*r.frames && request_.viewing && still_.bytes &&
+        (r.go || !strcmp(request_.still, r.still))) {
+      // Pin whatever is already on the glass. A freeze that names a different
+      // JPEG used to release still_ — that gap is the home-character flash.
+      if (clip_.bytes) {
+        if (media_mux_) xSemaphoreTake(media_mux_, portMAX_DELAY);
+        ++media_gen_;
+        release(clip_);
+        if (media_mux_) xSemaphoreGive(media_mux_);
+        started_.store(0);
+        changed_ = true;
+        drawn_ = -1;
+      }
       request_.hold = false;
       request_.go = false;
-      started_.store(0);
-      changed_ = true;
-      drawn_ = -1;
+      request_.frames[0] = '\0';
       drop_held();
       return;
     }
+    const bool same = !strcmp(request_.still, r.still) && !strcmp(request_.base, r.base) &&
+                      !strcmp(request_.device, r.device) && !strcmp(request_.token, r.token);
     if (same && !strcmp(request_.frames, r.frames)) return;
   const uint32_t revision = ++revision_;
   if (!same) {

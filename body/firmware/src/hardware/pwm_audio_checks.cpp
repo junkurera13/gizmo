@@ -17,13 +17,16 @@ constexpr bool gap_fades(int16_t level) {
   for (int i = 0; i < gizmo::PwmAudio::kFadeSamples; ++i) {
     const int16_t before = p.current;
     p.midpoint(0, false);
-    if (level > 0 && (p.current < 0 || p.current > before)) return false;
-    if (level < 0 && (p.current > 0 || p.current < before)) return false;
+    // Analog mute is -32768 (0% duty). PCM 0 is a 50% carrier and must not
+    // be the rest state.
+    if (level > gizmo::kPwmAnalogMute && p.current > before) return false;
   }
-  if (p.current != 0) return false;
+  if (p.current != gizmo::kPwmAnalogMute) return false;
   for (int i = 0; i < 100; ++i)
-    if (p.midpoint(0, false) != 0 || p.current != 0) return false;
-  if (p.midpoint(level, true) != 0 || p.current != 0) return false;
+    if (p.midpoint(0, false) != gizmo::kPwmAnalogMute || p.current != gizmo::kPwmAnalogMute)
+      return false;
+  if (p.midpoint(level, true) != gizmo::kPwmAnalogMute || p.current != gizmo::kPwmAnalogMute)
+    return false;
   for (int i = 0; i < gizmo::PwmAudio::kFadeSamples; ++i) p.midpoint(level, true);
   return p.current == level;
 }
@@ -36,7 +39,7 @@ constexpr bool short_gap_resume() {
   return p.midpoint(-20000, true) == tail && p.current == tail;
 }
 static_assert(ordered_ramp(), "PWM midpoint must precede its endpoint");
-static_assert(gap_fades(32767), "Positive full-scale gap must fade to exact silence");
+static_assert(gap_fades(32767), "Positive full-scale gap must fade to analog mute");
 static_assert(gap_fades(-32768), "Negative full-scale gap must fade without overflow");
 static_assert(short_gap_resume(), "A resumed stream must start at the previous tail");
 constexpr bool exact_rate() {

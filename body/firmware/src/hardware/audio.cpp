@@ -31,7 +31,6 @@ constexpr size_t kAmpRingSamples = Audio::kSampleRate / 2;
 constexpr uint8_t kPwmChannel = 4;  // LEDC_TIMER_2; camera XCLK keeps TIMER_0
 constexpr uint8_t kPwmBits = kPwmAudioBits;
 constexpr uint32_t kPwmFreq = 62500;
-constexpr uint32_t kPwmIdleDuty = kPwmAudioLevels / 2;
 constexpr uint8_t kPwmTimerIndex = 0;
 constexpr uint16_t kPwmTimerDivider = 80;  // 80 MHz / 80 = 1 MHz
 constexpr uint64_t kPwmTimerAlarm = 32;    // 1 MHz / 32 = 31.25 kHz ISR
@@ -72,7 +71,7 @@ void IRAM_ATTR amp_isr() {
 }
 
 void amp_hold_low() {
-  ledcDetachPin(board::amp_out);
+  if (amp_running) ledcDetachPin(board::amp_out);
   pinMode(board::amp_out, OUTPUT);
   digitalWrite(board::amp_out, LOW);
 }
@@ -100,6 +99,8 @@ esp_err_t amp_start() {
   amp_w = amp_r = amp_n = 0;
   portEXIT_CRITICAL(&amp_mux);
   pwm_audio = {};
+  pwm_audio.current = pwm_audio.previous = kPwmAnalogMute;
+  pwm_audio.gap = true;
   pwm_clock = {};
   const uint32_t actual_freq = ledcSetup(kPwmChannel, kPwmFreq, kPwmBits);
   if (actual_freq != kPwmFreq) {
@@ -111,7 +112,7 @@ esp_err_t amp_start() {
                 static_cast<unsigned long>(actual_freq), kPwmBits,
                 static_cast<unsigned long>(PwmClock::kOutputRate));
   ledcAttachPin(board::amp_out, kPwmChannel);
-  ledcWrite(kPwmChannel, kPwmIdleDuty);
+  ledcWrite(kPwmChannel, 0);
   if (amp_timer == nullptr) {
     amp_timer = timerBegin(kPwmTimerIndex, kPwmTimerDivider, true);
     if (amp_timer == nullptr) {
@@ -154,6 +155,8 @@ void amp_clear() {
   amp_w = amp_r = amp_n = 0;
   portEXIT_CRITICAL(&amp_mux);
   pwm_audio = {};
+  pwm_audio.current = pwm_audio.previous = kPwmAnalogMute;
+  pwm_audio.gap = true;
   pwm_clock = {};
 #else
   i2s_zero_dma_buffer(kAmpPort);
@@ -383,6 +386,14 @@ bool Audio::arm_live() {
 size_t Audio::enqueue_live(const int16_t* samples, size_t count) {
   if (samples == nullptr || count == 0 || live_ == nullptr) return 0;
   if (recording_) return 0;
+  bool silent = true;
+  for (size_t i = 0; i < count; ++i) {
+    if (samples[i] != 0) {
+      silent = false;
+      break;
+    }
+  }
+  if (silent) return count;
   if (!live_armed_ && !arm_live()) return 0;
   const uint32_t now = millis();
   if (live_n_ == 0) live_wait_since_ = now;
@@ -543,12 +554,14 @@ void Audio::pump_playback() {
 
 void Audio::pump_live() {
     if (live_n_ == 0) {
-      // Empty software ring does not mean the ISR has played its tail. Keep the
-      // bitstream running only for the hardware depth after the last write, then
-      // drop the PWM carrier so an idle STEMMA is silent on battery.
-      if (live_playing_ && static_cast<int32_t>(millis() - live_drain_until_) >= 0) {
-        if (live_expecting_) ++live_perf_starvations_;
-        else report_live("complete");
+      // Empty ring: the ISR already fades to analog mute (0% duty), which is
+      // silent. Do not re-arm a 50% mid-rail carrier, and do not amp_stop
+      // while Friend is still talking — restarting LEDC is the crack/glitch.
+      // Idle, thinking, and recording drop the peripheral so D9 sits LOW.
+      if (live_playing_ && live_expecting_) return;
+      if (live_playing_ && (amp_pending_samples() == 0 ||
+                            static_cast<int32_t>(millis() - live_drain_until_) >= 0)) {
+        report_live("complete");
         amp_stop();
         live_playing_ = false;
         playing_ = false;
@@ -578,9 +591,14 @@ void Audio::pump_live() {
       track_level(chunk_, consumed);
       const uint32_t drain_ms =
           (amp_pending_samples() * 1000UL + kSampleRate - 1) / kSampleRate + 2;
-      // Keep the bitstream running across Gemini chunk gaps so the tail does
-      // not restart the speaker (that restart is the late-reply “glitch”).
+#ifdef ARDUINO
+      // Hardware pending hits 0 when the ISR finishes the tail. A few extra
+      // milliseconds lets the fade reach analog mute before amp_stop.
+      live_drain_until_ = millis() + drain_ms + 5;
+#else
+      // Host mocks never report an empty DMA ring, so tests use wall time.
       live_drain_until_ = millis() + drain_ms + 300;
+#endif
     }
     // A full ring can still have accepted half a chunk. Keep every unwritten
     // sample in the live ring, in its original (unscaled) form, for the next pump.
@@ -590,8 +608,11 @@ void Audio::pump_live() {
 
 void Audio::update() {
   if (!ready_) return;
-  if (recording_) pump_recording();
-  if (playing_ || live_armed_ || live_n_ > 0) pump_playback();
+  if (recording_) {
+    pump_recording();
+  } else if (playing_ || live_armed_ || live_n_ > 0) {
+    pump_playback();
+  }
   const uint32_t now = millis();
   if (now - last_vu_decay_ >= kVuDecayMs) {
     last_vu_decay_ = now;

@@ -88,6 +88,12 @@ int main(int argc,char** argv) {
   assert(player.available());
   assert(player.clip_.bytes==nullptr);
   assert(wait_render(player,pixels));
+  // A freeze that names a different poster must not drop the framebuffer.
+  ShowRequest other=freeze;
+  strcpy(other.still,"/shows/device/fedcba9876543210fedcba9876543210.jpg");
+  player.submit(other);
+  assert(player.available());
+  assert(player.clip_.bytes==nullptr);
   // A failed frame is marked bad and skipped: render repeats the previous
   // frame instead of decoding inline, and the clip is retained. Republishing
   // bumps the generation, so the decode task re-decodes and the injected

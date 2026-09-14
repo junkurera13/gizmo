@@ -154,11 +154,9 @@ class DeviceDemoTest(unittest.IsolatedAsyncioTestCase):
                     await ack_holds(socket, acked)
                     await asyncio.sleep(0.005)
                 socket.script.append({"type": "ptt", "active": True})
-                await asyncio.sleep(0.02)
-                self.assertTrue(
-                    any(e.get("type") == "interrupted" for e in socket.sent),
-                    "pressing PTT mid-film must mute and freeze immediately",
-                )
+                while not any(e.get("type") == "interrupted" for e in socket.sent):
+                    self.assertLess(asyncio.get_running_loop().time(), deadline)
+                    await asyncio.sleep(0.005)
                 self.assertIsNone(demo.playing_step)
                 socket.script.append({"type": "ptt", "active": False})
                 while not any(
@@ -214,6 +212,17 @@ class DeviceDemoTest(unittest.IsolatedAsyncioTestCase):
                 # The late ask freezes, then paints, then rolls film two.
                 socket.script.append({"type": "ptt", "active": True})
                 await asyncio.sleep(0.02)
+                self.assertEqual(
+                    len(
+                        [
+                            e
+                            for e in socket.sent
+                            if e.get("type") == "glass" and e.get("viewing") is False
+                        ]
+                    ),
+                    1,
+                    "PTT down must keep the film still, not flash home",
+                )
                 socket.script.append({"type": "ptt", "active": False})
                 while not any(
                     e.get("go") and e.get("subject") == "S1" for e in socket.sent
@@ -238,6 +247,18 @@ class DeviceDemoTest(unittest.IsolatedAsyncioTestCase):
                     pass
 
         self.assertEqual(demo.step_index, 0)
+
+    async def test_silent_pcm_is_not_sent_to_the_speaker(self):
+        socket = FakeSocket()
+        with tempfile.TemporaryDirectory() as tmp:
+            demo = DeviceDemo(socket, Path(tmp), "demo-device", "antarctica")
+            await demo._send_speech(b"")
+            await demo._send_speech(b"\x00\x00" * 256)
+            await demo._send_speech(b"\x01\x00")
+        self.assertEqual(
+            [e["type"] for e in socket.sent],
+            ["audio"],
+        )
 
     def test_step_timings_chains_beats(self):
         timings = step_timings(DEMO_MOMENTS["antarctica"][0])

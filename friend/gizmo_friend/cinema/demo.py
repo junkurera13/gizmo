@@ -280,8 +280,9 @@ class DeviceDemo:
     async def _play_step(self, index: int, think_seconds: float = 0.0) -> None:
         step = self.steps[index]
         if think_seconds:
-            self.state = "thinking"
-            await self.send({"type": "state"})
+            if self.state != "thinking":
+                self.state = "thinking"
+                await self.send({"type": "state"})
         think_until = asyncio.get_running_loop().time() + think_seconds
         segments = await self._segments_for(index)
         film_seconds = sum(len(segment.pcm) for segment in segments) / PCM_BYTES_PER_SECOND
@@ -339,7 +340,7 @@ class DeviceDemo:
                     ),
                 )
                 updates = caption_updates(captions, position, segment_end)
-                self.last_still = getattr(segment, "end_still_url", None) or segment.show.still_url
+                self.last_still = segment.show.still_url
                 await self.send({**event, "go": True, "text": caption})
                 self.state = "talking"
                 await self.send({"type": "state"})
@@ -363,13 +364,8 @@ class DeviceDemo:
                     len(segment.pcm), prefill_packets * AUDIO_PACKET_BYTES
                 )
                 for offset in range(0, prefill_end, AUDIO_PACKET_BYTES):
-                    await self.send(
-                        {
-                            "type": "audio",
-                            "pcm": base64.b64encode(
-                                segment.pcm[offset : offset + AUDIO_PACKET_BYTES]
-                            ).decode(),
-                        }
+                    await self._send_speech(
+                        segment.pcm[offset : offset + AUDIO_PACKET_BYTES]
                     )
                 pending = asyncio.create_task(preload(number + 1))
                 for offset in range(prefill_end, len(segment.pcm), AUDIO_PACKET_BYTES):
@@ -380,13 +376,8 @@ class DeviceDemo:
                     )
                     if wait > 0:
                         await asyncio.sleep(wait)
-                    await self.send(
-                        {
-                            "type": "audio",
-                            "pcm": base64.b64encode(
-                                segment.pcm[offset : offset + AUDIO_PACKET_BYTES]
-                            ).decode(),
-                        }
+                    await self._send_speech(
+                        segment.pcm[offset : offset + AUDIO_PACKET_BYTES]
                     )
                 # MJPEG cues wrap to frame 0. Cut to the next held cue one
                 # frame early so the playhead never rewinds mid-sentence.
@@ -403,6 +394,7 @@ class DeviceDemo:
                 item = await pending
                 pending = None
                 number += 1
+            await self.send({"type": "interrupted"})
         finally:
             if caption_task:
                 caption_task.cancel()
@@ -411,6 +403,17 @@ class DeviceDemo:
                 pending.cancel()
                 await asyncio.gather(pending, return_exceptions=True)
             self.acks.clear()
+
+    async def _send_speech(self, pcm: bytes) -> None:
+        """Queue spoken PCM. All-zero pads must not start the PWM carrier."""
+        if not pcm or not any(pcm):
+            return
+        await self.send(
+            {
+                "type": "audio",
+                "pcm": base64.b64encode(pcm).decode(),
+            }
+        )
 
     async def _run_step(self, index: int, think_seconds: float | None = None) -> None:
         step = self.steps[index]
@@ -451,7 +454,7 @@ class DeviceDemo:
         """Stop motion on the last JPEG without muting leftover PCM."""
         still = None
         if segment is not None:
-            still = getattr(segment, "end_still_url", None) or segment.show.still_url
+            still = segment.show.still_url
         still = still or self.last_still
         if not still:
             return
@@ -485,9 +488,13 @@ class DeviceDemo:
 
     async def _followup(self) -> None:
         """PTT up: thinking screen for a beat, then the canned follow-up film."""
-        await self.send({"type": "glass", "viewing": False, "text": ""})
         if not self.powered:
             return
+        # Thinking first. Clearing the glass while still "listening" paints
+        # one idle home frame — the flash on the follow-up ask.
+        self.state = "thinking"
+        await self.send({"type": "state"})
+        await self.send({"type": "glass", "viewing": False, "text": ""})
         await self._run_step(len(self.steps) - 1, think_seconds=FOLLOWUP_THINK_SECONDS)
 
     async def _warm(self) -> None:
