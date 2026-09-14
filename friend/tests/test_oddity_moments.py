@@ -199,7 +199,7 @@ class MomentCatalogTests(unittest.TestCase):
         power_bar = html[html.index('<div class="power-bar">'):html.index('<div id="device"')]
         demo_rail = html[html.index('<div id="moments"'):html.index('</section>', html.index('<div id="moments"'))]
         self.assertIn(
-            'id="power-cinema" href="https://oddware.xyz/gizmo/cinema"',
+            'id="power-cinema" href="https://oddware.xyz/gizmo/cinema" target="_top"',
             power_bar,
         )
         self.assertNotIn("power-cinema", demo_rail)
