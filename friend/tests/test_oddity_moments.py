@@ -204,6 +204,12 @@ class MomentCatalogTests(unittest.TestCase):
         )
         self.assertNotIn("power-cinema", demo_rail)
 
+    def test_embedded_device_omits_navigation_controls(self):
+        html = (Path(__file__).resolve().parents[1] / "gizmo_friend" / "static" / "oddity.html").read_text()
+        self.assertIn('id="talk"', html)
+        for control in ("previous", "next", "select"):
+            self.assertNotIn(f'id="{control}"', html)
+
     def test_birthday_seed_is_eleven_days_out(self):
         with patch.dict("os.environ", {"GIZMO_TZ": "UTC"}):
             text = lookup("birthday").seed_text()

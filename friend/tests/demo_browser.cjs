@@ -18,8 +18,6 @@ const catalog = JSON.parse(execFileSync('.venv/Scripts/python.exe', ['-c',
     source += `
       await mountDevice($('device'));
       awake = true; deviceReady = true;
-      document.documentElement.classList.remove('oddity-locked');
-      $('preview-gate').hidden = true;
       stage.dataset.glass = 'home'; $('glass-home').hidden = false;
       glass = {world:'home', syncReply(text){
         $('glass-camera').classList.toggle('is-replying', Boolean(String(text || '').trim()));

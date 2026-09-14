@@ -25,6 +25,16 @@ function interactionUI() {
     reply: () => $('talk').focus(),
   });
 }
+window.addEventListener('load', () => {
+  const parentOrigin = location.ancestorOrigins?.[0];
+  if (!parentOrigin) return;
+  try {
+    const cinema = new URL('/gizmo/cinema', parentOrigin);
+    if (cinema.protocol === 'http:' || cinema.protocol === 'https:') {
+      $('power-cinema').href = cinema.href;
+    }
+  } catch { /* Keep the canonical production destination as the fallback. */ }
+});
 function invite(beat) {
   setCaption();
   interactionUI().show(beat.interaction);
@@ -32,7 +42,6 @@ function invite(beat) {
 }
 document.documentElement?.classList.add('embedded');
 let playMoments = true;
-const CODE_KEY = 'oddity-preview-v1';
 const SESSION_KEY = 'oddity-session-v1';
 const MOMENT_KEY = 'oddity-moment-v1';
 
@@ -101,20 +110,6 @@ function setCaption(text = '') {
 function status(text, state) { const el = $('status'); if (el) el.textContent = text; if (state && glass?.world === 'home') stage.dataset.state = state; }
 function notice(text = '') { const el = $('notice'); if (!el) return; el.textContent = text; el.hidden = !text; }
 function send(value) { if (socket?.readyState === WebSocket.OPEN) socket.send(JSON.stringify(value)); }
-function showPreviewGate(message = '') {
-  document.documentElement.classList.add('oddity-locked');
-  document.documentElement.classList.remove('oddity-ready');
-  $('preview-gate').hidden = false;
-  $('preview-error').textContent = message;
-  playBlink();
-  $('preview-code').focus();
-}
-const BLINK_SLOTS = [10, 10, 10, 11, 12, 13, 12, 11, 10, 10, 12, 13, 12];
-const blinkFrames = Object.fromEntries([10, 11, 12, 13].map((id) => {
-  const image = new Image();
-  image.src = `/static/oddity-blink-${id}.jpg?v=blink2`;
-  return [id, image];
-}));
 // Face flipbooks, mirroring the device: the lean-in listen loop while he's
 // awake on the home face, and a blink at rest.
 const IDLE_FRAMES = ['/static/oddity-character.png?v=char3', '/static/oddity-character-half.png?v=char3', '/static/oddity-character-closed.png?v=char3'];
@@ -172,32 +167,9 @@ function faceTick() {
     faceNextAt = now + 110;
   }
 }
-let blinkTimer = 0;
-let blinkSlot = 0;
-function playBlink() {
-  const eye = $('preview-blink');
-  if (!eye || blinkTimer) return;
-  if (window.matchMedia('(prefers-reduced-motion: reduce)').matches) {
-    eye.src = blinkFrames[10].src;
-    return;
-  }
-  blinkSlot = 0;
-  eye.src = blinkFrames[BLINK_SLOTS[0]].src;
-  blinkTimer = window.setInterval(() => {
-    if ($('preview-gate').hidden) {
-      window.clearInterval(blinkTimer);
-      blinkTimer = 0;
-      return;
-    }
-    blinkSlot = (blinkSlot + 1) % BLINK_SLOTS.length;
-    eye.src = blinkFrames[BLINK_SLOTS[blinkSlot]].src;
-  }, 150);
-}
 let deviceReady = false;
 async function revealDevice() {
-  document.documentElement.classList.remove('oddity-locked');
   document.documentElement.classList.add('oddity-ready');
-  $('preview-gate').hidden = true;
   if (deviceReady) return;
   deviceReady = true;
   await mountDevice($('device'));
@@ -267,7 +239,7 @@ async function selectMoment(index) {
   forget(SESSION_KEY);
   syncMoment(nextId);
   resetConversation();
-  await connect(undefined, {fresh: true});
+  await connect({fresh: true});
 }
 async function playDemoRecording(src, signal, text = '', timed = null, playbackRate = 1) {
   setCaption();
@@ -339,7 +311,6 @@ function stopDemo() {
     glass?.closeCamera?.();
     demoOwnsCamera = false;
   }
-  $('next').classList.remove('is-demo-pressed');
   demoRunning = false; setTalkPressed(false);
   setCaption();
   renderRail();
@@ -464,19 +435,13 @@ function waitForMediaTime(media, seconds, signal) {
   });
 }
 async function openDemoCamera(camera, signal) {
-  const down = $('next');
-  down.classList.add('is-demo-pressed');
-  try {
-    await delay(120, signal);
-    const feed = glass?.openDemoCamera?.(camera.video);
-    if (!feed) throw new Error('The demo camera could not open.');
-    demoOwnsCamera = true;
-    await delay(100, signal);
-    feed.currentTime = Number(camera.start_at) || 0;
-    return feed;
-  } finally {
-    down.classList.remove('is-demo-pressed');
-  }
+  await delay(120, signal);
+  const feed = glass?.openDemoCamera?.(camera.video);
+  if (!feed) throw new Error('The demo camera could not open.');
+  demoOwnsCamera = true;
+  await delay(100, signal);
+  feed.currentTime = Number(camera.start_at) || 0;
+  return feed;
 }
 async function playCameraDemo(item, signal) {
   const camera = item.demo.camera;
@@ -626,35 +591,27 @@ async function sayMoment() {
     demoRunning = false; setTalkPressed(false); $('talk').classList.remove('recording'); renderRail();
   }
 }
-async function connect(previewCode, options = {}) {
+async function connect(options = {}) {
   if (socket && socket.readyState < WebSocket.CLOSING) return;
   expectedClose = false;
-  const preview = previewCode ?? stored(CODE_KEY);
   const fresh = Boolean(options.fresh);
   try {
     if (playMoments) await ensureMoments();
     const headers = {'X-Oddity-Mode': playMoments ? 'moment' : 'sandbox'};
-    headers['X-Oddity-Preview'] = preview;
     if (playMoments && momentId) headers['X-Oddity-Moment'] = momentId;
     if (session && !fresh) headers['X-Oddity-Session'] = session;
     const response = await fetch('/oddity/session', {method: 'POST', headers});
-    if (response.status === 401) {
-      showPreviewGate(preview ? 'That code did not work.' : '');
-      return;
-    }
-    if (!response.ok) throw new Error('The private preview is unavailable right now.');
+    if (!response.ok) throw new Error('Oddity is unavailable right now.');
     const body = await response.json();
     session = body.session;
     remember(SESSION_KEY, session);
-    if (preview) remember(CODE_KEY, preview);
     if (Array.isArray(body.moments) && body.moments.length) {
       moments = body.moments;
       syncMoment(body.moment || momentId);
     }
     await revealDevice();
   } catch (error) {
-    if (!$('preview-gate').hidden) $('preview-error').textContent = error.message;
-    notice(error.message); status('Cannot reach the private preview.'); return;
+    notice(error.message); status('Cannot reach Oddity.'); return;
   }
   socket = new WebSocket(`${location.protocol === 'https:' ? 'wss:' : 'ws:'}//${location.host}/oddity/ws?session=${encodeURIComponent(session)}`);
   socket.onmessage = ({data}) => handle(JSON.parse(data));
@@ -1106,7 +1063,6 @@ async function startRecording() {
   if (held || !awake || (glass && !glass.canTalk())) return;
   if (socket?.readyState !== WebSocket.OPEN) {
     setTalkPressed(false);
-    if ($('preview-gate') && !$('preview-gate').hidden) return;
     notice('Connect first — the brain needs a session before it can hear you.');
     connect();
     return;
@@ -1172,30 +1128,11 @@ function stopRecording() {
   status('Listening back…');
 }
 $('power').onclick = () => (awake || glass.booting) ? sleep() : wake();
-$('preview-form').onsubmit = (event) => {
-  event.preventDefault();
-  const code = $('preview-code').value.trim();
-  if (!code) { $('preview-code').focus(); return; }
-  remember(CODE_KEY, code); $('preview-error').textContent = ''; connect(code);
-};
 $('talk').onpointerdown = (event) => { if (demoRunning) stopDemo(); pressTalk(event); };
 $('talk').onpointerup = releaseTalk;
 $('talk').onpointercancel = () => { setTalkPressed(false); cancelRecording(); };
 $('talk').onlostpointercapture = () => { if (held) releaseTalk(); };
 $('talk').oncontextmenu = (event) => event.preventDefault();
-function onSelect() {
-  glass.select({
-    invitation,
-    playing,
-    togglePause,
-    playBlocked: $('play-blocked'),
-    hasScene: stage.classList.contains('has-scene'),
-    goHome,
-  });
-}
-$('select').onclick = onSelect;
-$('previous').onclick = () => glass.navigate('up');
-$('next').onclick = () => glass.navigate('down');
 $('home').onclick = goHome;
 $('moment-prev').onclick = () => selectMoment(momentIndex - 1);
 $('moment-next').onclick = () => selectMoment(momentIndex + 1);
@@ -1210,12 +1147,8 @@ $('moments').addEventListener('pointerup', (event) => {
 $('moments').addEventListener('pointercancel', () => { momentSwipeX = null; });
 const typing = () => (document.activeElement?.id !== 'talk' && ['INPUT','TEXTAREA','BUTTON','SUMMARY'].includes(document.activeElement?.tagName)) || document.querySelector('dialog[open]');
 window.addEventListener('keydown', (event) => {
-  if (!$('preview-gate').hidden) return;
   if (event.repeat || typing()) return;
   if (event.code === 'Space') { event.preventDefault(); pressTalk(); }
-  if (event.code === 'Enter') { event.preventDefault(); $('select').click(); }
-  if (event.code === 'ArrowUp') { event.preventDefault(); $('previous').click(); }
-  if (event.code === 'ArrowDown') { event.preventDefault(); $('next').click(); }
   if (event.code === 'Escape') goHome();
 });
 window.addEventListener('keyup', (event) => { if (event.code === 'Space') { event.preventDefault(); releaseTalk(); } });
@@ -1231,7 +1164,6 @@ glass = createGlass(stage, {
   volume(level) { if (!muted) { voice.volume = level; film.volume = level; } },
 });
 try {
-  if (document.documentElement.classList.contains('oddity-locked')) playBlink();
   await connect();
 }
 catch (error) { notice(error.message); status('The device could not load.'); }

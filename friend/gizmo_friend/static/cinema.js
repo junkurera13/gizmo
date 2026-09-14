@@ -15,7 +15,7 @@ mountDevice($('device')).catch(() => { $('device').dataset.loaded = 'true'; });
 const video = $('film'), freeze = $('freeze');
 let socket, peer, revision = 0, duration = 0, startTime = null, ending = false;
 let recorder, microphone, held = false, recordingTimer;
-let connectionPromise, muted = false, displayedTitle = '', nextTitle = '', recordingRevision = 0, requestId = 0;
+let connectionPromise, displayedTitle = '', nextTitle = '', recordingRevision = 0, requestId = 0;
 let warmPromise = null, warming = 0, warmed = 0, canPlay = false;
 const metrics = [];
 window.gizmoFilmMetrics = metrics; // Local acceptance evidence; no provider credentials.
@@ -118,7 +118,7 @@ async function ensurePeer(generation) {
 }
 async function startPlayback() {
   if (!canPlay || warmed !== revision || !duration || ending) return;
-  video.muted = muted;
+  video.muted = false;
   ending = false;
   try { await video.play(); } catch { $('resume').hidden = false; }
 }
@@ -152,8 +152,7 @@ if(video.requestVideoFrameCallback)video.requestVideoFrameCallback(presented);
 else video.addEventListener('timeupdate',()=>{if(!video.paused){document.body.dataset.hasFilm='true';freeze.hidden=true;phase('playing', 'Hold the pink button to ask something.');if(startTime===null)startTime=video.currentTime;if(video.currentTime-startTime>=duration&&!ending){ending=true;freezeFilm();send({type:'finished',revision});}}});
 $('question').addEventListener('submit',e=>{e.preventDefault();ask($('ask').value);});
 $('pause').onclick=interrupt;
-$('sound').onclick=()=>{muted=!muted;video.muted=muted;$('sound').classList.toggle('is-muted',muted);$('sound').setAttribute('aria-label',muted?'Unmute sound':'Mute sound');$('sound').title=muted?'Unmute sound':'Mute sound';};
-$('resume').onclick=async()=>{video.muted=muted;await video.play();$('resume').hidden=true;};
+$('resume').onclick=async()=>{video.muted=false;await video.play();$('resume').hidden=true;};
 $('access').addEventListener('close',async()=>{try{await connect($('code').value);$('code').value='';phase('idle','');}catch(error){$('access-error').textContent=error.message;}});
 async function startRecording() {
   if(held)return;const captureRevision=++recordingRevision;held=true;interrupt();const voiceRequest=requestId;$('talk').classList.add('recording');phase('listening','Listening…');

@@ -960,6 +960,13 @@ class FriendSocketTests(unittest.TestCase):
             tempfile.TemporaryDirectory(ignore_cleanup_errors=True) as root,
             TestClient(app_factory(Path(root))) as client,
         ):
-            self.assertEqual(client.get("/cinema").status_code, 200)
-            self.assertEqual(client.get("/static/cinema.js").status_code, 200)
+            page = client.get("/cinema")
+            script = client.get("/static/cinema.js")
+            self.assertEqual(page.status_code, 200)
+            self.assertNotIn('id="sound"', page.text)
+            for control in ("previous", "next", "select"):
+                self.assertNotIn(f'id="{control}"', page.text)
+            self.assertEqual(script.status_code, 200)
+            self.assertNotIn("$('sound')", script.text)
+            self.assertIn("video.muted = false", script.text)
             self.assertEqual(client.get("/static/cinema.css").status_code, 200)

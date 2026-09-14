@@ -9,7 +9,7 @@ async function app() {
   const sent = [];
   function element(id) {
     if (!elements.has(id)) elements.set(id, {
-      id, dataset:{}, style:{}, hidden: id === 'moments' || id === 'preview-gate',
+      id, dataset:{}, style:{}, hidden: id === 'moments',
       textContent:'', value:'',
       classList:{add(){},remove(){},contains(){return false;},toggle(){}},
       addEventListener(){}, removeEventListener(){}, setAttribute(){}, replaceChildren(){},

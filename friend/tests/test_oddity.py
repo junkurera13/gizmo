@@ -412,9 +412,14 @@ class OddityRouteTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as directory, patch.dict("os.environ", environment):
             root = Path(directory)
             with TestClient(app_factory(root)) as client:
-                self.assertEqual(client.get("/oddity").status_code, 200)
+                page = client.get("/oddity")
+                self.assertEqual(page.status_code, 200)
+                self.assertNotIn("preview-gate", page.text)
+                self.assertNotIn("preview-code", page.text)
                 self.assertEqual(client.get("/oddity/moments").status_code, 200)
-                self.assertEqual(client.get("/static/oddity.js").status_code, 200)
+                script = client.get("/static/oddity.js")
+                self.assertEqual(script.status_code, 200)
+                self.assertNotIn("X-Oddity-Preview", script.text)
                 self.assertEqual(client.get("/static/demo-birthday-kid.mp3").status_code, 200)
                 self.assertEqual(client.get("/static/demo-birthday-gizmo.wav").status_code, 200)
                 self.assertEqual(client.get("/static/demo-plant-question.mp3").status_code, 200)

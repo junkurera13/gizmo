@@ -5,9 +5,9 @@
   <meta name="theme-color" content="#151517">
   <title>OddityOS 1 — Gizmo</title>
   <link rel="icon" href="data:,">
-  <link rel="stylesheet" href="/static/oddity-boot.css?v=gate14">
+  <link rel="stylesheet" href="/static/oddity-boot.css?v=gate15">
   <link rel="stylesheet" href="/static/oddity.css">
-  <link rel="stylesheet" href="/static/oddity-device.css?v=gate82">
+  <link rel="stylesheet" href="/static/oddity-device.css?v=gate85">
   <link rel="stylesheet" href="/static/oddity-experience.css">
   <link rel="preload" as="image" href="/static/device-reference-ptt-pressed.png">
   <link rel="preload" as="image" href="/static/oddity-character-half.png?v=char3">
@@ -34,34 +34,9 @@
   <link rel="preload" as="image" href="/static/oddity-boot-12.jpg?v=boot2">
   <link rel="preload" as="image" href="/static/oddity-boot-13.jpg?v=boot2">
   <link rel="preload" as="image" href="/static/oddity-boot-14.jpg?v=boot2">
-  <script>
-    try {
-      if (!(sessionStorage.getItem('oddity-preview-v1') || localStorage.getItem('oddity-preview-v1'))) {
-        document.documentElement.classList.add('oddity-locked');
-      }
-    } catch (error) {
-      document.documentElement.classList.add('oddity-locked');
-    }
-  </script>
-  <script type="module" src="/static/oddity.js?v=gate88"></script>
+  <script type="module" src="/static/oddity.js?v=gate91"></script>
 </head>
 <body>
-  <section id="preview-gate" class="preview-gate" aria-labelledby="preview-title" hidden>
-    <form id="preview-form" class="preview-form">
-      <div class="preview-blink" aria-hidden="true">
-        <img id="preview-blink" src="/static/oddity-blink-10.jpg" alt="">
-      </div>
-      <h1 id="preview-title">Oddware Oddity 1.0</h1>
-      <input id="preview-code" type="password" name="preview-code" placeholder="Code" autocomplete="current-password" aria-label="Preview code">
-      <button type="submit">Enter</button>
-      <p id="preview-error" class="preview-error" role="alert"></p>
-    </form>
-  </section>
-  <script>
-    if (document.documentElement.classList.contains('oddity-locked')) {
-      document.getElementById('preview-gate').hidden = false;
-    }
-  </script>
   <main>
     <section class="simulator" aria-label="Gizmo simulator">
       <div class="power-bar">
@@ -182,9 +157,6 @@
           </div>
         </div>
         <button id="talk" type="button" class="device-control device-talk" aria-label="Hold to talk" title="Hold to talk · Space"></button>
-        <button id="previous" type="button" class="device-control device-up" aria-label="Navigate up" title="Up · Settings">⌃</button>
-        <button id="next" type="button" class="device-control device-down" aria-label="Navigate down" title="Down · Camera">⌄</button>
-        <button id="select" type="button" class="device-control device-select" aria-label="Select" title="Select · Enter">✓</button>
       </div>
       <div id="moments" class="moments" hidden>
         <button id="moment-prev" type="button" aria-label="Previous moment">‹</button>
