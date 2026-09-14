@@ -316,10 +316,11 @@ def app_factory(data_dir: Path) -> FastAPI:
             return
         device_id = _device_id(socket.headers.get("x-gizmo-device", ""), default_device)
         demo_moment = os.environ.get("GIZMO_DEMO_MOMENT", "").strip().lower()
+        demo_device = os.environ.get("GIZMO_DEMO_DEVICE", "").strip()
         if demo_moment:
             from gizmo_friend.cinema.demo import DEMO_MOMENTS, DeviceDemo
 
-            if demo_moment in DEMO_MOMENTS:
+            if demo_moment in DEMO_MOMENTS and (not demo_device or demo_device == device_id):
                 await DeviceDemo(socket, data_dir, device_id, demo_moment).run()
                 return
         # Cinema is a Friend capability on this same session. The old

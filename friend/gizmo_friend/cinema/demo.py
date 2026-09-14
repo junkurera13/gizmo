@@ -1,7 +1,8 @@
 """Camera-demo playback: the real body film protocol over canned local media.
 
 Enabled with GIZMO_DEMO_MOMENT=<id> (e.g. "antarctica"). /ws swaps the live
-GizmoSession for DeviceDemo, a scripted loop matching the emulator's moment:
+GizmoSession for DeviceDemo for matching devices. Set GIZMO_DEMO_DEVICE to a
+body id to leave other clients on live Friend; omit it to script every /ws.
 power -> boot -> home, first PTT release -> thinking -> the pre-rendered film,
 and while that film is still playing a second PTT ask -> the follow-up film
 rolls a few seconds later with no thinking animation. Nothing calls Gemini or
@@ -19,6 +20,7 @@ import wave
 from dataclasses import dataclass
 from pathlib import Path
 
+import imageio_ffmpeg
 from PIL import Image, ImageOps
 
 from gizmo_friend.brain.shows import ShowStore
@@ -99,8 +101,17 @@ DEMO_MOMENTS: dict[str, tuple[DemoStep, ...]] = {
 def _decode_frames(video: Path, workdir: Path) -> list[Image.Image]:
     subprocess.run(
         [
-            "ffmpeg", "-v", "error", "-y", "-i", str(video),
-            "-vf", f"fps={FPS}", "-q:v", "3", str(workdir / "f%04d.jpg"),
+            imageio_ffmpeg.get_ffmpeg_exe(),
+            "-v",
+            "error",
+            "-y",
+            "-i",
+            str(video),
+            "-vf",
+            f"fps={FPS}",
+            "-q:v",
+            "3",
+            str(workdir / "f%04d.jpg"),
         ],
         check=True,
     )

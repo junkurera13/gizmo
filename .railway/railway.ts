@@ -58,6 +58,8 @@ export default defineRailway(() => {
       GIZMO_DIRECTOR_ENABLED: "1",
       GIZMO_DIRECTOR_TOKEN: preserve(),
       GIZMO_DIRECTOR_DEVICE: preserve(),
+      GIZMO_DEMO_MOMENT: preserve(),
+      GIZMO_DEMO_DEVICE: preserve(),
       GIZMO_FILM_VOICE: preserve(),
       GIZMO_DATA_DIR: "/data",
       MEMOBASE_URL: memobase.env.MEMOBASE_INTERNAL_URL,
