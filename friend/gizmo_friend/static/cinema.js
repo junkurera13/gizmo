@@ -39,11 +39,10 @@ function interrupt() {
   ending = true; $('title').textContent = displayedTitle; phase('paused', 'I’m listening. Where should we go from here?');
   $('ask').placeholder = 'Ask a question, change direction, or say “go on”…';
 }
-async function connect(code = '') {
-  const headers = {'x-gizmo-access':code};
+async function connect() {
+  const headers = {};
   if (key) headers['x-gizmo-cinema'] = key;
   const response = await fetch('/cinema/session', {method:'POST', headers});
-  if (response.status === 401) { $('access').showModal(); throw new Error('Enter the preview access code.'); }
   if (!response.ok) { const body = await response.json(); throw new Error(body.detail || 'Could not connect.'); }
   key = (await response.json()).key; remember(SESSION_KEY, key);
   const connectedSocket = new WebSocket(`${location.protocol === 'https:' ? 'wss:' : 'ws:'}//${location.host}/cinema/ws?key=${encodeURIComponent(key)}`);
@@ -153,7 +152,6 @@ else video.addEventListener('timeupdate',()=>{if(!video.paused){document.body.da
 $('question').addEventListener('submit',e=>{e.preventDefault();ask($('ask').value);});
 $('pause').onclick=interrupt;
 $('resume').onclick=async()=>{video.muted=false;await video.play();$('resume').hidden=true;};
-$('access').addEventListener('close',async()=>{try{await connect($('code').value);$('code').value='';phase('idle','');}catch(error){$('access-error').textContent=error.message;}});
 async function startRecording() {
   if(held)return;const captureRevision=++recordingRevision;held=true;interrupt();const voiceRequest=requestId;$('talk').classList.add('recording');phase('listening','Listening…');
   try{

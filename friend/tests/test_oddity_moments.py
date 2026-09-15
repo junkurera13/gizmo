@@ -210,11 +210,13 @@ class MomentCatalogTests(unittest.TestCase):
         self.assertIn('id="cinema-controls"', html)
         self.assertIn('id="cinema-question"', html)
         self.assertIn('id="cinema-ask"', html)
-        self.assertIn('id="cinema-access"', html)
+        self.assertNotIn('id="cinema-access"', html)
+        self.assertNotIn('type="password"', html)
         self.assertIn("createCinemaMode", script)
         self.assertIn("rail.hidden = true", script)
         self.assertIn("fetch('/cinema/session'", controller)
-        self.assertIn("'x-gizmo-access': code", controller)
+        self.assertNotIn("x-gizmo-access", controller)
+        self.assertNotIn("showModal", controller)
 
     def test_embedded_device_omits_navigation_controls(self):
         html = (Path(__file__).resolve().parents[1] / "gizmo_friend" / "static" / "oddity.html").read_text()

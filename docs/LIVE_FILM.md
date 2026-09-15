@@ -20,7 +20,7 @@ The current desktop run uses the same app through a local Uvicorn launcher under
 - Film narration uses Charon with brisk, clear conversational delivery (`GIZMO_FILM_VOICE` overrides it). The regular conversational/story voice keeps its own settings. In one identical 22-word comparison, the previous Umbriel delivery took 13.28 seconds and the revised delivery took 8.44 seconds. Visual timings continue to use the resulting audio samples, not an assumed speaking rate.
 - `cinema/stream.py`: the brain owns Director's authenticated WebRTC peer and heartbeat. It relays both media tracks to the browser. Signaling follows the official WMA client contract; no provider credential enters browser code. Loopback viewing avoids unnecessary TURN discovery for the local relay; remote viewing keeps ICE/TURN.
 - `cinema/runtime.py`: owns preparation, playback generation numbers, cancellation, context, the last-frame continuation anchor, and a bounded session lease. Independent prep overlaps: Director WebRTC connect starts with planning; continuation-frame upload starts with TTS; the browser starts ICE on the plan event. WAV upload still follows finished PCM. Director `configure` waits for the hosted WAV URL, the warmed peer, and an attached viewer. Provider completion is not treated as something the listener heard. Only the viewer's media-clock completion or the device's completed PCM delivery marks narration complete.
-- `cinema/routes.py`: private session cookies, same-origin requests, one active browser per identity, bounded concurrent sessions and daily film reservations. Local preview sessions can run without an access code; cloud provisioning requires explicit enablement and a code.
+- `cinema/routes.py`: private session cookies, same-origin requests, one active browser per identity, bounded concurrent sessions and daily film reservations. There is no access code. Cloud provisioning still requires `GIZMO_DIRECTOR_ENABLED=1` plus provider keys.
 - `cinema/capability.py`: Friend starts and stops that same CinemaSession on the existing body `/ws` glass/audio/held-cue contract. Browser `/cinema` is not this path.
 - `oddity/film.py`: Oddity lab and public moments start and stop that same CinemaSession on the browser glass. No held-cue firmware; the Oddity client attaches over `/oddity/offer`.
 - `static/cinema.*`: the film is the primary surface. A typed question or hold-to-talk interrupts without camera access. Stale requests/results cannot reopen an interrupted film. Browser media time determines progress and the end, rather than a generation-finished notification.
@@ -32,7 +32,6 @@ An interruption currently closes the generating peer. The next turn opens a new 
 Browser provisioning off loopback requires:
 
 - `GIZMO_DIRECTOR_ENABLED=1`
-- `GIZMO_DIRECTOR_TOKEN`
 
 Cloud WebRTC/TURN reachability and throughput have **not** been verified on Railway.
 

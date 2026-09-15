@@ -1145,7 +1145,7 @@ async function enterCinemaMode() {
   renderRail();
   if (!awake) wake();
   await cinemaMode?.enter();
-  if (cinemaMode?.active && !$('cinema-access').open) $('cinema-ask').focus();
+  if (cinemaMode?.active) $('cinema-ask').focus();
 }
 
 function leaveCinemaMode() {
@@ -1209,10 +1209,6 @@ cinemaMode = createCinemaMode({
   question: $('cinema-question'),
   askInput: $('cinema-ask'),
   talk: $('cinema-talk'),
-  access: $('cinema-access'),
-  accessForm: $('cinema-access-form'),
-  accessCode: $('cinema-code'),
-  accessError: $('cinema-access-error'),
 }, {setPressed: setTalkPressed});
 try {
   await connect();

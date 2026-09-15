@@ -13,8 +13,7 @@ function remember(key, value) {
 export function createCinemaMode(elements, options = {}) {
   const {
     stage, video, poster, freeze, overlay, status, progress, resume,
-    controls, pause, question, askInput, talk, access, accessForm,
-    accessCode, accessError,
+    controls, pause, question, askInput, talk,
   } = elements;
   let key = stored(SESSION_KEY);
   let active = false;
@@ -81,17 +80,12 @@ export function createCinemaMode(elements, options = {}) {
     askInput.placeholder = 'Ask a question, change direction, or say “go on”…';
   }
 
-  async function connect(code = '') {
+  async function connect() {
     if (socket?.readyState === WebSocket.OPEN) return;
     const ownActivation = activation;
-    const headers = {'x-gizmo-access': code};
+    const headers = {};
     if (key) headers['x-gizmo-cinema'] = key;
     const response = await fetch('/cinema/session', {method: 'POST', headers});
-    if (response.status === 401) {
-      const error = new Error('Enter the preview access code.');
-      error.status = 401;
-      throw error;
-    }
     if (!response.ok) {
       const body = await response.json().catch(() => ({}));
       throw new Error(body.detail || 'Could not connect.');
@@ -122,21 +116,15 @@ export function createCinemaMode(elements, options = {}) {
     }
   }
 
-  async function ensureConnection(code = '') {
+  async function ensureConnection() {
     if (socket?.readyState === WebSocket.OPEN) return;
-    if (!connectionPromise) connectionPromise = connect(code);
+    if (!connectionPromise) connectionPromise = connect();
     const attempt = connectionPromise;
     try { await attempt; }
     catch (error) {
       if (connectionPromise === attempt) connectionPromise = null;
       throw error;
     }
-  }
-
-  function showAccess(error = '') {
-    accessError.textContent = error;
-    if (!access.open) access.showModal();
-    accessCode.focus();
   }
 
   async function ask(text) {
@@ -162,8 +150,7 @@ export function createCinemaMode(elements, options = {}) {
       askInput.placeholder = 'You can ask something while it plays…';
     } catch (error) {
       if (!active || error.name === 'AbortError') return;
-      if (error.status === 401) showAccess();
-      else phase('error', error.message);
+      phase('error', error.message);
     }
   }
 
@@ -358,8 +345,7 @@ export function createCinemaMode(elements, options = {}) {
       talk.classList.remove('recording');
       options.setPressed?.(false);
       if (!active || error.name === 'AbortError') return;
-      if (error.status === 401) showAccess();
-      else phase('error', 'Microphone unavailable. You can type your question.');
+      phase('error', 'Microphone unavailable. You can type your question.');
     }
   }
 
@@ -387,8 +373,7 @@ export function createCinemaMode(elements, options = {}) {
     try { await ensureConnection(); }
     catch (error) {
       if (!active || error.name === 'AbortError') return;
-      if (error.status === 401) showAccess();
-      else phase('error', error.message);
+      phase('error', error.message);
     }
   }
 
@@ -416,7 +401,6 @@ export function createCinemaMode(elements, options = {}) {
     stage.classList.remove('cinema-mode', 'has-scene');
     delete stage.dataset.cinemaPhase;
     delete stage.dataset.cinemaHasFilm;
-    access.close?.();
   }
 
   question.addEventListener('submit', event => {
@@ -428,21 +412,6 @@ export function createCinemaMode(elements, options = {}) {
     video.muted = false;
     await video.play();
     resume.hidden = true;
-  });
-  accessForm.addEventListener('submit', async event => {
-    event.preventDefault();
-    accessError.textContent = '';
-    try {
-      await ensureConnection(accessCode.value);
-      accessCode.value = '';
-      access.close();
-      phase('idle', 'Ask something. See where it takes us.');
-      askInput.focus();
-    } catch (error) {
-      if (!active || error.name === 'AbortError') return;
-      accessError.textContent = error.status === 401 ? 'That code did not work.' : error.message;
-      accessCode.select();
-    }
   });
   talk.addEventListener('pointerdown', event => {
     event.preventDefault();

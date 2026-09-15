@@ -5,7 +5,6 @@ from __future__ import annotations
 import asyncio
 import base64
 import hashlib
-import hmac
 import json
 import os
 import re
@@ -86,20 +85,11 @@ def router(root: Path, static: Path):
             raise HTTPException(403, "Open this page directly to begin.")
         cloud = bool(os.environ.get("RAILWAY_ENVIRONMENT_ID"))
         enabled = os.environ.get("GIZMO_DIRECTOR_ENABLED", "").lower() in {"1", "true"}
-        token = os.environ.get("GIZMO_DIRECTOR_TOKEN", "")
         local = (
             request.client and request.client.host in {"127.0.0.1", "::1"} and not cloud
         )
         if not local and not enabled:
             raise HTTPException(503, "The film preview isn't open yet.")
-        if (
-            not local
-            and token
-            and not hmac.compare_digest(
-                request.headers.get("x-gizmo-access", "").encode(), token.encode()
-            )
-        ):
-            raise HTTPException(401, "Access code required.")
         if not os.environ.get("FAL_KEY") or not os.environ.get("GEMINI_API_KEY"):
             raise HTTPException(503, "The film providers aren't connected.")
         key = identity(request) or secrets.token_hex(16)

@@ -56,7 +56,6 @@ export default defineRailway(() => {
       GIZMO_DEVICE_TOKEN: preserve(),
       GIZMO_USER_ID: "gizmo-owner",
       GIZMO_DIRECTOR_ENABLED: "1",
-      GIZMO_DIRECTOR_TOKEN: preserve(),
       GIZMO_DIRECTOR_DEVICE: preserve(),
       GIZMO_DEMO_MOMENT: preserve(),
       GIZMO_DEMO_DEVICE: preserve(),

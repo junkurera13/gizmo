@@ -614,28 +614,17 @@ class RouteTests(unittest.TestCase):
             self.assertRegex(response.json()["key"], r"^[0-9a-f]{32}$")
             self.assertIn("gizmo_cinema=", response.headers["set-cookie"])
 
-    def test_access_code_still_gates_when_token_set(self):
+    def test_leftover_director_token_does_not_gate_provisioning(self):
         with (
             tempfile.TemporaryDirectory(ignore_cleanup_errors=True) as root,
             self.open_preview(root, GIZMO_DIRECTOR_TOKEN="s3cret"),
             TestClient(app_factory(Path(root))) as client,
         ):
-            self.assertEqual(
-                client.post(
-                    "/cinema/session", headers={"Origin": "http://testserver"}
-                ).status_code,
-                401,
+            response = client.post(
+                "/cinema/session", headers={"Origin": "http://testserver"}
             )
-            self.assertEqual(
-                client.post(
-                    "/cinema/session",
-                    headers={
-                        "Origin": "http://testserver",
-                        "x-gizmo-access": "s3cret",
-                    },
-                ).status_code,
-                200,
-            )
+            self.assertEqual(response.status_code, 200)
+            self.assertRegex(response.json()["key"], r"^[0-9a-f]{32}$")
 
     def test_embedded_session_identity_uses_key_param(self):
         # The oddware.xyz iframe is cross-site, so the strict cookie never
@@ -984,9 +973,14 @@ class FriendSocketTests(unittest.TestCase):
             script = client.get("/static/cinema.js")
             self.assertEqual(page.status_code, 200)
             self.assertNotIn('id="sound"', page.text)
+            self.assertNotIn('id="access"', page.text)
+            self.assertNotIn("Preview access code", page.text)
+            self.assertNotIn('type="password"', page.text)
             for control in ("previous", "next", "select"):
                 self.assertNotIn(f'id="{control}"', page.text)
             self.assertEqual(script.status_code, 200)
             self.assertNotIn("$('sound')", script.text)
+            self.assertNotIn("x-gizmo-access", script.text)
+            self.assertNotIn("showModal", script.text)
             self.assertIn("video.muted = false", script.text)
             self.assertEqual(client.get("/static/cinema.css").status_code, 200)
