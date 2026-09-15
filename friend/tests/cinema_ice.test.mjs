@@ -100,6 +100,40 @@ test('cinema skins do not ship the rocket poster or play-with-sound overlay', as
   }
 });
 
+test('cinema glass uses a solid black caption band and on-device PTT', async () => {
+  const cinemaHtml = await fs.readFile(new URL('../gizmo_friend/static/cinema.html', import.meta.url), 'utf8');
+  const cinemaCss = await fs.readFile(new URL('../gizmo_friend/static/cinema.css', import.meta.url), 'utf8');
+  const cinemaJs = await fs.readFile(new URL('../gizmo_friend/static/cinema.js', import.meta.url), 'utf8');
+  const oddityHtml = await fs.readFile(new URL('../gizmo_friend/static/oddity.html', import.meta.url), 'utf8');
+  const oddityCss = await fs.readFile(new URL('../gizmo_friend/static/oddity-device.css', import.meta.url), 'utf8');
+  const oddityCinema = await fs.readFile(new URL('../gizmo_friend/static/oddity-cinema.mjs', import.meta.url), 'utf8');
+
+  assert.equal(cinemaCss.includes('height:var(--caption-band);background:#000'), true);
+  assert.equal(cinemaCss.includes('background:#05111f'), false);
+  assert.equal(cinemaCss.includes('#progress'), false);
+  assert.equal(cinemaCss.includes('#f5a3b9'), false);
+  assert.equal(cinemaHtml.includes('id="progress"'), false);
+  assert.equal(cinemaHtml.includes('<svg'), false);
+  assert.equal(cinemaHtml.includes('class="device-talk"'), true);
+  assert.equal(cinemaHtml.includes('device-reference-ptt-pressed.png'), true);
+  assert.equal(cinemaHtml.includes('Hold the pink button on the device to talk'), true);
+  assert.equal(cinemaJs.includes("dataset.ptt"), true);
+  assert.equal(cinemaJs.includes('mouseleave'), true);
+  assert.equal(cinemaJs.includes('touchstart'), true);
+  assert.equal(cinemaJs.includes('mousedown'), true);
+  assert.equal(cinemaJs.includes("$('ptt')"), false);
+  assert.equal(cinemaJs.includes('catch(error){held=false;setPressed(false)'), false);
+
+  assert.equal(oddityCss.includes('height:20%;z-index:2;background:#000'), true);
+  assert.equal(oddityCss.includes('background:#05111f'), false);
+  assert.equal(oddityCss.includes('#cinema-progress'), false);
+  assert.equal(oddityHtml.includes('id="cinema-talk"'), false);
+  assert.equal(oddityHtml.includes('id="cinema-progress"'), false);
+  assert.equal(oddityHtml.includes('class="device-control device-talk"'), true);
+  assert.equal(oddityCinema.includes('progress.firstElementChild'), false);
+  assert.equal(oddityCinema.includes('mouseleave'), true);
+});
+
 test('browser cinema paths wait for a non-empty ICE list and load the TURNS gatherer', async () => {
   const cinema = await fs.readFile(new URL('../gizmo_friend/static/cinema.js', import.meta.url), 'utf8');
   const oddityCinema = await fs.readFile(new URL('../gizmo_friend/static/oddity-cinema.mjs', import.meta.url), 'utf8');

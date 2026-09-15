@@ -3,7 +3,7 @@ import {mountDevice} from './oddity-device.mjs';
 import {createOrbit} from './oddity-orbit.mjs';
 import {createInteraction} from './oddity-interaction.mjs';
 import {createGlass} from './oddity-glass.mjs?v=gate36';
-import {createCinemaMode} from './oddity-cinema.mjs?v=cinema4';
+import {createCinemaMode} from './oddity-cinema.mjs?v=cinema5';
 import {gatherIce, playUnmuted, unmuteOnGesture, viewerIceConfig} from './cinema-ice.mjs?v=turns1';
 const $ = (id) => document.getElementById(id);
 const stage = $('stage'), voice = $('voice'), film = $('film'), demoAudio = $('demo-audio'), cameraFeed = $('camera-feed');
@@ -1035,7 +1035,7 @@ function setTalkPressed(pressed) {
   $('device').dataset.ptt = pressed ? 'true' : 'false';
 }
 function pressTalk(event) {
-  if (event && event.button !== 0) return;
+  if (event && event.button != null && event.button !== 0) return;
   if (event) {
     event.preventDefault();
     try { $('talk').setPointerCapture(event.pointerId); } catch { /* Capture is best-effort. */ }
@@ -1161,7 +1161,14 @@ function leaveCinemaMode() {
 $('power').onclick = () => (awake || glass.booting) ? sleep() : wake();
 $('power-cinema').onclick = () => cinemaMode?.active ? leaveCinemaMode() : enterCinemaMode();
 $('talk').onpointerdown = (event) => { if (demoRunning) stopDemo(); pressTalk(event); };
+$('talk').onmousedown = (event) => { if (demoRunning) stopDemo(); pressTalk(event); };
+$('talk').ontouchstart = (event) => { if (demoRunning) stopDemo(); pressTalk(event); };
 $('talk').onpointerup = releaseTalk;
+$('talk').onmouseup = releaseTalk;
+$('talk').onmouseleave = releaseTalk;
+$('talk').onpointerleave = releaseTalk;
+$('talk').ontouchend = releaseTalk;
+$('talk').ontouchcancel = releaseTalk;
 $('talk').onpointercancel = releaseTalk;
 $('talk').onlostpointercapture = releaseTalk;
 $('talk').oncontextmenu = (event) => event.preventDefault();
@@ -1201,12 +1208,11 @@ cinemaMode = createCinemaMode({
   freeze: $('cinema-freeze'),
   overlay: $('cinema-overlay'),
   status: $('cinema-status'),
-  progress: $('cinema-progress'),
   controls: $('cinema-controls'),
   pause: $('cinema-pause'),
   question: $('cinema-question'),
   askInput: $('cinema-ask'),
-  talk: $('cinema-talk'),
+  talk: $('talk'),
   caption: $('caption'),
 }, {setPressed: setTalkPressed});
 try {

@@ -18,7 +18,7 @@ function quietPhase(name) {
 
 export function createCinemaMode(elements, options = {}) {
   const {
-    stage, video, freeze, overlay, status, progress,
+    stage, video, freeze, overlay, status,
     controls, pause, question, askInput, talk, caption,
   } = elements;
   const ice = createIceStore();
@@ -174,8 +174,6 @@ export function createCinemaMode(elements, options = {}) {
     nextTitle = '';
     timings = [];
     setCaption();
-    progress.firstElementChild.style.width = '0%';
-    progress.setAttribute('aria-valuenow', '0');
     try {
       await ensureConnection();
       if (askId !== requestId || !active) return;
@@ -304,9 +302,6 @@ export function createCinemaMode(elements, options = {}) {
       phase('playing');
       const elapsed = Math.max(0, metadata.mediaTime - startTime);
       setCaption(captionAt(elapsed));
-      const percent = Math.min(100, elapsed / duration * 100);
-      progress.firstElementChild.style.width = `${percent}%`;
-      progress.setAttribute('aria-valuenow', Math.round(percent));
       if (duration && elapsed >= duration) {
         ending = true;
         freezeFilm();
@@ -340,7 +335,7 @@ export function createCinemaMode(elements, options = {}) {
     interrupt();
     unmuteOnGesture(video);
     const voiceRequest = requestId;
-    talk.classList.add('recording');
+    talk?.classList.add('recording');
     options.setPressed?.(true);
     phase('listening', 'Listening…');
     try {
@@ -376,8 +371,7 @@ export function createCinemaMode(elements, options = {}) {
       recordingTimer = setTimeout(stopRecording, 20000);
     } catch (error) {
       held = false;
-      talk.classList.remove('recording');
-      options.setPressed?.(false);
+      talk?.classList.remove('recording');
       if (!active || error.name === 'AbortError') return;
       phase('error', 'Microphone unavailable. You can type your question.');
     }
@@ -387,7 +381,7 @@ export function createCinemaMode(elements, options = {}) {
     held = false;
     ++recordingRevision;
     clearTimeout(recordingTimer);
-    talk.classList.remove('recording');
+    talk?.classList.remove('recording');
     options.setPressed?.(false);
     if (recorder?.state === 'recording') recorder.stop();
   }
@@ -443,26 +437,37 @@ export function createCinemaMode(elements, options = {}) {
     ask(askInput.value);
   });
   pause.addEventListener('click', interrupt);
-  talk.addEventListener('pointerdown', event => {
-    event.preventDefault();
-    talk.setPointerCapture?.(event.pointerId);
-    startRecording();
-  });
-  for (const kind of ['pointerup', 'pointercancel', 'lostpointercapture']) {
-    talk.addEventListener(kind, stopRecording);
+  function isPrimaryPress(event) {
+    return event.button == null || event.button === 0;
   }
-  talk.addEventListener('keydown', event => {
-    if ([' ', 'Enter'].includes(event.key) && !event.repeat) {
-      event.preventDefault();
-      startRecording();
+  function pressTalk(event) {
+    if (!active || !isPrimaryPress(event)) return;
+    event.preventDefault();
+    try { talk?.setPointerCapture?.(event.pointerId); } catch { /* Capture is best-effort. */ }
+    startRecording();
+  }
+  if (talk) {
+    talk.addEventListener('pointerdown', pressTalk);
+    talk.addEventListener('mousedown', pressTalk);
+    talk.addEventListener('touchstart', pressTalk, {passive: false});
+    for (const kind of ['pointerup', 'pointercancel', 'lostpointercapture', 'mouseup', 'mouseleave', 'pointerleave', 'touchend', 'touchcancel']) {
+      talk.addEventListener(kind, () => { if (active) stopRecording(); });
     }
-  });
-  talk.addEventListener('keyup', event => {
-    if ([' ', 'Enter'].includes(event.key)) {
-      event.preventDefault();
-      stopRecording();
-    }
-  });
+    talk.addEventListener('keydown', event => {
+      if (!active) return;
+      if ([' ', 'Enter'].includes(event.key) && !event.repeat) {
+        event.preventDefault();
+        startRecording();
+      }
+    });
+    talk.addEventListener('keyup', event => {
+      if (!active) return;
+      if ([' ', 'Enter'].includes(event.key)) {
+        event.preventDefault();
+        stopRecording();
+      }
+    });
+  }
 
   return {
     get active() { return active; },
