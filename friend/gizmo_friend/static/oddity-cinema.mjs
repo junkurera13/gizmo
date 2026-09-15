@@ -372,7 +372,6 @@ export function createCinemaMode(elements, options = {}) {
     } catch (error) {
       held = false;
       talk?.classList.remove('recording');
-      options.setPressed?.(false);
       if (!active || error.name === 'AbortError') return;
       phase('error', 'Microphone unavailable. You can type your question.');
     }

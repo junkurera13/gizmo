@@ -206,7 +206,7 @@ async function startRecording() {
       send({type:'audio',mime:blob.type,data:btoa(binary),request_id:voiceRequest});phase('thinking');
     };
     recorder.start();recordingTimer=setTimeout(stopRecording,20000);
-  }catch(error){held=false;setPressed(false);phase('error','Microphone unavailable. You can type your question.');}
+  }catch(error){held=false;phase('error','Microphone unavailable. You can type your question.');}
 }
 function stopRecording(){setPressed(false);if(!held)return;held=false;++recordingRevision;clearTimeout(recordingTimer);if(recorder?.state==='recording')recorder.stop();}
 function pressTalk(event) {

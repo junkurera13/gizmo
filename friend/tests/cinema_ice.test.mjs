@@ -122,6 +122,7 @@ test('cinema glass uses a solid black caption band and on-device PTT', async () 
   assert.equal(cinemaJs.includes('touchstart'), true);
   assert.equal(cinemaJs.includes('mousedown'), true);
   assert.equal(cinemaJs.includes("$('ptt')"), false);
+  assert.equal(cinemaJs.includes('catch(error){held=false;setPressed(false)'), false);
 
   assert.equal(oddityCss.includes('height:20%;z-index:2;background:#000'), true);
   assert.equal(oddityCss.includes('background:#05111f'), false);
