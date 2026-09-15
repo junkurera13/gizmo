@@ -68,6 +68,22 @@ class TracksAfterConfigure(FakeStream):
         self.first_frame.set()
 
 
+class IceAfterPlan(FakeStream):
+    """Director ICE arrives after Gemini has already emitted plan."""
+
+    async def connect(self):
+        self.connect_started.set()
+        if self._hold is not None:
+            await self._hold.wait()
+        if self.closed:
+            return
+        await self.event(
+            {"type": "ice_servers", "ice_servers": [{"urls": "stun:stun.example:80"}]}
+        )
+        self.video_ready.set()
+        self.audio_ready.set()
+
+
 class DevicePlayerTests(unittest.IsolatedAsyncioTestCase):
     def test_caption_helpers_follow_audio_position_not_lcd_lead(self):
         from gizmo_friend.cinema.device import (
@@ -482,6 +498,62 @@ class RuntimeTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(
             session.stream.sent[0]["audio_url"], "https://audio.fal.media/test.wav"
         )
+
+    async def test_plan_omits_empty_ice_servers_until_director_returns_them(self):
+        hold = asyncio.Event()
+        session = CinemaSession(
+            Path(self.root.name) / "late-ice",
+            "key",
+            self.emit,
+            maker=self.maker,
+            stream_factory=lambda key, event: IceAfterPlan(key, event, hold=hold),
+        )
+        self.addAsyncCleanup(session.close)
+        await session.ask("Rocket")
+        await self.until(
+            lambda: any(
+                call.args[0].get("type") == "plan" for call in self.emit.await_args_list
+            )
+        )
+        plan = next(
+            call.args[0]
+            for call in self.emit.await_args_list
+            if call.args[0].get("type") == "plan"
+        )
+        self.assertNotIn("ice_servers", plan)
+        self.assertFalse(
+            any(call.args[0].get("type") == "ice" for call in self.emit.await_args_list)
+        )
+        hold.set()
+        await self.until(
+            lambda: any(
+                call.args[0].get("type") == "ice" for call in self.emit.await_args_list
+            )
+        )
+
+    async def test_plan_includes_ice_servers_when_director_already_returned_them(self):
+        async def after_ice(*args, **kwargs):
+            await self.until(
+                lambda: any(
+                    call.args[0].get("type") == "ice"
+                    for call in self.emit.await_args_list
+                )
+            )
+            return self.plan
+
+        self.maker.plan.side_effect = after_ice
+        await self.session.ask("Rocket")
+        await self.until(
+            lambda: any(
+                call.args[0].get("type") == "plan" for call in self.emit.await_args_list
+            )
+        )
+        plan = next(
+            call.args[0]
+            for call in self.emit.await_args_list
+            if call.args[0].get("type") == "plan"
+        )
+        self.assertEqual(plan["ice_servers"], [{"urls": "stun:stun.example:80"}])
 
     async def test_continuation_image_overlaps_tts_and_survives_only_if_current(self):
         synthesizing = asyncio.Event()
@@ -1098,4 +1170,9 @@ class FriendSocketTests(unittest.TestCase):
             ice = client.get("/static/cinema-ice.mjs")
             self.assertEqual(ice.status_code, 200)
             self.assertIn("video.muted = false", ice.text)
+            self.assertIn(r"typ\s+relay", ice.text)
+            self.assertIn("sdpHasCandidate", ice.text)
+            self.assertNotIn("if (event.ice_servers) ice.set", script.text)
+            self.assertIn("event.ice_servers.length", script.text)
+            self.assertIn("cinema-ice.mjs?v=turns1", script.text)
             self.assertEqual(client.get("/static/cinema.css").status_code, 200)

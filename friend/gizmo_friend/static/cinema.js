@@ -1,5 +1,5 @@
 import {mountDevice} from '/static/oddity-device.mjs';
-import {createIceStore, gatherIce, playUnmuted, unmuteOnGesture} from '/static/cinema-ice.mjs?v=glass1';
+import {createIceStore, gatherIce, playUnmuted, unmuteOnGesture} from '/static/cinema-ice.mjs?v=turns1';
 const $ = id => document.getElementById(id);
 const SESSION_KEY = 'gizmo-cinema-v1';
 function stored(key) {
@@ -156,7 +156,7 @@ function handle(event) {
   if(event.type==='status'){revision=event.revision??revision;phase(event.phase,event.message);}
   if(event.type==='plan' && event.revision===revision) {
     nextTitle=event.title;
-    if (event.ice_servers) ice.set(event.ice_servers);
+    if (Array.isArray(event.ice_servers) && event.ice_servers.length) ice.set(event.ice_servers);
     ensurePeer(event.revision);
   }
   if(event.type==='ready' && event.revision===revision) {duration=event.duration;timings=Array.isArray(event.timings)?event.timings:[];canPlay=true;phase('preparing');ensurePeer(event.revision).then(startPlayback);}

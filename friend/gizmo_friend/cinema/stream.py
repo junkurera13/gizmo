@@ -28,44 +28,81 @@ MODEL = "minimax/h3-max/director"
 logger = logging.getLogger(__name__)
 
 
-def reliable_upstream_ice_servers(servers: list[RTCIceServer]) -> list[RTCIceServer]:
-    """Select Fal's TCP TURN relay instead of aiortc's first (UDP) TURN URL.
+def ice_server_urls(server: RTCIceServer) -> list[str]:
+    urls = server.urls if isinstance(server.urls, list) else [server.urls]
+    return [str(url) for url in urls if url]
 
-    aiortc 1.15 supports one TURN server. Fal returns UDP before TCP, so passing
-    the complete list silently selects UDP even though a reliable relay is
-    available. A lost H.264 packet decodes as green/macroblock damage that then
-    gets permanently encoded into the device MJPEG cue.
+
+def turn_url_priority(url: str) -> int | None:
+    """Rank Fal TURN URLs. Lower is better. None means STUN or UDP TURN.
+
+    `turns:` must be classified before `turn:` because the latter is a prefix
+    of the former. Browsers finish gathering on TLS/443; they hang on Fal's
+    `turn:...:80?transport=tcp`, which is why production never POSTed
+    `/cinema/offer` and the glass showed "Connection timed out."
     """
+    if url.startswith("turns:"):
+        return 0 if "transport=tcp" in url else 1
+    if url.startswith("turn:") and "transport=tcp" in url:
+        return 2
+    return None
+
+
+def turn_scheme(url: str) -> str:
+    if url.startswith("turns:"):
+        return "TURNS/TCP"
+    if "transport=tcp" in url:
+        return "TURN/TCP"
+    return "TURN"
+
+
+def copy_ice_server(server: RTCIceServer, url: str) -> RTCIceServer:
+    return RTCIceServer(
+        urls=url,
+        username=server.username,
+        credential=server.credential,
+        credentialType=server.credentialType,
+    )
+
+
+def reliable_upstream_ice_servers(servers: list[RTCIceServer]) -> list[RTCIceServer]:
+    """Select Fal's TLS/TCP TURN relay instead of aiortc's first (UDP) TURN URL.
+
+    aiortc 1.15 supports one TURN server. Fal returns UDP, then TCP/80, then
+    TURNS/443. Passing the complete list silently selects UDP; picking the
+    first `turn:` + `transport=tcp` selects port 80 because `turns:` also
+    starts with `turn:` and is listed later. Port 80 TCP is what aioice
+    ChannelBind 401s on and what browsers never finish gathering.
+    """
+    best: tuple[int, str, RTCIceServer] | None = None
     for server in servers:
-        urls = server.urls if isinstance(server.urls, list) else [server.urls]
-        for url in urls:
-            if url.startswith("turn:") and "transport=tcp" in url:
-                return [
-                    RTCIceServer(
-                        urls=url,
-                        username=server.username,
-                        credential=server.credential,
-                        credentialType=server.credentialType,
-                    )
-                ]
-    raise RuntimeError("Director did not provide a TCP TURN relay")
+        for url in ice_server_urls(server):
+            rank = turn_url_priority(url)
+            if rank is None:
+                continue
+            if best is None or rank < best[0]:
+                best = (rank, url, server)
+    if best is None:
+        raise RuntimeError("Director did not provide a TCP TURN relay")
+    return [copy_ice_server(best[2], best[1])]
 
 
 def viewer_ice_servers(servers: list[RTCIceServer]) -> list[RTCIceServer]:
-    """STUN plus Fal's TCP TURN for the browser hop off loopback.
+    """STUN plus Fal's TLS/TCP TURN for the browser hop off loopback.
 
-    aiortc still only keeps one TURN URL. Using the UDP entry first makes the
-    Railway viewer peer gather a relay the browser cannot reach, which shows up
-    as `connectionState === "failed"` after prep. TCP TURN is the same relay
-    the upstream hop already depends on.
+    aiortc still only keeps one TURN URL, so TURNS is listed first. The
+    browser payload includes TCP/80 as a fallback; UDP TURN is omitted
+    because Railway's viewer peer cannot use it.
     """
     result: list[RTCIceServer] = []
-    seen: set[tuple[str, ...]] = set()
+    seen_stun: set[tuple[str, ...]] = set()
+    turns: list[tuple[int, str, RTCIceServer]] = []
+    seen_turn: set[str] = set()
     for server in servers:
-        urls = server.urls if isinstance(server.urls, list) else [server.urls]
-        stun = tuple(url for url in urls if str(url).startswith("stun:"))
-        if stun and stun not in seen:
-            seen.add(stun)
+        urls = ice_server_urls(server)
+        stun = tuple(url for url in urls if url.startswith("stun:"))
+        if stun and stun not in seen_stun:
+            seen_stun.add(stun)
             result.append(
                 RTCIceServer(
                     urls=list(stun) if len(stun) > 1 else stun[0],
@@ -74,7 +111,16 @@ def viewer_ice_servers(servers: list[RTCIceServer]) -> list[RTCIceServer]:
                     credentialType=server.credentialType,
                 )
             )
-    result.extend(reliable_upstream_ice_servers(servers))
+        for url in urls:
+            rank = turn_url_priority(url)
+            if rank is None or url in seen_turn:
+                continue
+            seen_turn.add(url)
+            turns.append((rank, url, server))
+    if not turns:
+        raise RuntimeError("Director did not provide a TCP TURN relay")
+    turns.sort(key=lambda item: (item[0], item[1]))
+    result.extend(copy_ice_server(server, url) for _, url, server in turns)
     return result
 
 
@@ -151,10 +197,11 @@ class DirectorStream:
             for row in ice.get("ice_servers", [])
         ]
         self.ice_servers = servers
+        viewer_servers = viewer_ice_servers(servers)
         await self.event(
             {
                 "type": "ice_servers",
-                "ice_servers": ice_servers_payload(viewer_ice_servers(servers)),
+                "ice_servers": ice_servers_payload(viewer_servers),
             }
         )
         upstream_servers = reliable_upstream_ice_servers(servers)
@@ -172,7 +219,10 @@ class DirectorStream:
         pc.addTransceiver("audio", direction="recvonly")
         self.channel = channel = pc.createDataChannel("control")
         force_relay_only(pc)
-        logger.info("Director upstream ICE: relay-only TURN/TCP")
+        logger.info(
+            "Director upstream ICE: relay-only %s",
+            turn_scheme(ice_server_urls(upstream_servers[0])[0]),
+        )
 
         @channel.on("open")
         def opened():

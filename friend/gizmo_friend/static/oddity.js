@@ -3,8 +3,8 @@ import {mountDevice} from './oddity-device.mjs';
 import {createOrbit} from './oddity-orbit.mjs';
 import {createInteraction} from './oddity-interaction.mjs';
 import {createGlass} from './oddity-glass.mjs?v=gate36';
-import {createCinemaMode} from './oddity-cinema.mjs?v=cinema3';
-import {gatherIce, playUnmuted, unmuteOnGesture, viewerIceConfig} from './cinema-ice.mjs?v=glass1';
+import {createCinemaMode} from './oddity-cinema.mjs?v=cinema4';
+import {gatherIce, playUnmuted, unmuteOnGesture, viewerIceConfig} from './cinema-ice.mjs?v=turns1';
 const $ = (id) => document.getElementById(id);
 const stage = $('stage'), voice = $('voice'), film = $('film'), demoAudio = $('demo-audio'), cameraFeed = $('camera-feed');
 let socket, awake = false, turn = '', queue = [], ready = false, playing = false;
@@ -656,7 +656,7 @@ function handle(event) {
       // Connect the viewer while the score is still being written; a failure
       // here is harmless — the film beat reconnects when it plays.
       if (event.phase === 'pending' && awake) {
-        if (Array.isArray(event.ice_servers)) filmIce = event.ice_servers;
+        if (Array.isArray(event.ice_servers) && event.ice_servers.length) filmIce = event.ice_servers;
         connectFilm(event.revision, filmIce).catch(() => {});
       }
       break;
