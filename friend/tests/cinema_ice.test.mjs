@@ -144,6 +144,12 @@ test('cinema glass uses a solid black caption band and on-device PTT', async () 
   assert.equal(oddityCinema.includes('Ask something. See where it takes us.'), false);
   assert.equal(oddityCinema.includes('Where does that take your curiosity?'), false);
   assert.equal(oddityCinema.includes('placeholder'), false);
+  const cinemaCaption = oddityCss.split('.stage.cinema-mode .caption{')[1].split('}')[0];
+  assert.equal(cinemaCaption.includes('overflow:hidden'), true);
+  assert.equal(cinemaCaption.includes('overflow:auto'), false);
+  assert.equal(cinemaCss.includes('overflow:hidden'), true);
+  assert.equal(cinemaJs.includes('captionTimings'), true);
+  assert.equal(oddityCinema.includes('captionTimings'), true);
 });
 
 test('browser cinema paths wait for a non-empty ICE list and load the TURNS gatherer', async () => {

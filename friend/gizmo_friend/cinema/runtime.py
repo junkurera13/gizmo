@@ -12,6 +12,13 @@ from gizmo_friend.cinema.stream import DirectorStream
 logger = logging.getLogger(__name__)
 
 
+def glass_caption_timings(timings):
+    """Page spoken beats into one-line glass captions without changing the score."""
+    from gizmo_friend.cinema.device import device_caption_timings
+
+    return device_caption_timings(timings)
+
+
 class CinemaSession:
     def __init__(
         self,
@@ -166,7 +173,7 @@ class CinemaSession:
                     "title": plan.title,
                     "duration": prepared.duration,
                     "narration": plan.narration,
-                    "timings": prepared.timings,
+                    "timings": glass_caption_timings(prepared.timings),
                 }
             )
             async with asyncio.timeout(30):

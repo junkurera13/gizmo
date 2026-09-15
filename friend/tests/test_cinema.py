@@ -163,6 +163,23 @@ class DevicePlayerTests(unittest.IsolatedAsyncioTestCase):
         self.assertLess(captions[-1]["start"], 12.66)
         self.assertEqual(captions[-1]["end"], 12.66)
 
+    def test_magma_sentence_pages_instead_of_filling_the_band(self):
+        from gizmo_friend.cinema.device import (
+            MAX_DEVICE_CAPTION_CHARS,
+            wrap_device_caption,
+        )
+
+        narration = (
+            "Pressure builds until the gas-rich magma forces its way up "
+            "through the mountain's central vent."
+        )
+        pages = wrap_device_caption(narration)
+        self.assertGreater(len(pages), 1)
+        self.assertTrue(all(len(page) <= MAX_DEVICE_CAPTION_CHARS for page in pages))
+        self.assertEqual(" ".join(pages), narration)
+        self.assertTrue(pages[0].startswith("Pressure builds"))
+        self.assertTrue(pages[-1].endswith("vent."))
+
     async def test_caption_changes_at_narration_boundary_inside_cue(self):
         track = object()
         stream = SimpleNamespace(
@@ -394,6 +411,51 @@ class RuntimeTests(unittest.IsolatedAsyncioTestCase):
         self.assertNotIn("Thinking it through…", messages)
         self.assertNotIn("Play with sound", messages)
         self.assertIn("ice", kinds)
+
+    async def test_ready_pages_long_captions_for_the_glass(self):
+        from gizmo_friend.cinema.device import MAX_DEVICE_CAPTION_CHARS
+
+        narration = (
+            "Pressure builds until the gas-rich magma forces its way up "
+            "through the mountain's central vent."
+        )
+        self.maker.synthesize.return_value = PreparedFilm(
+            self.plan,
+            "",
+            10,
+            b"fake",
+            timings=[
+                {
+                    "start": 0.0,
+                    "end": 8.0,
+                    "narration": narration,
+                    "action": "Show magma rising.",
+                }
+            ],
+        )
+        await self.session.ask("Why do volcanoes erupt?")
+        await self.until(
+            lambda: any(
+                isinstance(call.args[0], dict) and call.args[0].get("type") == "ready"
+                for call in self.emit.await_args_list
+            )
+        )
+        ready = next(
+            call.args[0]
+            for call in self.emit.await_args_list
+            if isinstance(call.args[0], dict) and call.args[0].get("type") == "ready"
+        )
+        self.assertGreater(len(ready["timings"]), 1)
+        self.assertTrue(
+            all(
+                len(row["narration"]) <= MAX_DEVICE_CAPTION_CHARS
+                for row in ready["timings"]
+            )
+        )
+        self.assertEqual(
+            " ".join(row["narration"] for row in ready["timings"]), narration
+        )
+        self.assertEqual(self.session.prepared.timings[0]["narration"], narration)
 
     async def test_offer_unlocks_configure_before_tracks_exist(self):
         session = CinemaSession(
@@ -922,6 +984,27 @@ class DeviceEncodingTests(unittest.IsolatedAsyncioTestCase):
             oddity_css,
         )
         self.assertNotIn(".stage.cinema-mode .caption,", oddity_css)
+        oddity_base = (static / "oddity.css").read_text()
+        self.assertIn(
+            ".caption{max-height:36%;overflow:hidden;scrollbar-width:none}",
+            oddity_base,
+        )
+        self.assertNotIn("overflow:auto;scrollbar-width:thin", oddity_base)
+        cinema_caption = cinema_css.split("#status,#caption{")[1].split("}")[0]
+        self.assertIn("overflow:hidden", cinema_caption)
+        self.assertIn("scrollbar-width:none", cinema_caption)
+        self.assertNotIn("overflow:auto", cinema_caption)
+        oddity_cinema_caption = oddity_css.split(".stage.cinema-mode .caption{")[1].split("}")[0]
+        self.assertIn("overflow:hidden", oddity_cinema_caption)
+        self.assertIn("scrollbar-width:none", oddity_cinema_caption)
+        self.assertNotIn("overflow:auto", oddity_cinema_caption)
+        self.assertNotIn("height:auto", oddity_cinema_caption)
+        cinema_status = oddity_css.split("#cinema-status{")[1].split("}")[0]
+        self.assertIn("overflow:hidden", cinema_status)
+        cinema_js = (static / "cinema.js").read_text()
+        oddity_cinema = (static / "oddity-cinema.mjs").read_text()
+        self.assertIn("captionTimings", cinema_js)
+        self.assertIn("captionTimings", oddity_cinema)
 
     def test_device_jpeg_is_baseline_420(self):
         import io

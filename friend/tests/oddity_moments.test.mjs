@@ -47,7 +47,7 @@ async function app() {
     },
     setTimeout, clearTimeout, setInterval, clearInterval, AbortController, DOMException,
     WebSocket: FakeSocket, MediaRecorder: class {}, Image: class {},
-    captionChunks:()=>[], captionAt:()=>'', console, URLSearchParams, JSON,
+    captionChunks:()=>[], captionAt:()=>'', captionTimings:(entries)=>Array.isArray(entries)?entries:[], console, URLSearchParams, JSON,
   });
   context.globalThis = context;
   let source = await fs.readFile(new URL('../gizmo_friend/static/oddity.js', import.meta.url), 'utf8');

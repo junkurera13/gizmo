@@ -230,6 +230,11 @@ class MomentCatalogTests(unittest.TestCase):
         self.assertNotIn("Play with sound", html)
         self.assertNotIn("Play with sound", controller)
         self.assertIn("event.timings", controller)
+        self.assertIn("captionTimings", controller)
+        cinema_caption = css.split(".stage.cinema-mode .caption{")[1].split("}")[0]
+        self.assertIn("overflow:hidden", cinema_caption)
+        self.assertIn("scrollbar-width:none", cinema_caption)
+        self.assertNotIn("overflow:auto", cinema_caption)
         self.assertIn("caption: $('caption')", script)
         self.assertNotIn("Ask something. See where it takes us.", controller)
         self.assertNotIn("Where does that take your curiosity?", controller)

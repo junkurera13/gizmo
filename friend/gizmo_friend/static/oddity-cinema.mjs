@@ -1,3 +1,4 @@
+import {captionTimings} from '/static/oddity-timing.mjs?v=gate45';
 import {createIceStore, gatherIce, playUnmuted, unmuteOnGesture} from '/static/cinema-ice.mjs?v=turns1';
 
 const SESSION_KEY = 'gizmo-cinema-v1';
@@ -265,7 +266,7 @@ export function createCinemaMode(elements, options = {}) {
     }
     if (event.type === 'ready' && event.revision === revision) {
       duration = event.duration;
-      timings = Array.isArray(event.timings) ? event.timings : [];
+      timings = captionTimings(Array.isArray(event.timings) ? event.timings : []);
       canPlay = true;
       phase('preparing');
       ensurePeer(event.revision).then(startPlayback);
