@@ -85,7 +85,7 @@ def router(root: Path, static: Path) -> APIRouter:
             "Cache-Control": "no-store",
             "Content-Security-Policy": (
                 "default-src 'self'; img-src 'self' data: blob:; media-src 'self' blob:; "
-                "connect-src 'self' ws: wss:; style-src 'self'; script-src 'self'; font-src 'self'; "
+                "connect-src 'self' ws: wss: stun: turn: turns:; style-src 'self'; script-src 'self'; font-src 'self'; "
                 "frame-ancestors 'self' https://oddware.xyz https://*.oddware.xyz "
                 "https://*.vercel.app http://localhost:* http://127.0.0.1:*"
             ),

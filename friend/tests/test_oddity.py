@@ -421,6 +421,7 @@ class OddityRouteTests(unittest.TestCase):
                 self.assertEqual(script.status_code, 200)
                 self.assertNotIn("X-Oddity-Preview", script.text)
                 self.assertEqual(client.get("/static/oddity-cinema.mjs").status_code, 200)
+                self.assertEqual(client.get("/static/cinema-ice.mjs").status_code, 200)
                 self.assertEqual(client.get("/static/demo-birthday-kid.mp3").status_code, 200)
                 self.assertEqual(client.get("/static/demo-birthday-gizmo.wav").status_code, 200)
                 self.assertEqual(client.get("/static/demo-plant-question.mp3").status_code, 200)

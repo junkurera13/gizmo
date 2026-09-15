@@ -131,6 +131,7 @@ ODDITY_PUBLIC_ASSETS = {
     "/static/oddity-boot-14.jpg",
     "/static/oddity-interaction.mjs",
     "/static/oddity-cinema.mjs",
+    "/static/cinema-ice.mjs",
     "/static/oddity-experience.css",
     "/static/oddity-boot.css",
     "/static/oddity.css",
@@ -185,7 +186,12 @@ def app_factory(data_dir: Path) -> FastAPI:
             or request.url.path.startswith("/oddity/media/")
             or request.url.path in ODDITY_PUBLIC_ASSETS
             or request.url.path == "/cinema" or request.url.path.startswith("/cinema/")
-            or request.url.path in {"/static/cinema.css", "/static/cinema.js", "/static/cinema-poster.jpg"}
+            or request.url.path in {
+                "/static/cinema.css",
+                "/static/cinema.js",
+                "/static/cinema-ice.mjs",
+                "/static/cinema-poster.jpg",
+            }
         )
         if request.url.path != "/health" and not public_oddity and not authorized(request):
             return JSONResponse({"detail": "unauthorized"}, status_code=401)

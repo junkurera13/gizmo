@@ -42,6 +42,7 @@ def router(root: Path, static: Path):
     asset_version = hashlib.sha256(
         (static / "cinema.css").read_bytes()
         + (static / "cinema.js").read_bytes()
+        + (static / "cinema-ice.mjs").read_bytes()
     ).hexdigest()[:12]
 
     def same_origin(connection):
@@ -74,7 +75,7 @@ def router(root: Path, static: Path):
             headers={
                 "Cache-Control": "no-store",
                 "X-Robots-Tag": "noindex",
-                "Content-Security-Policy": "default-src 'self'; connect-src 'self' ws: wss:; media-src 'self' blob:; img-src 'self' data:; style-src 'self'; script-src 'self'; font-src 'self'; frame-ancestors 'self' https://oddware.xyz https://*.oddware.xyz https://*.vercel.app http://localhost:* http://127.0.0.1:*",
+                "Content-Security-Policy": "default-src 'self'; connect-src 'self' ws: wss: stun: turn: turns:; media-src 'self' blob:; img-src 'self' data:; style-src 'self'; script-src 'self'; font-src 'self'; frame-ancestors 'self' https://oddware.xyz https://*.oddware.xyz https://*.vercel.app http://localhost:* http://127.0.0.1:*",
                 "Permissions-Policy": "microphone=(self), camera=()",
             },
         )
@@ -128,7 +129,7 @@ def router(root: Path, static: Path):
                 local=not os.environ.get("RAILWAY_ENVIRONMENT_ID")
                 and request.client.host in {"127.0.0.1", "::1"},
             )
-        except (ValueError, RuntimeError):
+        except (ValueError, RuntimeError, TimeoutError):
             raise HTTPException(409, "That film has already ended.") from None
 
     @api.websocket("/cinema/ws")
@@ -145,6 +146,11 @@ def router(root: Path, static: Path):
                 await socket.send_json(event)
 
         session = CinemaSession(root / "cinema" / key, os.environ["FAL_KEY"], emit)
+        session.local = (
+            not os.environ.get("RAILWAY_ENVIRONMENT_ID")
+            and socket.client
+            and socket.client.host in {"127.0.0.1", "::1"}
+        )
         active[key] = session
         transcription = None
 

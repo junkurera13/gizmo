@@ -3,7 +3,8 @@ import {mountDevice} from './oddity-device.mjs';
 import {createOrbit} from './oddity-orbit.mjs';
 import {createInteraction} from './oddity-interaction.mjs';
 import {createGlass} from './oddity-glass.mjs?v=gate36';
-import {createCinemaMode} from './oddity-cinema.mjs?v=cinema2';
+import {createCinemaMode} from './oddity-cinema.mjs?v=cinema3';
+import {gatherIce, playUnmuted, unmuteOnGesture, viewerIceConfig} from './cinema-ice.mjs?v=glass1';
 const $ = (id) => document.getElementById(id);
 const stage = $('stage'), voice = $('voice'), film = $('film'), demoAudio = $('demo-audio'), cameraFeed = $('camera-feed');
 let socket, awake = false, turn = '', queue = [], ready = false, playing = false;
@@ -13,7 +14,7 @@ let micMeter = null, micLevel = 0, micLoud = 0;
 let microphoneAttempt = 0, mediaWaitResolve, audioUnlock, expectedClose = false;
 let captions = [], filmTimed = [];
 let orbitView, invitation, restoredInvitation, screenOrbit = false;
-let glass, peer, pendingFilm = null, cinemaMode = null;
+let glass, peer, pendingFilm = null, cinemaMode = null, filmIce = [];
 function orbit() { return orbitView ||= createOrbit($('orbit')); }
 function interactionUI() {
   return invitation ||= createInteraction($('interaction'), stage, orbit(), {
@@ -654,7 +655,10 @@ function handle(event) {
     case 'film':
       // Connect the viewer while the score is still being written; a failure
       // here is harmless — the film beat reconnects when it plays.
-      if (event.phase === 'pending' && awake) connectFilm(event.revision).catch(() => {});
+      if (event.phase === 'pending' && awake) {
+        if (Array.isArray(event.ice_servers)) filmIce = event.ice_servers;
+        connectFilm(event.revision, filmIce).catch(() => {});
+      }
       break;
     case 'beat': queue.push(event.beat); playQueue(); break;
     case 'ready': ready = true; if (!playing && !queue.length) finish(); break;
@@ -793,11 +797,11 @@ function detachFilm() {
 // Connect the viewer peer for a film revision. Director does not paint until
 // film_play, so connecting early (on the server's pending event, during the
 // opener) costs nothing and removes the signaling wait from the cut.
-function connectFilm(generation) {
+function connectFilm(generation, iceServers) {
   if (generation == null) return Promise.reject(new Error('The film could not start.'));
   if (pendingFilm?.revision === generation && peer === pendingFilm.pc) return pendingFilm.promise;
   peer?.close();
-  const pc = new RTCPeerConnection();
+  const pc = new RTCPeerConnection(viewerIceConfig(iceServers));
   peer = pc;
   pc.addTransceiver('video', {direction: 'recvonly'});
   pc.addTransceiver('audio', {direction: 'recvonly'});
@@ -810,12 +814,7 @@ function connectFilm(generation) {
   const promise = (async () => {
     try {
       await pc.setLocalDescription(await pc.createOffer());
-      if (pc.iceGatheringState !== 'complete') await new Promise((resolve, reject) => {
-        const timer = setTimeout(() => reject(new Error('Connection timed out.')), 8000);
-        pc.addEventListener('icegatheringstatechange', () => {
-          if (pc.iceGatheringState === 'complete') { clearTimeout(timer); resolve(); }
-        });
-      });
+      await gatherIce(pc);
       if (peer !== pc) throw new DOMException('Stopped', 'AbortError');
       const response = await fetch(`/oddity/offer?session=${encodeURIComponent(session)}`, {
         method: 'POST',
@@ -839,7 +838,7 @@ function connectFilm(generation) {
 }
 async function attachFilm(beat, signal) {
   const generation = beat.film?.revision;
-  await connectFilm(generation);
+  await connectFilm(generation, filmIce);
   if (signal.aborted) throw new DOMException('Stopped', 'AbortError');
   syncSound();
   // The peer is connected; now Director starts painting for this revision.
@@ -884,7 +883,8 @@ function waitFilm(beat, signal) {
 }
 async function startMedia(media, signal) {
   await waitUntilUnpaused(signal);
-  try { await media.play(); }
+  unmuteOnGesture(media);
+  try { await playUnmuted(media); }
   catch (error) {
     if (signal.aborted) throw new DOMException('Stopped', 'AbortError');
     if (error.name !== 'NotAllowedError') throw error;
@@ -1198,12 +1198,10 @@ glass = createGlass(stage, {
 cinemaMode = createCinemaMode({
   stage,
   video: film,
-  poster: $('cinema-poster'),
   freeze: $('cinema-freeze'),
   overlay: $('cinema-overlay'),
   status: $('cinema-status'),
   progress: $('cinema-progress'),
-  resume: $('cinema-resume'),
   controls: $('cinema-controls'),
   pause: $('cinema-pause'),
   question: $('cinema-question'),

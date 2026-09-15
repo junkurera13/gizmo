@@ -27,6 +27,7 @@ class FakeStream:
 
     async def connect(self):
         self.connect_started.set()
+        await self.event({"type": "ice_servers", "ice_servers": [{"urls": "stun:stun.example:80"}]})
         if self._hold is not None:
             await self._hold.wait()
         if self.closed:
@@ -51,6 +52,20 @@ class FakeStream:
         self.audio_ready.set()
         if self._hold is not None:
             self._hold.set()
+
+
+class TracksAfterConfigure(FakeStream):
+    """Director only publishes media after configure — the production deadlock."""
+
+    async def connect(self):
+        self.connect_started.set()
+        await self.event({"type": "ice_servers", "ice_servers": []})
+
+    def send(self, event):
+        self.sent.append(event)
+        self.video_ready.set()
+        self.audio_ready.set()
+        self.first_frame.set()
 
 
 class DevicePlayerTests(unittest.IsolatedAsyncioTestCase):
@@ -345,6 +360,40 @@ class RuntimeTests(unittest.IsolatedAsyncioTestCase):
             stream.sent[0]["audio_url"], "https://audio.fal.media/test.wav"
         )
         self.assertIn(self.plan.beats[0].narration, stream.sent[0]["prompt"])
+
+    async def test_glass_never_gets_fake_prep_copy(self):
+        await self.session.ask("Why does it fly?")
+        await self.until(lambda: self.session.prepared is not None)
+        messages = [
+            call.args[0].get("message")
+            for call in self.emit.await_args_list
+            if isinstance(call.args[0], dict)
+        ]
+        kinds = [
+            call.args[0].get("type")
+            for call in self.emit.await_args_list
+            if isinstance(call.args[0], dict)
+        ]
+        self.assertNotIn("Bringing it to life…", messages)
+        self.assertNotIn("Thinking it through…", messages)
+        self.assertNotIn("Play with sound", messages)
+        self.assertIn("ice", kinds)
+
+    async def test_offer_unlocks_configure_before_tracks_exist(self):
+        session = CinemaSession(
+            Path(self.root.name) / "late-tracks",
+            "key",
+            self.emit,
+            maker=self.maker,
+            stream_factory=lambda key, event: TracksAfterConfigure(key, event),
+        )
+        self.addAsyncCleanup(session.close)
+        await session.ask("Why does it fly?")
+        await self.until(lambda: session.prepared is not None)
+        self.assertEqual(session.stream.sent, [])
+        await session.offer("offer", session.revision)
+        await self.until(lambda: bool(session.stream.sent))
+        self.assertEqual(session.stream.sent[0]["type"], "configure")
 
     async def test_interruption_cancels_preparation_and_provider(self):
         started = asyncio.Event()
@@ -777,6 +826,8 @@ class DeviceEncodingTests(unittest.IsolatedAsyncioTestCase):
             ".stage.cinema-mode .scene>img,.stage.cinema-mode .scene>video,.stage.cinema-mode .scene>canvas{position:absolute;inset:0;width:100%;height:100%;object-fit:cover;background:#000}",
             oddity_css,
         )
+        self.assertNotIn("cinema-poster.jpg", cinema_html)
+        self.assertNotIn("Play with sound", cinema_html)
         self.assertNotIn(
             ".stage.cinema-mode .scene>img,.stage.cinema-mode .scene>video,.stage.cinema-mode .scene>canvas{position:absolute;inset:0;width:100%;height:100%;object-fit:contain;background:#000}",
             oddity_css,
@@ -1040,5 +1091,11 @@ class FriendSocketTests(unittest.TestCase):
             self.assertNotIn("$('sound')", script.text)
             self.assertNotIn("x-gizmo-access", script.text)
             self.assertNotIn("showModal", script.text)
-            self.assertIn("video.muted = false", script.text)
+            self.assertNotIn("Play with sound", page.text)
+            self.assertNotIn("cinema-poster.jpg", page.text)
+            self.assertNotIn('id="resume"', page.text)
+            self.assertNotIn("Bringing it to life", script.text)
+            ice = client.get("/static/cinema-ice.mjs")
+            self.assertEqual(ice.status_code, 200)
+            self.assertIn("video.muted = false", ice.text)
             self.assertEqual(client.get("/static/cinema.css").status_code, 200)

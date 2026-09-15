@@ -49,6 +49,8 @@ class CinemaSession:
         self.turns = 0
         self.started = 0.0
         self.marks: dict[str, float] = {}
+        self.local = False
+        self.ice_servers: list[dict] = []
 
     def current(self, revision) -> bool:
         return revision == self.revision and not self.closed
@@ -104,7 +106,6 @@ class CinemaSession:
                 {
                     "type": "status",
                     "phase": "thinking",
-                    "message": "Thinking it through…",
                     "revision": revision,
                 }
             )
@@ -116,13 +117,12 @@ class CinemaSession:
             self.mark("plan")
             if not self.current(revision):
                 return
-            await self.emit({"type": "plan", "title": plan.title, "revision": revision})
             await self.emit(
                 {
-                    "type": "status",
-                    "phase": "preparing",
-                    "message": "Bringing it to life…",
+                    "type": "plan",
+                    "title": plan.title,
                     "revision": revision,
+                    "ice_servers": list(self.ice_servers),
                 }
             )
             # Last-frame continuation is independent of TTS. Do not wait for it
@@ -270,6 +270,11 @@ class CinemaSession:
         if not self.current(revision):
             return
         kind = event.get("type")
+        if kind == "ice_servers":
+            servers = [] if self.local else list(event.get("ice_servers") or [])
+            self.ice_servers = servers
+            await self.emit({"type": "ice", "servers": servers, "revision": revision})
+            return
         if kind == "first_frame":
             logger.info(
                 "Cinema first frame: latency=%.2fs phases=%s",
@@ -312,11 +317,15 @@ class CinemaSession:
         without losing the live film's opening seconds."""
         if revision != self.revision or self.stream is None:
             raise ValueError("Stale film")
+        # Configure must be allowed to start before answer() waits for tracks.
+        # Director publishes those tracks after configure; setting the viewer
+        # only after a successful answer deadlocks the production hop and the
+        # browser then reports a dropped picture.
+        if start:
+            self.viewer.set()
         result = await self.stream.answer(sdp, "offer", local=local)
         if revision != self.revision or self.stream is None or self.stream.closed:
             raise ValueError("Stale film")
-        if start:
-            self.viewer.set()
         return result
 
     def watch(self, revision) -> bool:
