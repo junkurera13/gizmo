@@ -13,7 +13,7 @@ function remember(key, value) {
 }
 
 function quietPhase(name) {
-  return ['thinking', 'preparing', 'buffering'].includes(name);
+  return ['idle', 'thinking', 'preparing', 'buffering', 'listening', 'playing', 'ended'].includes(name);
 }
 
 export function createCinemaMode(elements, options = {}) {
@@ -48,8 +48,7 @@ export function createCinemaMode(elements, options = {}) {
 
   function phase(name, message) {
     stage.dataset.cinemaPhase = name;
-    if (quietPhase(name)) status.textContent = '';
-    else if (message !== undefined) status.textContent = message;
+    status.textContent = quietPhase(name) || !message ? '' : message;
     pause.hidden = ['idle', 'paused', 'ended', 'error'].includes(name);
   }
 
@@ -106,8 +105,7 @@ export function createCinemaMode(elements, options = {}) {
     detach();
     ending = true;
     setCaption();
-    phase('paused', 'I’m listening. Where should we go from here?');
-    askInput.placeholder = 'Ask a question, change direction, or say “go on”…';
+    phase('paused');
   }
 
   async function connect() {
@@ -179,7 +177,6 @@ export function createCinemaMode(elements, options = {}) {
       if (askId !== requestId || !active) return;
       send({type: 'ask', text, request_id: askId});
       askInput.value = '';
-      askInput.placeholder = 'You can ask something while it plays…';
     } catch (error) {
       if (!active || error.name === 'AbortError') return;
       phase('error', error.message);
@@ -282,7 +279,7 @@ export function createCinemaMode(elements, options = {}) {
       detach();
       revision = event.revision;
       setCaption();
-      phase('ended', 'Where does that take your curiosity?');
+      phase('ended');
     }
     if (event.type === 'error') {
       freezeFilm();
@@ -306,7 +303,7 @@ export function createCinemaMode(elements, options = {}) {
         ending = true;
         freezeFilm();
         send({type: 'finished', revision});
-        phase('ended', 'Where does that take your curiosity?');
+        phase('ended');
       }
     }
     video.requestVideoFrameCallback(presented);
@@ -324,7 +321,7 @@ export function createCinemaMode(elements, options = {}) {
       ending = true;
       freezeFilm();
       send({type: 'finished', revision});
-      phase('ended', 'Where does that take your curiosity?');
+      phase('ended');
     }
   });
 
@@ -337,7 +334,7 @@ export function createCinemaMode(elements, options = {}) {
     const voiceRequest = requestId;
     talk?.classList.add('recording');
     options.setPressed?.(true);
-    phase('listening', 'Listening…');
+    phase('listening');
     try {
       await ensureConnection();
       const captureStream = await navigator.mediaDevices.getUserMedia({
@@ -397,7 +394,7 @@ export function createCinemaMode(elements, options = {}) {
     stage.classList.add('cinema-mode', 'has-scene');
     stage.dataset.cinemaHasFilm = 'false';
     setCaption();
-    phase('idle', 'Ask something. See where it takes us.');
+    phase('idle');
     try { await ensureConnection(); }
     catch (error) {
       if (!active || error.name === 'AbortError') return;

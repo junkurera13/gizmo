@@ -23,12 +23,11 @@ let timings = [];
 const metrics = [];
 window.gizmoFilmMetrics = metrics; // Local acceptance evidence; no provider credentials.
 function quietPhase(name) {
-  return ['thinking', 'preparing', 'buffering'].includes(name);
+  return ['idle', 'thinking', 'preparing', 'buffering', 'listening', 'playing', 'ended'].includes(name);
 }
 function phase(name, message) {
   document.body.dataset.phase = name;
-  if (quietPhase(name)) $('status').textContent = '';
-  else if (message !== undefined) $('status').textContent = message;
+  $('status').textContent = quietPhase(name) || !message ? '' : message;
   $('pause').hidden = ['idle','paused','ended','error'].includes(name);
 }
 function captionAt(position) {
@@ -59,8 +58,7 @@ function pictureDropped() {
 }
 function interrupt() {
   ++requestId;freezeFilm(); canPlay=false; warmPromise=null; iceRetries=0; send({type:'interrupt',request_id:requestId}); detach();
-  ending = true; $('title').textContent = displayedTitle; setCaption(); phase('paused', 'I’m listening. Where should we go from here?');
-  $('ask').placeholder = 'Ask a question, change direction, or say “go on”…';
+  ending = true; $('title').textContent = displayedTitle; setCaption(); phase('paused');
 }
 async function connect() {
   const headers = {};
@@ -95,7 +93,6 @@ async function ask(text) {
   try {
     await ensureConnection();
     if(askId!==requestId)return;send({type:'ask',text,request_id:askId}); $('ask').value = '';
-    $('ask').placeholder = 'You can ask something while it plays…';
   } catch(error) {phase('error',error.message);}
 }
 async function ensurePeer(generation) {
@@ -163,7 +160,7 @@ function handle(event) {
   if(event.type==='buffering' && event.revision===revision) phase('buffering');
   if(event.type==='heard') $('ask').value=event.text;
   if(event.type==='paused'){revision=event.revision;}
-  if(event.type==='ended'){freezeFilm();detach();revision=event.revision;setCaption();phase('ended','Where does that take your curiosity?');}
+  if(event.type==='ended'){freezeFilm();detach();revision=event.revision;setCaption();phase('ended');}
   if(event.type==='error'){freezeFilm();detach();ending=true;phase('error',event.message);}
 }
 // The media clock, not generation-complete messages, decides what the viewer has heard.
@@ -173,12 +170,12 @@ function presented(_now, metadata) {
     document.body.dataset.hasFilm='true';freeze.hidden=true;phase('playing');
     const elapsed=Math.max(0,metadata.mediaTime-startTime);
     setCaption(captionAt(elapsed));
-    if(duration && elapsed>=duration){ending=true;freezeFilm();send({type:'finished',revision});phase('ended','Where does that take your curiosity?');}
+    if(duration && elapsed>=duration){ending=true;freezeFilm();send({type:'finished',revision});phase('ended');}
   }
   video.requestVideoFrameCallback(presented);
 }
 if(video.requestVideoFrameCallback)video.requestVideoFrameCallback(presented);
-else video.addEventListener('timeupdate',()=>{if(!video.paused){document.body.dataset.hasFilm='true';freeze.hidden=true;phase('playing');if(startTime===null)startTime=video.currentTime;const elapsed=Math.max(0,video.currentTime-startTime);setCaption(captionAt(elapsed));if(duration && elapsed>=duration&&!ending){ending=true;freezeFilm();send({type:'finished',revision});phase('ended','Where does that take your curiosity?');}}});
+else video.addEventListener('timeupdate',()=>{if(!video.paused){document.body.dataset.hasFilm='true';freeze.hidden=true;phase('playing');if(startTime===null)startTime=video.currentTime;const elapsed=Math.max(0,video.currentTime-startTime);setCaption(captionAt(elapsed));if(duration && elapsed>=duration&&!ending){ending=true;freezeFilm();send({type:'finished',revision});phase('ended');}}});
 $('question').addEventListener('submit',e=>{e.preventDefault();ask($('ask').value);});
 $('pause').onclick=interrupt;
 function setPressed(pressed) {
@@ -188,7 +185,7 @@ function isPrimaryPress(event) {
   return event.button == null || event.button === 0;
 }
 async function startRecording() {
-  if(held)return;const captureRevision=++recordingRevision;held=true;setPressed(true);interrupt();unmuteOnGesture(video);const voiceRequest=requestId;phase('listening','Listening…');
+  if(held)return;const captureRevision=++recordingRevision;held=true;setPressed(true);interrupt();unmuteOnGesture(video);const voiceRequest=requestId;phase('listening');
   try{
     await ensureConnection();
     const captureStream=await navigator.mediaDevices.getUserMedia({audio:{echoCancellation:true,noiseSuppression:true},video:false});

@@ -215,8 +215,14 @@ class MomentCatalogTests(unittest.TestCase):
         self.assertNotIn("#cinema-progress", css)
         self.assertNotIn('id="cinema-progress"', html)
         self.assertNotIn('id="cinema-talk"', html)
+        self.assertIn('<p id="cinema-status" aria-live="polite"></p>', html)
         self.assertIn('class="device-control device-talk"', html)
-        self.assertIn("Hold the pink button on the device to talk", html)
+        self.assertNotIn("Hold the pink button on the device to talk", html)
+        self.assertNotIn("Ask something. See where it takes us.", html)
+        self.assertNotIn("What are you curious about?", html)
+        self.assertNotIn("You can interrupt anytime", html)
+        self.assertNotIn("cinema-hint", html)
+        self.assertNotIn('placeholder=', html[html.index('id="cinema-ask"'):html.index("cinema-send")])
         cinema_block = css.split(".stage.cinema-mode")[1].split(".cinema-overlay")[0]
         self.assertNotIn("object-fit:contain;background:#000}", cinema_block)
         self.assertNotIn("cinema-poster", css)
@@ -225,6 +231,12 @@ class MomentCatalogTests(unittest.TestCase):
         self.assertNotIn("Play with sound", controller)
         self.assertIn("event.timings", controller)
         self.assertIn("caption: $('caption')", script)
+        self.assertNotIn("Ask something. See where it takes us.", controller)
+        self.assertNotIn("Where does that take your curiosity?", controller)
+        self.assertNotIn("I’m listening. Where should we go from here?", controller)
+        self.assertNotIn("Listening…", controller)
+        self.assertNotIn("placeholder", controller)
+        self.assertNotIn("cinema-hint", css)
 
     def test_inline_cinema_replaces_demo_rail_with_composer(self):
         static = Path(__file__).resolve().parents[1] / "gizmo_friend" / "static"

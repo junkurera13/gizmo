@@ -150,7 +150,7 @@
               </div>
             </div>
             <div id="cinema-overlay" class="cinema-overlay" hidden>
-              <p id="cinema-status" aria-live="polite">Ask something. See where it takes us.</p>
+              <p id="cinema-status" aria-live="polite"></p>
             </div>
             <div id="caption" class="caption" aria-live="polite"></div>
             <div id="interaction" class="interaction" aria-label="Explore with Gizmo" hidden></div>
@@ -175,11 +175,10 @@
           <button id="cinema-pause" type="button" aria-label="Interrupt film" title="Interrupt film" hidden>Ⅱ</button>
           <form id="cinema-question">
             <label class="sr-only" for="cinema-ask">Ask Gizmo</label>
-            <input id="cinema-ask" autocomplete="off" maxlength="1200" placeholder="What are you curious about?">
+            <input id="cinema-ask" autocomplete="off" maxlength="1200">
             <button id="cinema-send" type="submit" aria-label="Send question">↑</button>
           </form>
         </div>
-        <p class="cinema-hint">Hold the pink button on the device to talk · You can interrupt anytime</p>
       </section>
     </section>
   </main>
