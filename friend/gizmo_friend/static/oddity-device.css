@@ -130,7 +130,7 @@ html.embedded .moments:not([hidden]){display:flex}
 .sr-only{position:absolute;width:1px;height:1px;padding:0;margin:-1px;overflow:hidden;clip:rect(0,0,0,0);white-space:nowrap;border:0}
 .stage.cinema-mode .glass-home,.stage.cinema-mode .glass-settings,.stage.cinema-mode .glass-camera,.stage.cinema-mode .interaction,.stage.cinema-mode .play-blocked,.stage.cinema-mode .stage-top,.stage.cinema-mode .stage-bottom{opacity:0!important;pointer-events:none}
 .stage.cinema-mode .scene{inset:0 0 20% 0;opacity:1;z-index:2;background:#000}
-.stage.cinema-mode:after{content:'';position:absolute;left:0;right:0;bottom:0;height:20%;z-index:2;background:#05111f;opacity:1;display:block}
+.stage.cinema-mode:after{content:'';position:absolute;left:0;right:0;bottom:0;height:20%;z-index:2;background:#000;opacity:1;display:block}
 .stage.cinema-mode .scene:after{display:none}
 .stage.cinema-mode .scene>img,.stage.cinema-mode .scene>video,.stage.cinema-mode .scene>canvas{position:absolute;inset:0;width:100%;height:100%;object-fit:cover;background:#000}
 .stage.cinema-mode #still,.stage.cinema-mode #orbit,.stage.cinema-mode #demo-math,.stage.cinema-mode #demo-rainbow{display:none!important}
@@ -142,9 +142,6 @@ html.embedded .moments:not([hidden]){display:flex}
 .stage[data-cinema-phase=playing] #cinema-status{opacity:0}
 .stage.cinema-mode .caption{top:80%;bottom:0;left:7%;right:7%;max-height:none;height:auto;display:flex;align-items:center;justify-content:center;text-align:center;font-size:clamp(11px,3.4cqw,17px);line-height:1.25;opacity:0;z-index:6}
 .stage.cinema-mode .caption:not(:empty){opacity:1}
-#cinema-progress{position:absolute;left:7%;right:7%;bottom:3.5%;height:2px;background:#fff2;border-radius:2px;overflow:hidden;opacity:0;transition:opacity .3s}
-.stage[data-cinema-phase=playing] #cinema-progress{opacity:1}
-#cinema-progress i{display:block;height:100%;width:0;background:#f5a3b9;transition:width .2s linear}
 .cinema-controls{width:100%;max-width:560px;margin:-4.5% auto 0;position:relative;z-index:2;animation:cinema-controls-in .28s cubic-bezier(.2,.8,.2,1) both}
 .cinema-bottom{display:flex;align-items:center;gap:12px;width:100%}
 #cinema-question{display:flex;align-items:center;flex:1;min-width:0;padding:5px 5px 5px 20px;border:1px solid #ffffff14;border-radius:32px;background:#fdf4e9;color:#1c2838;box-shadow:0 8px 38px #0006;transition:border-color .18s,transform .2s}
@@ -153,12 +150,8 @@ html.embedded .moments:not([hidden]){display:flex}
 #cinema-ask::placeholder{color:#66707a}
 #cinema-send{width:40px;height:40px;border:0;border-radius:50%;background:#172c43;color:#fff5df;font-size:23px;line-height:1;transition:transform .2s}
 #cinema-send:hover{transform:rotate(-12deg)}
-#cinema-talk,#cinema-pause{width:52px;height:52px;display:grid;place-items:center;flex:0 0 52px;border-radius:50%}
-#cinema-talk{border:0;background:#f5a3b9;color:#1b293c;touch-action:none;user-select:none;transition:transform .15s,box-shadow .2s}
-#cinema-talk svg{width:22px;height:22px}
-#cinema-talk.recording{transform:scale(1.08);box-shadow:0 0 0 7px #f5a3b922}
-#cinema-pause{border:1px solid #fff5df40;background:#fff5df18;color:#fff5df;font-size:18px;backdrop-filter:blur(10px)}
+#cinema-pause{width:52px;height:52px;display:grid;place-items:center;flex:0 0 52px;border-radius:50%;border:1px solid #fff5df40;background:#fff5df18;color:#fff5df;font-size:18px;backdrop-filter:blur(10px)}
 .cinema-hint{margin:10px 0 0;text-align:center;color:#88848a;font-size:10px;letter-spacing:.015em}
 @keyframes cinema-controls-in{from{opacity:0;transform:translateY(7px)}to{opacity:1;transform:none}}
-@media(max-width:600px){.cinema-controls{max-width:92%;margin-top:-3.5%}.cinema-bottom{gap:8px}#cinema-question{padding-left:16px}#cinema-ask{font-size:13px}#cinema-send{width:38px;height:38px}#cinema-talk,#cinema-pause{width:48px;height:48px;flex-basis:48px}.cinema-hint{font-size:9px}}
+@media(max-width:600px){.cinema-controls{max-width:92%;margin-top:-3.5%}.cinema-bottom{gap:8px}#cinema-question{padding-left:16px}#cinema-ask{font-size:13px}#cinema-send{width:38px;height:38px}#cinema-pause{width:48px;height:48px;flex-basis:48px}.cinema-hint{font-size:9px}}
 @media(prefers-reduced-motion:reduce){.cinema-controls{animation:none}}

@@ -92,7 +92,6 @@ async function ask(text) {
   unmuteOnGesture(video);
   const askId=++requestId;stopRecording();freezeFilm(); canPlay=false; duration=0; warmPromise=null; iceRetries=0; detach(); ending = true;
   phase('thinking'); nextTitle=''; setCaption(); timings=[];
-  $('progress').firstElementChild.style.width='0%';$('progress').setAttribute('aria-valuenow','0');
   try {
     await ensureConnection();
     if(askId!==requestId)return;send({type:'ask',text,request_id:askId}); $('ask').value = '';
@@ -172,11 +171,8 @@ function presented(_now, metadata) {
   if(peer && !video.paused && video.readyState>=2 && !ending){
     if(startTime===null){displayedTitle=nextTitle;$('title').textContent=displayedTitle;startTime=metadata.mediaTime;metrics.push({type:'presented',at:performance.now()});}
     document.body.dataset.hasFilm='true';freeze.hidden=true;phase('playing');
-    const elapsed=Math.max(0,metadata.mediaTime-startTime), progress=Math.min(100,elapsed/duration*100);
+    const elapsed=Math.max(0,metadata.mediaTime-startTime);
     setCaption(captionAt(elapsed));
-    $('progress').style.setProperty('--progress',`${progress}%`);
-    $('progress').firstElementChild.style.width=`${progress}%`;
-    $('progress').setAttribute('aria-valuenow',Math.round(progress));
     if(duration && elapsed>=duration){ending=true;freezeFilm();send({type:'finished',revision});phase('ended','Where does that take your curiosity?');}
   }
   video.requestVideoFrameCallback(presented);
@@ -185,8 +181,14 @@ if(video.requestVideoFrameCallback)video.requestVideoFrameCallback(presented);
 else video.addEventListener('timeupdate',()=>{if(!video.paused){document.body.dataset.hasFilm='true';freeze.hidden=true;phase('playing');if(startTime===null)startTime=video.currentTime;const elapsed=Math.max(0,video.currentTime-startTime);setCaption(captionAt(elapsed));if(duration && elapsed>=duration&&!ending){ending=true;freezeFilm();send({type:'finished',revision});phase('ended','Where does that take your curiosity?');}}});
 $('question').addEventListener('submit',e=>{e.preventDefault();ask($('ask').value);});
 $('pause').onclick=interrupt;
+function setPressed(pressed) {
+  $('device').dataset.ptt = pressed ? 'true' : 'false';
+}
+function isPrimaryPress(event) {
+  return event.button == null || event.button === 0;
+}
 async function startRecording() {
-  if(held)return;const captureRevision=++recordingRevision;held=true;interrupt();unmuteOnGesture(video);const voiceRequest=requestId;$('talk').classList.add('recording');phase('listening','Listening…');
+  if(held)return;const captureRevision=++recordingRevision;held=true;setPressed(true);interrupt();unmuteOnGesture(video);const voiceRequest=requestId;phase('listening','Listening…');
   try{
     await ensureConnection();
     const captureStream=await navigator.mediaDevices.getUserMedia({audio:{echoCancellation:true,noiseSuppression:true},video:false});
@@ -204,15 +206,27 @@ async function startRecording() {
       send({type:'audio',mime:blob.type,data:btoa(binary),request_id:voiceRequest});phase('thinking');
     };
     recorder.start();recordingTimer=setTimeout(stopRecording,20000);
-  }catch(error){held=false;$('talk').classList.remove('recording');phase('error','Microphone unavailable. You can type your question.');}
+  }catch(error){held=false;setPressed(false);phase('error','Microphone unavailable. You can type your question.');}
 }
-function stopRecording(){held=false;++recordingRevision;clearTimeout(recordingTimer);$('talk').classList.remove('recording');if(recorder?.state==='recording')recorder.stop();}
-for (const button of [$('talk'), $('ptt')]) {
-  button.addEventListener('pointerdown',e=>{e.preventDefault();button.setPointerCapture(e.pointerId);startRecording();});
-  ['pointerup','pointercancel','lostpointercapture'].forEach(kind=>button.addEventListener(kind,stopRecording));
+function stopRecording(){setPressed(false);if(!held)return;held=false;++recordingRevision;clearTimeout(recordingTimer);if(recorder?.state==='recording')recorder.stop();}
+function pressTalk(event) {
+  if (event && !isPrimaryPress(event)) return;
+  if (event) {
+    event.preventDefault();
+    try { $('talk').setPointerCapture(event.pointerId); } catch { /* Capture is best-effort. */ }
+  }
+  startRecording();
 }
-$('talk').addEventListener('keydown',e=>{if([' ','Enter'].includes(e.key)&&!e.repeat){e.preventDefault();startRecording();}});
-$('talk').addEventListener('keyup',e=>{if([' ','Enter'].includes(e.key)){e.preventDefault();stopRecording();}});
+const talk = $('talk');
+talk.addEventListener('pointerdown', pressTalk);
+talk.addEventListener('mousedown', pressTalk);
+talk.addEventListener('touchstart', pressTalk, {passive: false});
+for (const kind of ['pointerup', 'pointercancel', 'lostpointercapture', 'mouseup', 'mouseleave', 'pointerleave', 'touchend', 'touchcancel']) {
+  talk.addEventListener(kind, stopRecording);
+}
+talk.addEventListener('keydown',e=>{if([' ','Enter'].includes(e.key)&&!e.repeat){e.preventDefault();startRecording();}});
+talk.addEventListener('keyup',e=>{if([' ','Enter'].includes(e.key)){e.preventDefault();stopRecording();}});
+talk.addEventListener('contextmenu', e => e.preventDefault());
 window.addEventListener('pagehide',()=>{send({type:'interrupt'});socket?.close();peer?.close();microphone?.getTracks().forEach(t=>t.stop());});
 document.addEventListener('visibilitychange',()=>{if(document.hidden){stopRecording();if(peer)interrupt();}});
 window.addEventListener('blur',stopRecording);

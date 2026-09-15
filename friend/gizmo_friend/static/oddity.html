@@ -7,7 +7,7 @@
   <link rel="icon" href="data:,">
   <link rel="stylesheet" href="/static/oddity-boot.css?v=gate15">
   <link rel="stylesheet" href="/static/oddity.css">
-  <link rel="stylesheet" href="/static/oddity-device.css?v=gate89">
+  <link rel="stylesheet" href="/static/oddity-device.css?v=gate90">
   <link rel="stylesheet" href="/static/oddity-experience.css">
   <link rel="preload" as="image" href="/static/device-reference-ptt-pressed.png">
   <link rel="preload" as="image" href="/static/oddity-character-half.png?v=char3">
@@ -34,7 +34,7 @@
   <link rel="preload" as="image" href="/static/oddity-boot-12.jpg?v=boot2">
   <link rel="preload" as="image" href="/static/oddity-boot-13.jpg?v=boot2">
   <link rel="preload" as="image" href="/static/oddity-boot-14.jpg?v=boot2">
-  <script type="module" src="/static/oddity.js?v=gate96"></script>
+  <script type="module" src="/static/oddity.js?v=gate97"></script>
 </head>
 <body>
   <main>
@@ -151,7 +151,6 @@
             </div>
             <div id="cinema-overlay" class="cinema-overlay" hidden>
               <p id="cinema-status" aria-live="polite">Ask something. See where it takes us.</p>
-              <div id="cinema-progress" role="progressbar" aria-label="Film progress" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0"><i></i></div>
             </div>
             <div id="caption" class="caption" aria-live="polite"></div>
             <div id="interaction" class="interaction" aria-label="Explore with Gizmo" hidden></div>
@@ -179,11 +178,8 @@
             <input id="cinema-ask" autocomplete="off" maxlength="1200" placeholder="What are you curious about?">
             <button id="cinema-send" type="submit" aria-label="Send question">↑</button>
           </form>
-          <button id="cinema-talk" type="button" aria-label="Hold to talk" title="Hold to talk">
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" aria-hidden="true"><rect x="9" y="3" width="6" height="12" rx="3"/><path d="M5 10v2a7 7 0 0014 0v-2M12 19v3m-4 0h8"/></svg>
-          </button>
         </div>
-        <p class="cinema-hint">Hold the pink button to talk · You can interrupt anytime</p>
+        <p class="cinema-hint">Hold the pink button on the device to talk · You can interrupt anytime</p>
       </section>
     </section>
   </main>
