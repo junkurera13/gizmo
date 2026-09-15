@@ -205,13 +205,18 @@ class MomentCatalogTests(unittest.TestCase):
     def test_inline_cinema_cover_fills_above_the_caption_band(self):
         static = Path(__file__).resolve().parents[1] / "gizmo_friend" / "static"
         css = (static / "oddity-device.css").read_text()
+        html = (static / "oddity.html").read_text()
         controller = (static / "oddity-cinema.mjs").read_text()
         script = (static / "oddity.js").read_text()
         self.assertIn("object-fit:cover", css)
         self.assertIn(".stage.cinema-mode .scene{inset:0 0 20% 0", css)
         self.assertIn("background:#05111f", css)
-        cinema_block = css.split(".stage.cinema-mode")[1].split(".cinema-poster")[0]
+        cinema_block = css.split(".stage.cinema-mode")[1].split(".cinema-overlay")[0]
         self.assertNotIn("object-fit:contain;background:#000}", cinema_block)
+        self.assertNotIn("cinema-poster", css)
+        self.assertNotIn("cinema-poster.jpg", html)
+        self.assertNotIn("Play with sound", html)
+        self.assertNotIn("Play with sound", controller)
         self.assertIn("event.timings", controller)
         self.assertIn("caption: $('caption')", script)
 
@@ -224,6 +229,8 @@ class MomentCatalogTests(unittest.TestCase):
         self.assertIn('id="cinema-question"', html)
         self.assertIn('id="cinema-ask"', html)
         self.assertNotIn('id="cinema-access"', html)
+        self.assertNotIn('id="cinema-resume"', html)
+        self.assertNotIn('id="cinema-poster"', html)
         self.assertNotIn('type="password"', html)
         self.assertIn("createCinemaMode", script)
         self.assertIn("rail.hidden = true", script)

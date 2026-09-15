@@ -5,7 +5,9 @@ from aiortc import RTCConfiguration, RTCIceServer, RTCPeerConnection
 
 from gizmo_friend.cinema.stream import (
     force_relay_only,
+    ice_servers_payload,
     reliable_upstream_ice_servers,
+    viewer_ice_servers,
 )
 
 
@@ -36,6 +38,30 @@ class DirectorIceTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(selected[0].urls, "turn:relay.example:80?transport=tcp")
         self.assertEqual(selected[0].username, "device")
         self.assertEqual(selected[0].credential, "secret")
+
+    def test_viewer_hop_uses_stun_and_tcp_turn(self):
+        servers = [
+            RTCIceServer("stun:stun.relay.example:80"),
+            RTCIceServer(
+                "turn:relay.example:80",
+                username="device",
+                credential="secret",
+            ),
+            RTCIceServer(
+                "turn:relay.example:80?transport=tcp",
+                username="device",
+                credential="secret",
+            ),
+        ]
+
+        selected = viewer_ice_servers(servers)
+        payload = ice_servers_payload(selected)
+
+        self.assertEqual(selected[0].urls, "stun:stun.relay.example:80")
+        self.assertEqual(selected[1].urls, "turn:relay.example:80?transport=tcp")
+        self.assertEqual(payload[1]["username"], "device")
+        self.assertEqual(payload[1]["credential"], "secret")
+        self.assertNotIn("turn:relay.example:80", [row["urls"] for row in payload])
 
     async def test_upstream_gatherers_are_relay_only(self):
         pc = RTCPeerConnection(

@@ -8,13 +8,11 @@
         <img class="device-art device-rest" src="/static/device-reference.png" alt="" draggable="false">
         <img class="device-art device-pressed" src="/static/device-reference-ptt-pressed.png" alt="" draggable="false">
         <div class="stage" id="stage">
-          <img class="poster" src="/static/cinema-poster.jpg" alt="An illustrated rocket climbing into space">
           <video id="film" playsinline></video>
           <canvas id="freeze" hidden></canvas>
           <p id="status" aria-live="polite">Ask something. See where it takes us.</p>
           <p id="caption" aria-live="polite"></p>
           <div id="progress" role="progressbar" aria-label="Film progress" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0"><i></i></div>
-          <button id="resume" hidden>Play with sound</button>
         </div>
         <button id="ptt" type="button" class="device-talk" aria-label="Hold to talk" title="Hold to talk"></button>
       </div>

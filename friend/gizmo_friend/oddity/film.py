@@ -53,6 +53,8 @@ class OddityCinema:
         self._ready = asyncio.Event()
         self._payload: dict | None = None
         self._failed: dict | None = None
+        self.ice_servers: list[dict] = []
+        self._ice = asyncio.Event()
 
     def available(self) -> bool:
         if self.session is not None or self._maker is not None:
@@ -78,6 +80,8 @@ class OddityCinema:
         self._ready = asyncio.Event()
         self._payload = None
         self._failed = None
+        self.ice_servers = []
+        self._ice = asyncio.Event()
         try:
             await self._ensure_session()
             if self._owns_session and self.session.turns >= 8:
@@ -125,6 +129,17 @@ class OddityCinema:
             raise ValueError("Stale film")
         return await self.session.offer(sdp, revision, local=local, start=False)
 
+    async def wait_ice(self) -> None:
+        if self.session is not None and self.session.local:
+            return
+        if self.ice_servers or self._ice.is_set():
+            return
+        try:
+            async with asyncio.timeout(8):
+                await self._ice.wait()
+        except TimeoutError:
+            return
+
     def watch(self, revision) -> bool:
         if self.session is None:
             return False
@@ -166,9 +181,14 @@ class OddityCinema:
             self._on_event,
             **kwargs,
         )
+        self.session.local = not os.environ.get("RAILWAY_ENVIRONMENT_ID")
 
     async def _on_event(self, event) -> None:
         kind = event.get("type")
+        if kind == "ice":
+            self.ice_servers = list(event.get("servers") or [])
+            self._ice.set()
+            return
         if kind == "ready":
             self._payload = event
             self._ready.set()

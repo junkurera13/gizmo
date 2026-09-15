@@ -171,7 +171,17 @@ class ExperienceSession:
 
         async def pending(revision: int) -> None:
             # The glass can connect its peer now, while the score is written.
-            await self.event("film", turn, phase="pending", index=index, revision=revision)
+            wait_ice = getattr(self.cinema, "wait_ice", None)
+            if wait_ice is not None:
+                await wait_ice()
+            await self.event(
+                "film",
+                turn,
+                phase="pending",
+                index=index,
+                revision=revision,
+                ice_servers=list(getattr(self.cinema, "ice_servers", [])),
+            )
 
         film = await self.cinema.start(self.utterance, direction=self.film_brief(beat), on_pending=pending)
         if not film:

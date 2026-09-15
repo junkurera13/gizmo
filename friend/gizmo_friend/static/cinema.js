@@ -1,4 +1,5 @@
 import {mountDevice} from '/static/oddity-device.mjs';
+import {createIceStore, gatherIce, playUnmuted, unmuteOnGesture} from '/static/cinema-ice.mjs?v=glass1';
 const $ = id => document.getElementById(id);
 const SESSION_KEY = 'gizmo-cinema-v1';
 function stored(key) {
@@ -13,16 +14,21 @@ let key = stored(SESSION_KEY);
 if (new URLSearchParams(location.search).has('embedded')) document.documentElement.classList.add('embedded');
 mountDevice($('device')).catch(() => { $('device').dataset.loaded = 'true'; });
 const video = $('film'), freeze = $('freeze');
+const ice = createIceStore();
 let socket, peer, revision = 0, duration = 0, startTime = null, ending = false;
 let recorder, microphone, held = false, recordingTimer;
 let connectionPromise, displayedTitle = '', nextTitle = '', recordingRevision = 0, requestId = 0;
-let warmPromise = null, warming = 0, warmed = 0, canPlay = false;
+let warmPromise = null, warming = 0, warmed = 0, canPlay = false, iceRetries = 0;
 let timings = [];
 const metrics = [];
 window.gizmoFilmMetrics = metrics; // Local acceptance evidence; no provider credentials.
+function quietPhase(name) {
+  return ['thinking', 'preparing', 'buffering'].includes(name);
+}
 function phase(name, message) {
   document.body.dataset.phase = name;
-  if (message !== undefined) $('status').textContent = message;
+  if (quietPhase(name)) $('status').textContent = '';
+  else if (message !== undefined) $('status').textContent = message;
   $('pause').hidden = ['idle','paused','ended','error'].includes(name);
 }
 function captionAt(position) {
@@ -44,11 +50,15 @@ function freezeFilm() {
     freeze.getContext('2d').drawImage(video, 0, 0); freeze.hidden = false;
   }
   video.pause(); video.muted = true;
-  $('resume').hidden = true;
 }
 function detach() { peer?.close(); peer = null; video.srcObject = null; startTime = null; warmed = 0; }
+function pictureDropped() {
+  if (ending) return;
+  interrupt();
+  phase('error','The picture connection dropped. Try again.');
+}
 function interrupt() {
-  ++requestId;freezeFilm(); canPlay=false; warmPromise=null; send({type:'interrupt',request_id:requestId}); detach();
+  ++requestId;freezeFilm(); canPlay=false; warmPromise=null; iceRetries=0; send({type:'interrupt',request_id:requestId}); detach();
   ending = true; $('title').textContent = displayedTitle; setCaption(); phase('paused', 'I’m listening. Where should we go from here?');
   $('ask').placeholder = 'Ask a question, change direction, or say “go on”…';
 }
@@ -79,8 +89,9 @@ async function ensureConnection() {
 }
 async function ask(text) {
   text = text.trim(); if (!text) return;
-  const askId=++requestId;stopRecording();freezeFilm(); canPlay=false; duration=0; warmPromise=null; detach(); ending = true;
-  phase('thinking', 'Thinking it through…'); nextTitle=''; setCaption(); timings=[];
+  unmuteOnGesture(video);
+  const askId=++requestId;stopRecording();freezeFilm(); canPlay=false; duration=0; warmPromise=null; iceRetries=0; detach(); ending = true;
+  phase('thinking'); nextTitle=''; setCaption(); timings=[];
   $('progress').firstElementChild.style.width='0%';$('progress').setAttribute('aria-valuenow','0');
   try {
     await ensureConnection();
@@ -96,22 +107,27 @@ async function ensurePeer(generation) {
     detach();
     startTime = null;
     ending = false;
-    const pc = new RTCPeerConnection(); peer = pc;
+    const pc = new RTCPeerConnection(await ice.config()); peer = pc;
     try {
       pc.addTransceiver('video',{direction:'recvonly'});
       pc.addTransceiver('audio',{direction:'recvonly'});
       const media = new MediaStream();
       pc.ontrack = e => {media.addTrack(e.track);video.srcObject=media;};
       pc.onconnectionstatechange = () => {
-        if (peer === pc && pc.connectionState === 'failed') {
-          interrupt();phase('error','The picture connection dropped. Try again.');
+        if (peer !== pc || ending) return;
+        if (pc.connectionState === 'failed') {
+          if (iceRetries < 1) {
+            iceRetries += 1;
+            warmed = 0;
+            warmPromise = null;
+            ensurePeer(generation).then(startPlayback);
+            return;
+          }
+          pictureDropped();
         }
       };
       await pc.setLocalDescription(await pc.createOffer());
-      if (pc.iceGatheringState !== 'complete') await new Promise((resolve,reject) => {
-        const timer=setTimeout(()=>reject(new Error('Connection timed out.')),8000);
-        pc.addEventListener('icegatheringstatechange',()=>{if(pc.iceGatheringState==='complete'){clearTimeout(timer);resolve();}});
-      });
+      await gatherIce(pc);
       if (peer!==pc || revision!==generation) { pc.close(); return; }
       const response=await fetch(`/cinema/offer?key=${encodeURIComponent(key)}`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({revision:generation,sdp:pc.localDescription.sdp})});
       if(!response.ok) throw new Error('Could not receive the film.');
@@ -120,7 +136,7 @@ async function ensurePeer(generation) {
       await pc.setRemoteDescription(answer);
       warmed = generation;
     } catch(error) {
-      if(peer===pc){interrupt();phase('error',error.message);}
+      if(peer===pc && !ending){interrupt();phase('error',error.message);}
       pc.close();
     }
   })();
@@ -130,18 +146,22 @@ async function ensurePeer(generation) {
 }
 async function startPlayback() {
   if (!canPlay || warmed !== revision || !duration || ending) return;
-  video.muted = false;
   ending = false;
-  try { await video.play(); } catch { $('resume').hidden = false; }
+  await playUnmuted(video);
 }
 function handle(event) {
   if(event.request_id !== undefined && event.request_id !== null && event.request_id !== requestId)return;
   metrics.push({...event,at:performance.now()}); if(metrics.length>250)metrics.shift();
+  if(event.type==='ice') ice.set(event.servers);
   if(event.type==='status'){revision=event.revision??revision;phase(event.phase,event.message);}
-  if(event.type==='plan' && event.revision===revision) {nextTitle=event.title;ensurePeer(event.revision);}
-  if(event.type==='ready' && event.revision===revision) {duration=event.duration;timings=Array.isArray(event.timings)?event.timings:[];canPlay=true;phase('preparing','Opening the scene…');ensurePeer(event.revision).then(startPlayback);}
-  if(event.type==='playing' && event.revision===revision) {phase('preparing','The first frame is arriving…');}
-  if(event.type==='buffering' && event.revision===revision) phase('buffering','Holding that thought…');
+  if(event.type==='plan' && event.revision===revision) {
+    nextTitle=event.title;
+    if (event.ice_servers) ice.set(event.ice_servers);
+    ensurePeer(event.revision);
+  }
+  if(event.type==='ready' && event.revision===revision) {duration=event.duration;timings=Array.isArray(event.timings)?event.timings:[];canPlay=true;phase('preparing');ensurePeer(event.revision).then(startPlayback);}
+  if(event.type==='playing' && event.revision===revision) {phase('preparing');}
+  if(event.type==='buffering' && event.revision===revision) phase('buffering');
   if(event.type==='heard') $('ask').value=event.text;
   if(event.type==='paused'){revision=event.revision;}
   if(event.type==='ended'){freezeFilm();detach();revision=event.revision;setCaption();phase('ended','Where does that take your curiosity?');}
@@ -165,9 +185,8 @@ if(video.requestVideoFrameCallback)video.requestVideoFrameCallback(presented);
 else video.addEventListener('timeupdate',()=>{if(!video.paused){document.body.dataset.hasFilm='true';freeze.hidden=true;phase('playing');if(startTime===null)startTime=video.currentTime;const elapsed=Math.max(0,video.currentTime-startTime);setCaption(captionAt(elapsed));if(duration && elapsed>=duration&&!ending){ending=true;freezeFilm();send({type:'finished',revision});phase('ended','Where does that take your curiosity?');}}});
 $('question').addEventListener('submit',e=>{e.preventDefault();ask($('ask').value);});
 $('pause').onclick=interrupt;
-$('resume').onclick=async()=>{video.muted=false;await video.play();$('resume').hidden=true;};
 async function startRecording() {
-  if(held)return;const captureRevision=++recordingRevision;held=true;interrupt();const voiceRequest=requestId;$('talk').classList.add('recording');phase('listening','Listening…');
+  if(held)return;const captureRevision=++recordingRevision;held=true;interrupt();unmuteOnGesture(video);const voiceRequest=requestId;$('talk').classList.add('recording');phase('listening','Listening…');
   try{
     await ensureConnection();
     const captureStream=await navigator.mediaDevices.getUserMedia({audio:{echoCancellation:true,noiseSuppression:true},video:false});
@@ -182,7 +201,7 @@ async function startRecording() {
       const blob=new Blob(chunks,{type:captureRecorder.mimeType});
       if(blob.size>2_000_000){phase('error','That was a little long. Try a shorter question.');return;}
       const bytes=new Uint8Array(await blob.arrayBuffer());let binary='';for(const byte of bytes)binary+=String.fromCharCode(byte);
-      send({type:'audio',mime:blob.type,data:btoa(binary),request_id:voiceRequest});phase('thinking','Listening to your question…');
+      send({type:'audio',mime:blob.type,data:btoa(binary),request_id:voiceRequest});phase('thinking');
     };
     recorder.start();recordingTimer=setTimeout(stopRecording,20000);
   }catch(error){held=false;$('talk').classList.remove('recording');phase('error','Microphone unavailable. You can type your question.');}

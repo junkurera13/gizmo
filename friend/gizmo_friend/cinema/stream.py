@@ -51,6 +51,46 @@ def reliable_upstream_ice_servers(servers: list[RTCIceServer]) -> list[RTCIceSer
     raise RuntimeError("Director did not provide a TCP TURN relay")
 
 
+def viewer_ice_servers(servers: list[RTCIceServer]) -> list[RTCIceServer]:
+    """STUN plus Fal's TCP TURN for the browser hop off loopback.
+
+    aiortc still only keeps one TURN URL. Using the UDP entry first makes the
+    Railway viewer peer gather a relay the browser cannot reach, which shows up
+    as `connectionState === "failed"` after prep. TCP TURN is the same relay
+    the upstream hop already depends on.
+    """
+    result: list[RTCIceServer] = []
+    seen: set[tuple[str, ...]] = set()
+    for server in servers:
+        urls = server.urls if isinstance(server.urls, list) else [server.urls]
+        stun = tuple(url for url in urls if str(url).startswith("stun:"))
+        if stun and stun not in seen:
+            seen.add(stun)
+            result.append(
+                RTCIceServer(
+                    urls=list(stun) if len(stun) > 1 else stun[0],
+                    username=server.username,
+                    credential=server.credential,
+                    credentialType=server.credentialType,
+                )
+            )
+    result.extend(reliable_upstream_ice_servers(servers))
+    return result
+
+
+def ice_servers_payload(servers: list[RTCIceServer]) -> list[dict]:
+    """JSON iceServers the browser RTCPeerConnection constructor accepts."""
+    payload = []
+    for server in servers:
+        row = {"urls": server.urls}
+        if server.username:
+            row["username"] = server.username
+        if server.credential:
+            row["credential"] = server.credential
+        payload.append(row)
+    return payload
+
+
 def force_relay_only(pc: RTCPeerConnection) -> None:
     """Keep the upstream media on TURN/TCP instead of a lossy direct UDP pair."""
     gatherers = []
@@ -111,6 +151,12 @@ class DirectorStream:
             for row in ice.get("ice_servers", [])
         ]
         self.ice_servers = servers
+        await self.event(
+            {
+                "type": "ice_servers",
+                "ice_servers": ice_servers_payload(viewer_ice_servers(servers)),
+            }
+        )
         upstream_servers = reliable_upstream_ice_servers(servers)
         self.pc = pc = RTCPeerConnection(
             RTCConfiguration(iceServers=upstream_servers)
@@ -215,14 +261,13 @@ class DirectorStream:
             await self.close()
 
     async def answer(self, sdp: str, kind: str, *, local: bool = False):
-        async with asyncio.timeout(15):
+        async with asyncio.timeout(45):
             await self.video_ready.wait()
             await self.audio_ready.wait()
         if self.closed:
             raise RuntimeError("Film ended")
-        pc = RTCPeerConnection(
-            RTCConfiguration(iceServers=[] if local else list(self.ice_servers))
-        )
+        viewer_servers = [] if local else viewer_ice_servers(self.ice_servers)
+        pc = RTCPeerConnection(RTCConfiguration(iceServers=viewer_servers))
         self.viewers.add(pc)
 
         @pc.on("connectionstatechange")
@@ -235,6 +280,8 @@ class DirectorStream:
             await pc.setRemoteDescription(RTCSessionDescription(sdp=sdp, type=kind))
             for track in self.tracks.values():
                 pc.addTrack(self.relay.subscribe(track))
+            if not local and viewer_servers:
+                force_relay_only(pc)
             await pc.setLocalDescription(await pc.createAnswer())
             return {"sdp": pc.localDescription.sdp, "type": pc.localDescription.type}
         except BaseException:
