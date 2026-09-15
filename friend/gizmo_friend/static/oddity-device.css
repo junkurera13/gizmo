@@ -159,14 +159,6 @@ html.embedded .moments:not([hidden]){display:flex}
 #cinema-talk.recording{transform:scale(1.08);box-shadow:0 0 0 7px #f5a3b922}
 #cinema-pause{border:1px solid #fff5df40;background:#fff5df18;color:#fff5df;font-size:18px;backdrop-filter:blur(10px)}
 .cinema-hint{margin:10px 0 0;text-align:center;color:#88848a;font-size:10px;letter-spacing:.015em}
-.cinema-access{width:min(360px,calc(100% - 32px));border:1px solid #e9e2da30;border-radius:18px;padding:30px;background:#132237;color:#fff5df}
-.cinema-access::backdrop{background:#030a15bb;backdrop-filter:blur(12px)}
-.cinema-access form{display:grid;gap:16px}
-.cinema-access h2{margin:0;font-size:23px;font-weight:500}
-.cinema-access label{font-size:13px}
-.cinema-access input{width:100%;border:0;border-radius:8px;padding:12px;background:#fff5df;color:#142339}
-.cinema-access button{border:0;border-radius:30px;padding:12px;background:#f5a3b9;color:#142339}
-#cinema-access-error{margin:0;color:#f5c3ca;font-size:12px}
 @keyframes cinema-controls-in{from{opacity:0;transform:translateY(7px)}to{opacity:1;transform:none}}
 @media(max-width:600px){.cinema-controls{max-width:92%;margin-top:-3.5%}.cinema-bottom{gap:8px}#cinema-question{padding-left:16px}#cinema-ask{font-size:13px}#cinema-send{width:38px;height:38px}#cinema-talk,#cinema-pause{width:48px;height:48px;flex-basis:48px}.cinema-hint{font-size:9px}}
 @media(prefers-reduced-motion:reduce){.cinema-controls{animation:none}}
