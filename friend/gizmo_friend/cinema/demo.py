@@ -26,6 +26,7 @@ from PIL import Image
 from gizmo_friend.brain.shows import ShowStore
 from gizmo_friend.cinema.device import (
     AUDIO_PACKET_BYTES,
+    CAPTION_BAND_COLOR,
     DEVICE_AUDIO_LEAD_SECONDS,
     DEVICE_HEIGHT,
     DEVICE_WIDTH,
@@ -130,7 +131,7 @@ def _decode_frames(video: Path, workdir: Path) -> list[Image.Image]:
     images = []
     for frame_path in sorted(workdir.glob("f*.png")):
         with Image.open(frame_path) as raw:
-            canvas = Image.new("RGB", (DEVICE_WIDTH, DEVICE_HEIGHT), (5, 17, 31))
+            canvas = Image.new("RGB", (DEVICE_WIDTH, DEVICE_HEIGHT), CAPTION_BAND_COLOR)
             canvas.paste(fit_film_picture(raw), (0, 0))
             images.append(canvas)
     return images

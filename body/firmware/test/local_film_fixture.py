@@ -41,7 +41,7 @@ SECONDS = 30
 SEGMENT_SECONDS = 5
 # Keep in sync with firmware include/gizmo/screens.h. Film playback repaints
 # only the area above this static strip after its first full-screen frame.
-CAPTION_BAND_HEIGHT = 24
+CAPTION_BAND_HEIGHT = 48
 WIRE_RATE = 24_000
 PCM_CHUNK_BYTES = 11_520
 ROOT = Path(__file__).resolve().parents[3]
@@ -102,24 +102,25 @@ def _frame(index: int, fps: int, seconds: int) -> bytes:
     background, accent, highlight = palettes[(second // SEGMENT_SECONDS) % len(palettes)]
     image = Image.new("RGB", (WIDTH, HEIGHT), background)
     draw = ImageDraw.Draw(image)
+    picture_bottom = HEIGHT - CAPTION_BAND_HEIGHT
 
     # High-contrast horizontal structure makes partial panel refreshes obvious.
-    for y in range(0, 192, 24):
+    for y in range(0, picture_bottom, 24):
         shade = tuple(min(255, value + (12 if (y // 24) % 2 else 0)) for value in background)
-        draw.rectangle((0, y, WIDTH, y + 23), fill=shade)
+        draw.rectangle((0, y, WIDTH, min(y + 23, picture_bottom - 1)), fill=shade)
 
     sweep = int((phase / fps) * (WIDTH + 36)) - 18
-    draw.rectangle((sweep, 0, sweep + 18, 191), fill=highlight)
+    draw.rectangle((sweep, 0, sweep + 18, picture_bottom - 1), fill=highlight)
     orbit_x = int(WIDTH / 2 + math.sin(index * 0.19) * 105)
-    orbit_y = int(88 + math.cos(index * 0.13) * 52)
+    orbit_y = int(picture_bottom // 2 + math.cos(index * 0.13) * 52)
     draw.ellipse((orbit_x - 18, orbit_y - 18, orbit_x + 18, orbit_y + 18), fill=accent)
     draw.ellipse((orbit_x - 6, orbit_y - 6, orbit_x + 6, orbit_y + 6), fill=highlight)
 
-    # The bottom 48 px matches the production caption band. The number changes
-    # at the same instant as the audio tick, making A/V drift visible on video.
-    draw.rectangle((0, 192, WIDTH, HEIGHT), fill=(5, 17, 31))
+    # The bottom band matches production captions. The number changes at the
+    # same instant as the audio tick, making A/V drift visible on video.
+    draw.rectangle((0, picture_bottom, WIDTH, HEIGHT), fill=(5, 17, 31))
     label = f"LOCAL FILM  {second + 1:02d}/{seconds:02d}"
-    draw.text((12, 202), label, fill=(245, 247, 250), font=_font(22))
+    draw.text((12, picture_bottom + 10), label, fill=(245, 247, 250), font=_font(22))
     progress = int(WIDTH * (index + 1) / (seconds * fps))
     draw.rectangle((0, 236, progress, 239), fill=accent)
     return _jpeg(image)

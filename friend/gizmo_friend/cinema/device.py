@@ -42,7 +42,11 @@ AUDIO_PACKET_BYTES = 11_520
 DEVICE_AUDIO_LEAD_SECONDS = 0.96
 DEVICE_WIDTH = 320
 DEVICE_HEIGHT = 240
-CAPTION_BAND_HEIGHT = 24
+# One-fifth of the 240-row glass: tall enough to read a caption, short enough
+# that the film still cover-fills the remaining 320×192 picture. Matches the
+# emulator `--caption-band: 20%` strip and firmware kCaptionBandHeight.
+CAPTION_BAND_HEIGHT = 48
+CAPTION_BAND_COLOR = (5, 17, 31)
 # The firmware's 5x7 face advances six pixels per character and leaves eight
 # pixels of inset on each side: (320 - 16 + 1) // 6 = 50 visible characters.
 MAX_DEVICE_CAPTION_CHARS = 50
@@ -174,8 +178,8 @@ def fit_film_picture(image: Image.Image) -> Image.Image:
 
 
 def frame_image(frame) -> Image.Image:
-    """Fit the film above a bottom caption bar, matching the emulator layout."""
-    canvas = Image.new("RGB", (DEVICE_WIDTH, DEVICE_HEIGHT), (5, 17, 31))
+    """Cover-fill the film above a bottom caption bar, matching the emulator."""
+    canvas = Image.new("RGB", (DEVICE_WIDTH, DEVICE_HEIGHT), CAPTION_BAND_COLOR)
     canvas.paste(fit_film_picture(frame.to_image()), (0, 0))
     return canvas
 

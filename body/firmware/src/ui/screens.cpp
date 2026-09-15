@@ -180,7 +180,8 @@ void render_caption(const draw::Canvas& canvas, const char* line) {
   while (shown[0] && draw::text_width(shown, 1) > canvas.width - 16) {
     shown[strlen(shown) - 1] = '\0';
   }
-  draw::text_centered(canvas, canvas.width / 2, y + 8, shown, draw::kWhite, 1);
+  const int text_y = y + (kCaptionBandHeight - draw::kGlyphHeight) / 2;
+  draw::text_centered(canvas, canvas.width / 2, text_y, shown, draw::kWhite, 1);
 }
 
 }  // namespace gizmo

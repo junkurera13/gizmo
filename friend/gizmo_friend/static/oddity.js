@@ -3,7 +3,7 @@ import {mountDevice} from './oddity-device.mjs';
 import {createOrbit} from './oddity-orbit.mjs';
 import {createInteraction} from './oddity-interaction.mjs';
 import {createGlass} from './oddity-glass.mjs?v=gate36';
-import {createCinemaMode} from './oddity-cinema.mjs?v=cinema1';
+import {createCinemaMode} from './oddity-cinema.mjs?v=cinema2';
 const $ = (id) => document.getElementById(id);
 const stage = $('stage'), voice = $('voice'), film = $('film'), demoAudio = $('demo-audio'), cameraFeed = $('camera-feed');
 let socket, awake = false, turn = '', queue = [], ready = false, playing = false;
@@ -1209,6 +1209,7 @@ cinemaMode = createCinemaMode({
   question: $('cinema-question'),
   askInput: $('cinema-ask'),
   talk: $('cinema-talk'),
+  caption: $('caption'),
 }, {setPressed: setTalkPressed});
 try {
   await connect();

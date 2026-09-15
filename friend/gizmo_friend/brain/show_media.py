@@ -103,7 +103,7 @@ def encode_mjpeg(
         # Device film leaves its caption band unchanged between frames to save
         # one SPI transfer. Bake that otherwise-discarded region static so it
         # can never retain moving pixels from the first frame.
-        filters += f",pad={width}:{height}:0:0:color=black"
+        filters += f",pad={width}:{height}:0:0:color=0x05111F"
     filters += ",setsar=1"
     return _run(source, target, [
         # FFmpeg's 4:4:4 JPEGs use 1x2 sampling for every component. The ESP32
