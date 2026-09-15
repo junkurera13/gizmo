@@ -1,9 +1,9 @@
-import {captionChunks, captionAt, timedCaptionAt} from './oddity-timing.mjs?v=gate44';
+import {captionChunks, captionAt, captionTimings, timedCaptionAt} from './oddity-timing.mjs?v=gate45';
 import {mountDevice} from './oddity-device.mjs';
 import {createOrbit} from './oddity-orbit.mjs';
 import {createInteraction} from './oddity-interaction.mjs';
 import {createGlass} from './oddity-glass.mjs?v=gate36';
-import {createCinemaMode} from './oddity-cinema.mjs?v=cinema5';
+import {createCinemaMode} from './oddity-cinema.mjs?v=cinema6';
 import {gatherIce, playUnmuted, unmuteOnGesture, viewerIceConfig} from './cinema-ice.mjs?v=turns1';
 const $ = (id) => document.getElementById(id);
 const stage = $('stage'), voice = $('voice'), film = $('film'), demoAudio = $('demo-audio'), cameraFeed = $('camera-feed');
@@ -851,7 +851,7 @@ async function attachFilm(beat, signal) {
 }
 function waitFilm(beat, signal) {
   const duration = Number(beat.film?.duration) || 0;
-  const cues = (beat.film?.timings || []).map((t) => [Number(t.start) || 0, t.narration || '']);
+  const cues = captionTimings(beat.film?.timings || []).map((t) => [t.start, t.narration]);
   if (!duration) return delay(800, signal);
   return new Promise((resolve, reject) => {
     let startedAt = null, lastTime = -1, lastProgress = Date.now(), interval, timeout;
@@ -970,7 +970,7 @@ async function playQueue() {
         setCaption(beat.film.title || '');
         await waitUntilUnpaused(signal);
         if (beat.audio) {
-          filmTimed = (beat.film.timings || []).map((t) => [Number(t.start) || 0, t.narration || '']);
+          filmTimed = captionTimings(beat.film.timings || []).map((t) => [t.start, t.narration]);
           captions = captionChunks(beat.narration);
           voice.src = beat.audio; voice.load(); syncSound();
           const ended = mediaEnded(voice, signal); ended.catch(() => {});

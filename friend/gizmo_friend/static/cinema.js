@@ -1,4 +1,5 @@
 import {mountDevice} from '/static/oddity-device.mjs';
+import {captionTimings} from '/static/oddity-timing.mjs?v=gate45';
 import {createIceStore, gatherIce, playUnmuted, unmuteOnGesture} from '/static/cinema-ice.mjs?v=turns1';
 const $ = id => document.getElementById(id);
 const SESSION_KEY = 'gizmo-cinema-v1';
@@ -155,7 +156,7 @@ function handle(event) {
     if (Array.isArray(event.ice_servers) && event.ice_servers.length) ice.set(event.ice_servers);
     ensurePeer(event.revision);
   }
-  if(event.type==='ready' && event.revision===revision) {duration=event.duration;timings=Array.isArray(event.timings)?event.timings:[];canPlay=true;phase('preparing');ensurePeer(event.revision).then(startPlayback);}
+  if(event.type==='ready' && event.revision===revision) {duration=event.duration;timings=captionTimings(Array.isArray(event.timings)?event.timings:[]);canPlay=true;phase('preparing');ensurePeer(event.revision).then(startPlayback);}
   if(event.type==='playing' && event.revision===revision) {phase('preparing');}
   if(event.type==='buffering' && event.revision===revision) phase('buffering');
   if(event.type==='heard') $('ask').value=event.text;
