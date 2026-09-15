@@ -117,14 +117,17 @@ class CinemaSession:
             self.mark("plan")
             if not self.current(revision):
                 return
-            await self.emit(
-                {
-                    "type": "plan",
-                    "title": plan.title,
-                    "revision": revision,
-                    "ice_servers": list(self.ice_servers),
-                }
-            )
+            plan_event = {
+                "type": "plan",
+                "title": plan.title,
+                "revision": revision,
+            }
+            # An empty list is truthy in JS and would wipe TURN servers already
+            # pushed on the ice event — the browser then gathers host-only and
+            # never pairs with the Railway relay. Omit until Fal ICE arrives.
+            if self.ice_servers:
+                plan_event["ice_servers"] = list(self.ice_servers)
+            await self.emit(plan_event)
             # Last-frame continuation is independent of TTS. Do not wait for it
             # before synthesizing, and never start Director on a partial WAV.
             image_upload = self._start_anchor_upload(plan)
@@ -317,6 +320,11 @@ class CinemaSession:
         without losing the live film's opening seconds."""
         if revision != self.revision or self.stream is None:
             raise ValueError("Stale film")
+        logger.info(
+            "Cinema viewer offer received: revision=%s local=%s",
+            revision,
+            local,
+        )
         # Configure must be allowed to start before answer() waits for tracks.
         # Director publishes those tracks after configure; setting the viewer
         # only after a successful answer deadlocks the production hop and the

@@ -1,4 +1,4 @@
-import {createIceStore, gatherIce, playUnmuted, unmuteOnGesture} from '/static/cinema-ice.mjs?v=glass1';
+import {createIceStore, gatherIce, playUnmuted, unmuteOnGesture} from '/static/cinema-ice.mjs?v=turns1';
 
 const SESSION_KEY = 'gizmo-cinema-v1';
 
@@ -265,7 +265,7 @@ export function createCinemaMode(elements, options = {}) {
     }
     if (event.type === 'plan' && event.revision === revision) {
       nextTitle = event.title;
-      if (event.ice_servers) ice.set(event.ice_servers);
+      if (Array.isArray(event.ice_servers) && event.ice_servers.length) ice.set(event.ice_servers);
       ensurePeer(event.revision);
     }
     if (event.type === 'ready' && event.revision === revision) {
