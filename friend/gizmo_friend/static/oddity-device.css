@@ -147,11 +147,9 @@ html.embedded .moments:not([hidden]){display:flex}
 #cinema-question{display:flex;align-items:center;flex:1;min-width:0;padding:5px 5px 5px 20px;border:1px solid #ffffff14;border-radius:32px;background:#fdf4e9;color:#1c2838;box-shadow:0 8px 38px #0006;transition:border-color .18s,transform .2s}
 #cinema-question:focus-within{border-color:#f5a3b977;transform:translateY(-1px)}
 #cinema-ask{min-width:0;flex:1;height:40px;border:0;background:none;color:inherit;font-size:14px;outline:0}
-#cinema-ask::placeholder{color:#66707a}
 #cinema-send{width:40px;height:40px;border:0;border-radius:50%;background:#172c43;color:#fff5df;font-size:23px;line-height:1;transition:transform .2s}
 #cinema-send:hover{transform:rotate(-12deg)}
 #cinema-pause{width:52px;height:52px;display:grid;place-items:center;flex:0 0 52px;border-radius:50%;border:1px solid #fff5df40;background:#fff5df18;color:#fff5df;font-size:18px;backdrop-filter:blur(10px)}
-.cinema-hint{margin:10px 0 0;text-align:center;color:#88848a;font-size:10px;letter-spacing:.015em}
 @keyframes cinema-controls-in{from{opacity:0;transform:translateY(7px)}to{opacity:1;transform:none}}
-@media(max-width:600px){.cinema-controls{max-width:92%;margin-top:-3.5%}.cinema-bottom{gap:8px}#cinema-question{padding-left:16px}#cinema-ask{font-size:13px}#cinema-send{width:38px;height:38px}#cinema-pause{width:48px;height:48px;flex-basis:48px}.cinema-hint{font-size:9px}}
+@media(max-width:600px){.cinema-controls{max-width:92%;margin-top:-3.5%}.cinema-bottom{gap:8px}#cinema-question{padding-left:16px}#cinema-ask{font-size:13px}#cinema-send{width:38px;height:38px}#cinema-pause{width:48px;height:48px;flex-basis:48px}}
 @media(prefers-reduced-motion:reduce){.cinema-controls{animation:none}}

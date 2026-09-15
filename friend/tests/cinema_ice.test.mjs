@@ -116,7 +116,12 @@ test('cinema glass uses a solid black caption band and on-device PTT', async () 
   assert.equal(cinemaHtml.includes('<svg'), false);
   assert.equal(cinemaHtml.includes('class="device-talk"'), true);
   assert.equal(cinemaHtml.includes('device-reference-ptt-pressed.png'), true);
-  assert.equal(cinemaHtml.includes('Hold the pink button on the device to talk'), true);
+  assert.equal(cinemaHtml.includes('Hold the pink button on the device to talk'), false);
+  assert.equal(cinemaHtml.includes('Ask something. See where it takes us.'), false);
+  assert.equal(cinemaHtml.includes('What are you curious about?'), false);
+  assert.equal(cinemaHtml.includes('You can interrupt anytime'), false);
+  assert.equal(cinemaHtml.includes('placeholder='), false);
+  assert.equal(cinemaHtml.includes('id="hint"'), false);
   assert.equal(cinemaJs.includes("dataset.ptt"), true);
   assert.equal(cinemaJs.includes('mouseleave'), true);
   assert.equal(cinemaJs.includes('touchstart'), true);
@@ -130,8 +135,15 @@ test('cinema glass uses a solid black caption band and on-device PTT', async () 
   assert.equal(oddityHtml.includes('id="cinema-talk"'), false);
   assert.equal(oddityHtml.includes('id="cinema-progress"'), false);
   assert.equal(oddityHtml.includes('class="device-control device-talk"'), true);
+  assert.equal(oddityHtml.includes('Ask something. See where it takes us.'), false);
+  assert.equal(oddityHtml.includes('Hold the pink button on the device to talk'), false);
+  assert.equal(oddityHtml.includes('What are you curious about?'), false);
+  assert.equal(oddityHtml.includes('cinema-hint'), false);
   assert.equal(oddityCinema.includes('progress.firstElementChild'), false);
   assert.equal(oddityCinema.includes('mouseleave'), true);
+  assert.equal(oddityCinema.includes('Ask something. See where it takes us.'), false);
+  assert.equal(oddityCinema.includes('Where does that take your curiosity?'), false);
+  assert.equal(oddityCinema.includes('placeholder'), false);
 });
 
 test('browser cinema paths wait for a non-empty ICE list and load the TURNS gatherer', async () => {
