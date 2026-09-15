@@ -142,12 +142,19 @@ def device_caption_timings(timings: list[dict]) -> list[dict]:
 def caption_updates(
     timings: list[dict], start: float, end: float
 ) -> list[tuple[float, str]]:
-    """Caption-only events inside one device cue, relative to cue playback."""
+    """Caption-only events inside one device cue, relative to cue playback.
+
+    Lead pulls a change forward so the LCD can paint at the spoken boundary.
+    It must not schedule that change at t=0: GO already sent the caption for
+    `start`, and firing immediately would skip the beat still being spoken.
+    """
     updates = []
     for timing in timings:
         boundary = float(timing.get("start", 0.0))
         if start < boundary < end:
-            due = max(0.0, boundary - start - CAPTION_RENDER_LEAD_SECONDS)
+            due = boundary - start - CAPTION_RENDER_LEAD_SECONDS
+            if due <= 0:
+                due = boundary - start
             updates.append((due, str(timing.get("narration", ""))[:150]))
     return updates
 
@@ -457,13 +464,9 @@ class DeviceFilmPlayer:
                 self.acks.pop((event["cue"], "motion"), None)
                 segment_seconds = len(segment.pcm) / PCM_BYTES_PER_SECOND
                 segment_end = position + segment_seconds
-                caption = caption_at(
-                    caption_timings,
-                    min(
-                        segment_end - 1 / PCM_BYTES_PER_SECOND,
-                        position + CAPTION_RENDER_LEAD_SECONDS,
-                    ),
-                )
+                # GO is the caption at this cue's audio start. Looking ahead by
+                # the LCD lead skipped any beat shorter than that lead.
+                caption = caption_at(caption_timings, position)
                 updates = caption_updates(caption_timings, position, segment_end)
                 await self.send({**event, "go": True, "text": caption})
                 # Do not discard the buffered Live fallback until the device has

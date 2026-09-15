@@ -26,7 +26,6 @@ from PIL import Image
 from gizmo_friend.brain.shows import ShowStore
 from gizmo_friend.cinema.device import (
     AUDIO_PACKET_BYTES,
-    CAPTION_RENDER_LEAD_SECONDS,
     DEVICE_AUDIO_LEAD_SECONDS,
     DEVICE_HEIGHT,
     DEVICE_WIDTH,
@@ -332,13 +331,7 @@ class DeviceDemo:
                 self.acks.pop((event["cue"], "motion"), None)
                 segment_seconds = len(segment.pcm) / PCM_BYTES_PER_SECOND
                 segment_end = position + segment_seconds
-                caption = caption_at(
-                    captions,
-                    min(
-                        segment_end - 1 / PCM_BYTES_PER_SECOND,
-                        position + CAPTION_RENDER_LEAD_SECONDS,
-                    ),
-                )
+                caption = caption_at(captions, position)
                 updates = caption_updates(captions, position, segment_end)
                 self.last_still = segment.show.still_url
                 await self.send({**event, "go": True, "text": caption})
