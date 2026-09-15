@@ -743,13 +743,45 @@ class DeviceEncodingTests(unittest.IsolatedAsyncioTestCase):
             )
 
     def test_director_frame_uses_only_the_real_caption_band(self):
-        from gizmo_friend.cinema.device import CAPTION_BAND_HEIGHT, frame_image
+        from gizmo_friend.cinema.device import (
+            CAPTION_BAND_COLOR,
+            CAPTION_BAND_HEIGHT,
+            DEVICE_HEIGHT,
+            DEVICE_WIDTH,
+            FILM_CONTENT_SIZE,
+            frame_image,
+        )
         from PIL import Image
 
+        self.assertEqual(CAPTION_BAND_HEIGHT, 48)
+        self.assertEqual(FILM_CONTENT_SIZE, (DEVICE_WIDTH, DEVICE_HEIGHT - CAPTION_BAND_HEIGHT))
         source = Image.new("RGB", (640, 360), (220, 40, 30))
         image = frame_image(SimpleNamespace(to_image=lambda: source))
+        self.assertEqual(image.size, (DEVICE_WIDTH, DEVICE_HEIGHT))
+        self.assertEqual(image.getpixel((160, 0)), (220, 40, 30))
         self.assertEqual(image.getpixel((160, 240 - CAPTION_BAND_HEIGHT - 1)), (220, 40, 30))
-        self.assertEqual(image.getpixel((160, 240 - CAPTION_BAND_HEIGHT)), (5, 17, 31))
+        self.assertEqual(image.getpixel((160, 240 - CAPTION_BAND_HEIGHT)), CAPTION_BAND_COLOR)
+        self.assertEqual(image.getpixel((160, 239)), CAPTION_BAND_COLOR)
+
+    def test_cinema_skins_cover_fill_above_the_caption_band(self):
+        static = Path(__file__).resolve().parents[1] / "gizmo_friend" / "static"
+        cinema_css = (static / "cinema.css").read_text()
+        cinema_html = (static / "cinema.html").read_text()
+        oddity_css = (static / "oddity-device.css").read_text()
+        self.assertIn("--caption-band:20%", cinema_css)
+        self.assertIn("object-fit:cover", cinema_css)
+        self.assertNotIn(".stage video{object-fit:contain", cinema_css)
+        self.assertIn('id="caption"', cinema_html)
+        self.assertIn("inset:0 0 20% 0", oddity_css)
+        self.assertIn(
+            ".stage.cinema-mode .scene>img,.stage.cinema-mode .scene>video,.stage.cinema-mode .scene>canvas{position:absolute;inset:0;width:100%;height:100%;object-fit:cover;background:#000}",
+            oddity_css,
+        )
+        self.assertNotIn(
+            ".stage.cinema-mode .scene>img,.stage.cinema-mode .scene>video,.stage.cinema-mode .scene>canvas{position:absolute;inset:0;width:100%;height:100%;object-fit:contain;background:#000}",
+            oddity_css,
+        )
+        self.assertNotIn(".stage.cinema-mode .caption,", oddity_css)
 
     def test_device_jpeg_is_baseline_420(self):
         import io

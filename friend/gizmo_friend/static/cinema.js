@@ -17,12 +17,25 @@ let socket, peer, revision = 0, duration = 0, startTime = null, ending = false;
 let recorder, microphone, held = false, recordingTimer;
 let connectionPromise, displayedTitle = '', nextTitle = '', recordingRevision = 0, requestId = 0;
 let warmPromise = null, warming = 0, warmed = 0, canPlay = false;
+let timings = [];
 const metrics = [];
 window.gizmoFilmMetrics = metrics; // Local acceptance evidence; no provider credentials.
 function phase(name, message) {
   document.body.dataset.phase = name;
   if (message !== undefined) $('status').textContent = message;
   $('pause').hidden = ['idle','paused','ended','error'].includes(name);
+}
+function captionAt(position) {
+  for (const timing of timings) {
+    const start = Number(timing.start) || 0;
+    const end = Number(timing.end) || 0;
+    if (start <= position && position < end) return String(timing.narration || '');
+  }
+  return '';
+}
+function setCaption(text = '') {
+  const caption = $('caption');
+  if (caption) caption.textContent = String(text || '').trim();
 }
 function send(value) { if (socket?.readyState === WebSocket.OPEN) socket.send(JSON.stringify(value)); }
 function freezeFilm() {
@@ -36,7 +49,7 @@ function freezeFilm() {
 function detach() { peer?.close(); peer = null; video.srcObject = null; startTime = null; warmed = 0; }
 function interrupt() {
   ++requestId;freezeFilm(); canPlay=false; warmPromise=null; send({type:'interrupt',request_id:requestId}); detach();
-  ending = true; $('title').textContent = displayedTitle; phase('paused', 'I’m listening. Where should we go from here?');
+  ending = true; $('title').textContent = displayedTitle; setCaption(); phase('paused', 'I’m listening. Where should we go from here?');
   $('ask').placeholder = 'Ask a question, change direction, or say “go on”…';
 }
 async function connect() {
@@ -67,7 +80,7 @@ async function ensureConnection() {
 async function ask(text) {
   text = text.trim(); if (!text) return;
   const askId=++requestId;stopRecording();freezeFilm(); canPlay=false; duration=0; warmPromise=null; detach(); ending = true;
-  phase('thinking', 'Thinking it through…'); nextTitle='';
+  phase('thinking', 'Thinking it through…'); nextTitle=''; setCaption(); timings=[];
   $('progress').firstElementChild.style.width='0%';$('progress').setAttribute('aria-valuenow','0');
   try {
     await ensureConnection();
@@ -126,20 +139,21 @@ function handle(event) {
   metrics.push({...event,at:performance.now()}); if(metrics.length>250)metrics.shift();
   if(event.type==='status'){revision=event.revision??revision;phase(event.phase,event.message);}
   if(event.type==='plan' && event.revision===revision) {nextTitle=event.title;ensurePeer(event.revision);}
-  if(event.type==='ready' && event.revision===revision) {duration=event.duration;canPlay=true;phase('preparing','Opening the scene…');ensurePeer(event.revision).then(startPlayback);}
+  if(event.type==='ready' && event.revision===revision) {duration=event.duration;timings=Array.isArray(event.timings)?event.timings:[];canPlay=true;phase('preparing','Opening the scene…');ensurePeer(event.revision).then(startPlayback);}
   if(event.type==='playing' && event.revision===revision) {phase('preparing','The first frame is arriving…');}
   if(event.type==='buffering' && event.revision===revision) phase('buffering','Holding that thought…');
   if(event.type==='heard') $('ask').value=event.text;
   if(event.type==='paused'){revision=event.revision;}
-  if(event.type==='ended'){freezeFilm();detach();revision=event.revision;phase('ended','Where does that take your curiosity?');}
+  if(event.type==='ended'){freezeFilm();detach();revision=event.revision;setCaption();phase('ended','Where does that take your curiosity?');}
   if(event.type==='error'){freezeFilm();detach();ending=true;phase('error',event.message);}
 }
 // The media clock, not generation-complete messages, decides what the viewer has heard.
 function presented(_now, metadata) {
   if(peer && !video.paused && video.readyState>=2 && !ending){
     if(startTime===null){displayedTitle=nextTitle;$('title').textContent=displayedTitle;startTime=metadata.mediaTime;metrics.push({type:'presented',at:performance.now()});}
-    document.body.dataset.hasFilm='true';freeze.hidden=true;phase('playing', 'Hold the pink button to ask something.');
+    document.body.dataset.hasFilm='true';freeze.hidden=true;phase('playing');
     const elapsed=Math.max(0,metadata.mediaTime-startTime), progress=Math.min(100,elapsed/duration*100);
+    setCaption(captionAt(elapsed));
     $('progress').style.setProperty('--progress',`${progress}%`);
     $('progress').firstElementChild.style.width=`${progress}%`;
     $('progress').setAttribute('aria-valuenow',Math.round(progress));
@@ -148,7 +162,7 @@ function presented(_now, metadata) {
   video.requestVideoFrameCallback(presented);
 }
 if(video.requestVideoFrameCallback)video.requestVideoFrameCallback(presented);
-else video.addEventListener('timeupdate',()=>{if(!video.paused){document.body.dataset.hasFilm='true';freeze.hidden=true;phase('playing', 'Hold the pink button to ask something.');if(startTime===null)startTime=video.currentTime;if(video.currentTime-startTime>=duration&&!ending){ending=true;freezeFilm();send({type:'finished',revision});}}});
+else video.addEventListener('timeupdate',()=>{if(!video.paused){document.body.dataset.hasFilm='true';freeze.hidden=true;phase('playing');if(startTime===null)startTime=video.currentTime;const elapsed=Math.max(0,video.currentTime-startTime);setCaption(captionAt(elapsed));if(duration && elapsed>=duration&&!ending){ending=true;freezeFilm();send({type:'finished',revision});phase('ended','Where does that take your curiosity?');}}});
 $('question').addEventListener('submit',e=>{e.preventDefault();ask($('ask').value);});
 $('pause').onclick=interrupt;
 $('resume').onclick=async()=>{video.muted=false;await video.play();$('resume').hidden=true;};

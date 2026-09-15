@@ -36,7 +36,9 @@ void render_wifi_setup(const draw::Canvas& canvas, const char* title, const char
 
 // Brain-sent caption line (the kid's own words, or film subtitles), drawn as a
 // strip at the bottom over whatever is on screen. Empty line draws nothing.
-constexpr int kCaptionBandHeight = 24;
+// 48 rows is one-fifth of the 240-row panel — the same reserved band the
+// emulator uses, tall enough to read, with the film cover-filling the rest.
+constexpr int kCaptionBandHeight = 48;
 void render_caption(const draw::Canvas& canvas, const char* line);
 
 }  // namespace gizmo

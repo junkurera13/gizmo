@@ -6,7 +6,7 @@ feature complete because a build, host test, Railway event, or downloaded cue
 passed. Every checkpoint below needs its own stated evidence.
 
 The existing panel wiring and peripheral ownership are unchanged. The physical
-target remains 320x216 motion plus one 24-pixel caption band at 8 fps. The cue
+target remains 320x192 motion plus one 48-pixel caption band at 8 fps. The cue
 budget is 256 KiB and each JPEG frame stays below 7 KiB. Do not raise these
 limits or retune the display driver while diagnosing live-film cadence.
 

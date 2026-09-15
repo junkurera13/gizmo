@@ -12,8 +12,8 @@ function remember(key, value) {
 
 export function createCinemaMode(elements, options = {}) {
   const {
-    stage, video, poster, freeze, overlay, status, progress, resume,
-    controls, pause, question, askInput, talk,
+    stage, video, poster, freeze,     overlay, status, progress, resume,
+    controls, pause, question, askInput, talk, caption,
   } = elements;
   let key = stored(SESSION_KEY);
   let active = false;
@@ -36,6 +36,7 @@ export function createCinemaMode(elements, options = {}) {
   let warmed = 0;
   let canPlay = false;
   let activation = 0;
+  let timings = [];
 
   function phase(name, message) {
     stage.dataset.cinemaPhase = name;
@@ -45,6 +46,19 @@ export function createCinemaMode(elements, options = {}) {
 
   function send(value) {
     if (socket?.readyState === WebSocket.OPEN) socket.send(JSON.stringify(value));
+  }
+
+  function captionAt(position) {
+    for (const timing of timings) {
+      const start = Number(timing.start) || 0;
+      const end = Number(timing.end) || 0;
+      if (start <= position && position < end) return String(timing.narration || '');
+    }
+    return '';
+  }
+
+  function setCaption(text = '') {
+    if (caption) caption.textContent = String(text || '').trim();
   }
 
   function freezeFilm() {
@@ -76,6 +90,7 @@ export function createCinemaMode(elements, options = {}) {
     send({type: 'interrupt', request_id: requestId});
     detach();
     ending = true;
+    setCaption();
     phase('paused', 'I’m listening. Where should we go from here?');
     askInput.placeholder = 'Ask a question, change direction, or say “go on”…';
   }
@@ -140,6 +155,8 @@ export function createCinemaMode(elements, options = {}) {
     ending = true;
     phase('thinking', 'Thinking it through…');
     nextTitle = '';
+    timings = [];
+    setCaption();
     progress.firstElementChild.style.width = '0%';
     progress.setAttribute('aria-valuenow', '0');
     try {
@@ -239,6 +256,7 @@ export function createCinemaMode(elements, options = {}) {
     }
     if (event.type === 'ready' && event.revision === revision) {
       duration = event.duration;
+      timings = Array.isArray(event.timings) ? event.timings : [];
       canPlay = true;
       phase('preparing', 'Opening the scene…');
       ensurePeer(event.revision).then(startPlayback);
@@ -251,6 +269,7 @@ export function createCinemaMode(elements, options = {}) {
       freezeFilm();
       detach();
       revision = event.revision;
+      setCaption();
       phase('ended', 'Where does that take your curiosity?');
     }
     if (event.type === 'error') {
@@ -269,8 +288,9 @@ export function createCinemaMode(elements, options = {}) {
       stage.dataset.cinemaHasFilm = 'true';
       poster.hidden = true;
       freeze.hidden = true;
-      phase('playing', 'Hold the pink button to ask something.');
+      phase('playing');
       const elapsed = Math.max(0, metadata.mediaTime - startTime);
+      setCaption(captionAt(elapsed));
       const percent = Math.min(100, elapsed / duration * 100);
       progress.firstElementChild.style.width = `${percent}%`;
       progress.setAttribute('aria-valuenow', Math.round(percent));
@@ -290,8 +310,9 @@ export function createCinemaMode(elements, options = {}) {
     stage.dataset.cinemaHasFilm = 'true';
     poster.hidden = true;
     freeze.hidden = true;
-    phase('playing', 'Hold the pink button to ask something.');
+    phase('playing');
     if (startTime === null) startTime = video.currentTime;
+    setCaption(captionAt(Math.max(0, video.currentTime - startTime)));
     if (duration && video.currentTime - startTime >= duration) {
       ending = true;
       freezeFilm();
@@ -369,6 +390,7 @@ export function createCinemaMode(elements, options = {}) {
     video.hidden = false;
     stage.classList.add('cinema-mode', 'has-scene');
     stage.dataset.cinemaHasFilm = 'false';
+    setCaption();
     phase('idle', 'Ask something. See where it takes us.');
     try { await ensureConnection(); }
     catch (error) {
@@ -401,6 +423,8 @@ export function createCinemaMode(elements, options = {}) {
     stage.classList.remove('cinema-mode', 'has-scene');
     delete stage.dataset.cinemaPhase;
     delete stage.dataset.cinemaHasFilm;
+    setCaption();
+    timings = [];
   }
 
   question.addEventListener('submit', event => {

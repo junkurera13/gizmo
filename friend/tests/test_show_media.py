@@ -106,7 +106,7 @@ class ShowMediaTests(unittest.TestCase):
         filters = arguments[arguments.index('-vf') + 1]
         self.assertIn('scale=320:216:', filters)
         self.assertIn('crop=320:216:exact=1', filters)
-        self.assertIn('pad=320:240:0:0:color=black', filters)
+        self.assertIn('pad=320:240:0:0:color=0x05111F', filters)
 
     def test_device_mjpeg_rejects_an_invalid_content_height(self):
         for content_height in (0, 241):
