@@ -54,6 +54,32 @@ class FakeStream:
 
 
 class DevicePlayerTests(unittest.IsolatedAsyncioTestCase):
+    def test_caption_helpers_follow_audio_position_not_lcd_lead(self):
+        from gizmo_friend.cinema.device import (
+            CAPTION_RENDER_LEAD_SECONDS,
+            caption_at,
+            caption_updates,
+        )
+
+        timings = [
+            {"start": 0.0, "end": 0.2, "narration": "Pressure builds."},
+            {"start": 0.2, "end": 0.3, "narration": "Then it erupts."},
+        ]
+        self.assertEqual(caption_at(timings, 0.0), "Pressure builds.")
+        self.assertEqual(caption_at(timings, 0.2), "Then it erupts.")
+        self.assertLess(0.2, CAPTION_RENDER_LEAD_SECONDS)
+
+        updates = caption_updates(timings, 0.0, 0.3)
+        self.assertEqual(updates, [(0.2, "Then it erupts.")])
+
+        later = [
+            {"start": 0.0, "end": 2.0, "narration": "First beat."},
+            {"start": 2.0, "end": 5.0, "narration": "Second beat."},
+        ]
+        due, text = caption_updates(later, 0.0, 5.0)[0]
+        self.assertEqual(text, "Second beat.")
+        self.assertAlmostEqual(due, 2.0 - CAPTION_RENDER_LEAD_SECONDS)
+
     def test_long_narration_uses_sequential_one_line_captions(self):
         from gizmo_friend.cinema.device import (
             MAX_DEVICE_CAPTION_CHARS,
